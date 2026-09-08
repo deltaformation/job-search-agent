@@ -1,0 +1,30 @@
+# Job Discovery Configuration
+
+search:
+  country: "Canada"
+  roles:
+    - "Senior Product Manager"
+    - "Technical Product Manager"
+    - "Product Manager, Technical"
+    - "Lead Product Manager"
+    - "Principal Product Manager"
+  locations:
+    - "Toronto, ON"
+    - "Ontario"
+    - "Remote"
+  sources:
+    - "indeed"
+    - "linkedin"
+  freshness_windows:
+    primary_hours: 24      # Prioritize HOT jobs <=24h
+    secondary_hours: 72    # Secondary freshness <=72h
+  max_results_per_query: 25
+
+deduplication:
+  similarity_threshold: 0.85
+  prefer_ats_url: true
+
+pipeline:
+  auto_score: true
+  min_score_to_shortlist: 75
+  min_score_to_tailor: 85

@@ -1,0 +1,29 @@
+# Candidate Fit Scoring Configuration
+
+weights:
+  role_alignment: 0.25         # Direct title and role relevance
+  relevant_experience: 0.20    # Years of relevant PM experience vs JD requirements
+  seniority: 0.15              # Senior/Staff/Lead level indicators
+  required_skills: 0.15        # Technical, PM, and tool-specific skills
+  domain_relevance: 0.10       # Industry/Domain overlap (e.g., SaaS, Cloud, Security)
+  location_fit: 0.05           # Ontario / Toronto / Remote Canada
+  compensation_fit: 0.05       # Within or above target expectations
+  preference_fit: 0.05         # Company stage, culture, tech stack preferences
+
+thresholds:
+  exceptional: 90
+  strong: 85
+  review: 75
+  weak: 65
+
+recommendations:
+  exceptional: "apply"
+  strong: "apply"
+  review: "review"
+  weak: "skip"
+  skip: "skip"
+
+penalties:
+  us_only_location: -50
+  below_min_experience_years: -20
+  missing_critical_certification: -10

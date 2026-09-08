@@ -1,0 +1,20 @@
+# Twice-Daily Automation Schedule Configuration
+
+timezone: "America/Toronto"
+
+schedules:
+  morning_scan:
+    cron: "30 7 * * *"        # 07:30 AM local time
+    enabled: true
+    description: "Morning discovery, triage, and scoring run"
+    max_hours_old: 24          # Strongly focus on new jobs since yesterday evening
+  
+  evening_scan:
+    cron: "30 18 * * *"       # 06:30 PM local time
+    enabled: true
+    description: "Evening discovery, triage, and scoring run"
+    max_hours_old: 24          # Focus on jobs posted during the business day
+
+audit:
+  record_runs_in_db: true
+  retention_days: 90
