@@ -62,7 +62,7 @@ def deduplicate_job_stream(existing_jobs: List[Dict[str, Any]], candidate_job: D
         ej_loc = ej.get("location", "").strip().lower()
         if c_company and c_title and ej_company == c_company and ej_title == c_title:
             # Check if locations overlap (e.g. Toronto and Toronto, ON, Canada)
-            if c_loc in ej_loc or ej_loc in c_loc or "remote" in c_loc and "remote" in ej_loc:
+            if c_loc and ej_loc and (c_loc in ej_loc or ej_loc in c_loc or "remote" in c_loc and "remote" in ej_loc):
                 return ej
 
         # Signal 5: Content hash match

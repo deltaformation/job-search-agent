@@ -17,9 +17,9 @@ def test_scorer_strong_match():
             }
         ],
         "skills": [
-            {"name": "Technical Product Management", "years_experience": 6.0},
-            {"name": "Cloud Architecture (AWS / GCP)", "years_experience": 7.0},
-            {"name": "PostgreSQL & Relational Data Modeling", "years_experience": 8.0}
+            {"name": "Technical Product Management", "verified": True, "years_experience": 6.0},
+            {"name": "Cloud Architecture (AWS / GCP)", "verified": True, "years_experience": 7.0},
+            {"name": "PostgreSQL & Relational Data Modeling", "verified": True, "years_experience": 8.0}
         ]
     }
 
@@ -59,3 +59,26 @@ def test_scorer_weak_match():
     assert result["overall_score"] < 65.0
     assert result["recommendation"] == "skip"
     assert len(result["risks"]) >= 1
+
+
+def test_years_requirement_does_not_invent_candidate_experience() -> None:
+    result = FitScorer().score_job({
+        "title": "Product Manager", "description": "Requires 5+ years of experience."
+    }, {"verified_facts": [], "skills": []})
+    assert not any("8+ years" in strength for strength in result["strengths"])
+    assert any("unsupported" in gap for gap in result["gaps"])
+    assert result["evidence_fact_ids"] == []
+
+
+def test_unverified_skills_do_not_increase_score() -> None:
+    scorer = FitScorer()
+    job = {"title": "Product Manager", "description": "Python Kafka PostgreSQL analytics strategy"}
+    baseline = scorer.score_job(job, {"skills": []})
+    unverified = scorer.score_job(job, {"skills": [
+        {"name": name, "verified": False}
+        for name in ["Python", "Kafka", "PostgreSQL", "analytics", "strategy"]
+    ]})
+    assert unverified == baseline
+    assert scorer.score_job(job, {"skills": [{"name": "Python"}]}) == baseline
+    verified = scorer.score_job(job, {"skills": [{"name": "Python", "verified": True}]})
+    assert verified["skills_score"] > baseline["skills_score"]

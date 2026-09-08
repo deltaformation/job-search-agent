@@ -4,6 +4,22 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 import psycopg
 from psycopg.rows import dict_row
+from services.discovery.deduplicator import is_ats_url, detect_ats_type
+
+# Compute freshness at read time, including jobs that are never scraped again.
+FRESHNESS_JOIN = """
+    CROSS JOIN LATERAL (
+        SELECT GREATEST(0, EXTRACT(EPOCH FROM
+            (NOW() - COALESCE(j.posted_at, j.first_seen_at))) / 3600) AS raw_age
+    ) age
+    CROSS JOIN LATERAL (
+        SELECT ROUND(age.raw_age, 1) AS age_hours,
+               CASE WHEN age.raw_age <= 24 THEN 'HOT'
+                    WHEN age.raw_age <= 48 THEN 'FRESH'
+                    WHEN age.raw_age <= 72 THEN 'RECENT'
+                    ELSE 'STALE' END AS freshness_bucket
+    ) fresh
+"""
 
 DEFAULT_DB_URL = "postgresql://mouadatfi@localhost:5432/job_system"
 
@@ -41,7 +57,7 @@ class JobRepository:
                 # Fetch skills
                 cur.execute("""
                     SELECT * FROM skills 
-                    WHERE candidate_id = %s 
+                    WHERE candidate_id = %s AND verified = TRUE
                     ORDER BY years_experience DESC NULLS LAST;
                 """, (profile["id"],))
                 profile["skills"] = cur.fetchall()
@@ -69,20 +85,53 @@ class JobRepository:
         """
         with self.get_connection() as conn:
             with conn.cursor() as cur:
-                # Check for existing job by canonical_url or content_hash
+                # Resolve every deduplication signal against the full database,
+                # including source identities previously merged into another job.
                 cur.execute("""
-                    SELECT * FROM jobs 
-                    WHERE canonical_url = %s OR content_hash = %s
+                    SELECT j.* FROM jobs j
+                    WHERE canonical_url = %(url)s
+                       OR content_hash = %(hash)s
+                       OR (%(apply)s <> '' AND apply_url = %(apply)s)
+                       OR (%(source_id)s <> '' AND (
+                           (source = %(source)s AND source_job_id = %(source_id)s)
+                           OR EXISTS (
+                               SELECT 1 FROM job_sources js
+                               WHERE js.job_id = j.job_id
+                                 AND js.source_name = %(source)s
+                                 AND js.source_job_id = %(source_id)s)))
+                       OR (%(company)s <> '' AND %(title)s <> '' AND %(location)s <> ''
+                           AND LOWER(TRIM(company)) = %(company)s
+                           AND LOWER(TRIM(normalized_title)) = %(title)s
+                           AND TRIM(location) <> ''
+                           AND (POSITION(%(location)s IN LOWER(TRIM(location))) > 0
+                                OR POSITION(LOWER(TRIM(location)) IN %(location)s) > 0
+                                OR (POSITION('remote' IN %(location)s) > 0
+                                    AND POSITION('remote' IN LOWER(location)) > 0)))
+                    ORDER BY (canonical_url = %(url)s) DESC, created_at, job_id
                     LIMIT 1;
-                """, (job_data["canonical_url"], job_data["content_hash"]))
+                """, {
+                    "url": job_data["canonical_url"],
+                    "hash": job_data["content_hash"],
+                    "apply": job_data.get("apply_url") or "",
+                    "source": job_data.get("source") or "",
+                    "source_id": job_data.get("source_job_id") or "",
+                    "company": (job_data.get("company") or "").strip().lower(),
+                    "title": (job_data.get("normalized_title") or job_data["title"]).strip().lower(),
+                    "location": (job_data.get("location") or "").strip().lower(),
+                })
                 existing = cur.fetchone()
 
                 if existing:
                     job_id = existing["job_id"]
                     # Update last_seen_at and better apply_url if found
                     best_apply_url = existing["apply_url"]
-                    if job_data.get("apply_url") and not existing.get("apply_url"):
-                        best_apply_url = job_data["apply_url"]
+                    incoming_apply_url = job_data.get("apply_url")
+                    if incoming_apply_url and (
+                        not best_apply_url
+                        or (is_ats_url(incoming_apply_url) and not is_ats_url(best_apply_url))
+                    ):
+                        best_apply_url = incoming_apply_url
+                    best_ats_type = detect_ats_type(best_apply_url) or existing.get("ats_type")
 
                     cur.execute("""
                         UPDATE jobs 
@@ -90,10 +139,11 @@ class JobRepository:
                             age_hours = %s,
                             freshness_bucket = %s,
                             apply_url = %s,
+                            ats_type = %s,
                             updated_at = NOW()
                         WHERE job_id = %s
                         RETURNING *;
-                    """, (job_data.get("age_hours", 0), job_data.get("freshness_bucket", "HOT"), best_apply_url, job_id))
+                    """, (job_data.get("age_hours", 0), job_data.get("freshness_bucket", "HOT"), best_apply_url, best_ats_type, job_id))
                     updated_job = cur.fetchone()
 
                     # Add source to job_sources
@@ -188,15 +238,16 @@ class JobRepository:
     ) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:
             with conn.cursor() as cur:
-                query = """
-                    SELECT j.*, s.overall_score, s.recommendation, s.strengths, s.gaps, s.evidence_fact_ids
+                query = f"""
+                    SELECT j.*, fresh.age_hours, fresh.freshness_bucket, s.overall_score, s.recommendation, s.strengths, s.gaps, s.evidence_fact_ids
                     FROM jobs j
+                    {FRESHNESS_JOIN}
                     LEFT JOIN job_scores s ON j.job_id = s.job_id
                     WHERE 1=1
                 """
                 params = []
                 if freshness:
-                    query += " AND j.freshness_bucket = %s"
+                    query += " AND fresh.freshness_bucket = %s"
                     params.append(freshness)
                 if min_score is not None:
                     query += " AND s.overall_score >= %s"
@@ -205,7 +256,7 @@ class JobRepository:
                     query += " AND j.status = %s"
                     params.append(status)
                 if max_age_hours is not None:
-                    query += " AND j.age_hours <= %s"
+                    query += " AND age.raw_age <= %s"
                     params.append(max_age_hours)
 
                 query += " ORDER BY s.overall_score DESC NULLS LAST, j.posted_at DESC NULLS LAST LIMIT %s;"
@@ -217,11 +268,12 @@ class JobRepository:
     def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
         with self.get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT j.*, s.overall_score, s.recommendation, s.strengths, s.gaps, s.risks, s.evidence_fact_ids,
+                cur.execute(f"""
+                    SELECT j.*, fresh.age_hours, fresh.freshness_bucket, s.overall_score, s.recommendation, s.strengths, s.gaps, s.risks, s.evidence_fact_ids,
                            s.role_alignment, s.experience_score, s.seniority_score, s.skills_score,
                            s.domain_score, s.location_score, s.comp_score, s.preference_score
                     FROM jobs j
+                    {FRESHNESS_JOIN}
                     LEFT JOIN job_scores s ON j.job_id = s.job_id
                     WHERE j.job_id = %s;
                 """, (job_id,))

@@ -12,7 +12,6 @@ from mcp.server.mcpserver import MCPServer
 from services.memory.repository import JobRepository
 from services.intelligence.scorer import FitScorer
 from services.discovery.scraper import fetch_jobs_from_boards
-from services.discovery.deduplicator import deduplicate_job_stream
 
 mcp = MCPServer("career-memory")
 repo = JobRepository()
@@ -127,8 +126,6 @@ def search_and_ingest_jobs(
     compute candidate fit scores, and persist to database.
     """
     profile = repo.get_candidate_profile()
-    existing_jobs = repo.get_jobs(limit=500)
-    seen = list(existing_jobs)
 
     pairs = fetch_jobs_from_boards(
         search_term=role,
@@ -143,14 +140,7 @@ def search_and_ingest_jobs(
     qualified = 0
 
     for job_data, source_data in pairs:
-        dup = deduplicate_job_stream(seen, job_data)
-        if dup:
-            duplicates += 1
-            repo.upsert_job(job_data, source_data)
-            continue
-
         saved_job, is_new = repo.upsert_job(job_data, source_data)
-        seen.append(saved_job)
 
         if is_new:
             ingested += 1

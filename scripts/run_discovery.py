@@ -15,7 +15,6 @@ sys.path.insert(0, str(BASE_DIR))
 
 from services.memory.repository import JobRepository
 from services.discovery.scraper import fetch_jobs_from_boards
-from services.discovery.deduplicator import deduplicate_job_stream
 from services.intelligence.scorer import FitScorer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -48,10 +47,6 @@ def run_discovery(
 
     logger.info(f"Loaded verified candidate profile: {profile['full_name']} ({len(profile['verified_facts'])} facts)")
 
-    # Fetch existing jobs from database for deduplication
-    existing_db_jobs = repo.get_jobs(limit=500)
-    seen_jobs = list(existing_db_jobs)
-
     jobs_found = 0
     jobs_new = 0
     jobs_duplicate = 0
@@ -76,21 +71,12 @@ def run_discovery(
                 jobs_found += len(pairs)
 
                 for job_data, source_data in pairs:
-                    # In-memory deduplication check
-                    dup = deduplicate_job_stream(seen_jobs, job_data)
-                    if dup:
-                        jobs_duplicate += 1
-                        # Still ensure source provenance is tracked in DB
-                        repo.upsert_job(job_data, source_data)
-                        continue
-
                     # Freshness check
                     if job_data.get("freshness_bucket") == "STALE":
                         jobs_stale += 1
 
                     # Persist new job
                     saved_job, is_new = repo.upsert_job(job_data, source_data)
-                    seen_jobs.append(saved_job)
 
                     if is_new:
                         jobs_new += 1

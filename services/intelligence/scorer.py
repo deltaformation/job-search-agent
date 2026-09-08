@@ -71,8 +71,8 @@ class FitScorer:
             seniority_score = 95.0
             strengths.append("Senior / Lead level role matching career trajectory.")
         elif "senior" in desc or "5+ years" in desc or "7+ years" in desc or "8+ years" in desc:
-            seniority_score = 85.0
-            strengths.append("Seniority requirements in JD match 8+ years verified experience.")
+            seniority_score = 60.0
+            gaps.append("JD seniority / years-of-experience requirement is unsupported until verified candidate evidence is checked.")
         else:
             seniority_score = 75.0
 
@@ -101,7 +101,7 @@ class FitScorer:
             gaps.append("Limited direct overlap between verified achievements and specialized JD requirements.")
 
         # 4. Required Skills (Weight: 15%)
-        skills = candidate_profile.get("skills", [])
+        skills = [s for s in candidate_profile.get("skills", []) if s.get("verified") is True]
         skills_matched = 0
         total_skills_checked = len(skills)
         for s in skills:
