@@ -8,12 +8,46 @@ from html.parser import HTMLParser
 import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
+from services.documents.browser import resolve_headless_browser
 from services.documents.validator import ClaimValidator, ProvenanceValidationError
 from jinja2 import Environment, select_autoescape
 import pypdf
 
-CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 ARTIFACTS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "artifacts" / "resumes"
+
+
+def terminate_browser_process(process: subprocess.Popen[bytes]) -> None:
+    """Stop a renderer process and fall back when process-group signals are denied."""
+    if process.poll() is not None:
+        process.wait()
+        return
+
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        process.wait()
+        return
+    except PermissionError:
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            process.wait()
+            return
+
+    try:
+        process.wait(timeout=3)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        process.wait()
+        return
+    except PermissionError:
+        process.kill()
+    process.wait()
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -179,8 +213,13 @@ class BodyTextParser(HTMLParser):
 
 
 class DocumentRenderer:
-    def __init__(self, artifacts_dir: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        artifacts_dir: Optional[Path] = None,
+        browser_path: Optional[str] = None,
+    ) -> None:
         self.artifacts_dir = artifacts_dir or ARTIFACTS_DIR
+        self.browser_path = browser_path
         self.jinja_env = Environment(autoescape=select_autoescape(["html", "xml"]))
 
     def render_resume_to_html(
@@ -246,7 +285,7 @@ class DocumentRenderer:
         content_hash: str
     ) -> Tuple[str, str, int]:
         """
-        Compiles HTML to PDF via sandboxed headless Chrome.
+        Compiles HTML to PDF via an isolated headless Chromium runtime.
         Validates page budget (<= 2 pages) and text extractability via pypdf.
         Returns (html_file_path, pdf_file_path, page_count).
         """
@@ -270,7 +309,10 @@ class DocumentRenderer:
                     source = temp_dir / "resume.html"
                     target = temp_dir / "resume.pdf"
                     source.write_text(html_content, encoding="utf-8")
-                    cmd = [CHROME_BIN, "--headless=new", "--no-first-run", "--use-mock-keychain", "--password-store=basic", "--no-default-browser-check", "--disable-search-engine-choice-screen", "--disable-gpu", "--no-pdf-header-footer",
+                    browser_path = resolve_headless_browser(
+                        [self.browser_path] if self.browser_path else None
+                    )
+                    cmd = [browser_path, "--headless", "--no-first-run", "--use-mock-keychain", "--password-store=basic", "--no-default-browser-check", "--disable-search-engine-choice-screen", "--disable-gpu", "--no-pdf-header-footer",
                            "--disable-remote-fonts", "--disable-background-networking", "--disable-sync",
                            "--disable-extensions", "--host-resolver-rules=MAP * ~NOTFOUND",
                            f"--user-data-dir={chrome_profile}", f"--print-to-pdf={target}", source.as_uri()]
@@ -292,20 +334,17 @@ class DocumentRenderer:
                                     break
                                 time.sleep(0.1)
                             if not complete:
-                                raise RuntimeError("Chrome did not produce a complete PDF within the rendering deadline.")
+                                exit_code = process.poll()
+                                if exit_code is not None:
+                                    raise RuntimeError(
+                                        "Headless browser exited with status "
+                                        f"{exit_code} before producing a complete PDF."
+                                    )
+                                raise RuntimeError(
+                                    "Headless browser did not produce a complete PDF within the rendering deadline."
+                                )
                         finally:
-                            try:
-                                os.killpg(process.pid, signal.SIGTERM)
-                            except ProcessLookupError:
-                                pass
-                            try:
-                                process.wait(timeout=3)
-                            except subprocess.TimeoutExpired:
-                                try:
-                                    os.killpg(process.pid, signal.SIGKILL)
-                                except ProcessLookupError:
-                                    pass
-                                process.wait()
+                            terminate_browser_process(process)
 
                     reader = pypdf.PdfReader(str(target))
                     page_count = len(reader.pages)

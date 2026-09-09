@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
 Environment diagnostics for Job Search Operating System.
-Verifies Python 3.11+, PostgreSQL 16 connectivity, Google Chrome, and required dependencies
-without modifying system state or automatically installing packages.
+Verifies Python 3.11+, PostgreSQL 16 connectivity, a dedicated headless browser,
+and required dependencies without modifying system state or installing packages.
 """
 import sys
 import os
-import shutil
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BASE_DIR))
+
+from services.documents.browser import resolve_headless_browser
 
 def check_python() -> bool:
     v = sys.version_info
@@ -37,19 +39,13 @@ def check_postgres() -> bool:
         return False
 
 def check_chrome() -> bool:
-    candidates = [
-        os.getenv("CHROME_PATH", ""),
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        shutil.which("google-chrome") or "",
-        shutil.which("chromium") or "",
-    ]
-    found = next((p for p in candidates if p and Path(p).is_file() and os.access(p, os.X_OK)), None)
-    print("Google Chrome / Headless Browser:", end=" ")
-    if found:
-        print(f"[OK] ({found})")
+    print("Headless PDF Browser:", end=" ")
+    try:
+        browser_path = resolve_headless_browser()
+        print(f"[OK] ({browser_path})")
         return True
-    else:
-        print("[FAIL] (Google Chrome executable not found for PDF rendering)")
+    except FileNotFoundError as exc:
+        print(f"[FAIL] ({exc})")
         return False
 
 def check_dependencies() -> bool:

@@ -175,8 +175,24 @@ The profile replacement confirmation flag could be supplied by a non-interactive
 
 ---
 
+## 8. [ENVIRONMENT] Google Chrome abort during browser test
+
+### Summary
+The supplied macOS report records Google Chrome 152 terminating with `SIGABRT` while `HIServices` was registering the process as a GUI application (`_RegisterApplication` / `TransformProcessType`). The failure occurs during browser startup, before page navigation or job-application logic. The repository's PDF renderer hardcoded the branded Google Chrome application even though rendering needs no visible browser.
+
+### Resolution
+- Automated PDF rendering now prefers Playwright's dedicated `chrome-headless-shell` runtime.
+- The branded macOS Google Chrome application is no longer an automatic fallback. An explicit `HEADLESS_BROWSER_PATH` or `CHROME_PATH` override is required to select another executable.
+- Browser discovery is shared by rendering and environment diagnostics.
+- Renderer cleanup falls back to signalling the direct child process when the host denies process-group signals.
+- Headed application sessions remain an Antigravity human-handoff workflow and are not launched by repository tests.
+
+- **Status**: **RESOLVED** for repository tests and document rendering. A real one-page PDF render completed with the dedicated headless runtime without launching the Google Chrome app.
+
+---
+
 ## Current Health Status
-- **Automated Tests**: 23 isolated review, discovery, configuration, and diagnostic checks pass. Database-backed checks remain unavailable in the restricted sandbox and are not included in this result.
+- **Automated Tests**: 28 isolated review, discovery, configuration, browser-runtime, and diagnostic checks pass. A separate real headless PDF render also passes. Database-backed checks remain unavailable in the restricted sandbox and are not included in this result.
 - **PostgreSQL Database**: Canonical profile was reported loaded; migration ledger status must be checked outside the restricted sandbox.
 - **Playwright MCP**: Pinned configuration entry is present; live tool startup remains a per-session runtime check.
 - **Git State**: The diagnostic and post-review fixes are tracked in local repository history.

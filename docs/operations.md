@@ -15,7 +15,10 @@ Run non-mutating diagnostics to verify Python runtime, PostgreSQL 16 connection,
 Expected output:
 - Python 3.11+
 - PostgreSQL 16.x connected (`job_system`)
-- Google Chrome available
+- A dedicated headless Chromium runtime for PDF rendering. The resolver prefers
+  Playwright's `chrome-headless-shell`. It does not automatically launch the
+  branded macOS Google Chrome app. Set `HEADLESS_BROWSER_PATH` to select a
+  specific executable.
 - Core modules: `psycopg`, `pandas`, `python-jobspy`, `fastmcp`, `pydantic`, `pyyaml`, `pypdf`, `jinja2`
 
 ---

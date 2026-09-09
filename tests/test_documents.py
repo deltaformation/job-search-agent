@@ -43,7 +43,7 @@ def test_document_rendering_and_pdf_compilation(candidate_data, tmp_path):
     assert "Mouad Atfi" in html
     assert "Professional Summary" in html
 
-    # Compile PDF via Chrome
+    # Compile PDF via the resolved dedicated headless browser.
     html_path, pdf_path, page_count = renderer.compile_html_to_pdf(
         html_content=html,
         job_id=job["job_id"],

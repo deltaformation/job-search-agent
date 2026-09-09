@@ -24,6 +24,11 @@ This document records the exact system configuration, tooling, and environment d
 | **Git** | `git version 2.39.5` (`/opt/homebrew/bin/git`) | Active & Functional |
 | **Homebrew** | `/opt/homebrew/bin/brew` (owned by user `mouadatfi:admin`) | Active & Functional |
 | **Google Chrome** | `/Applications/Google Chrome.app` | Installed & Available |
+| **Headless Chromium** | Playwright cache (`chromium_headless_shell-*`) | Preferred for automated PDF rendering |
+
+Automated document tests use the dedicated headless runtime. The branded
+Google Chrome application is reserved for an explicitly requested visible user
+session and is never selected automatically by the PDF renderer.
 | **Docker / Podman** | Not present in PATH | Native PostgreSQL via Homebrew selected |
 
 ## Network & Local Ports
