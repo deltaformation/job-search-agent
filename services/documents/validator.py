@@ -18,6 +18,14 @@ class ClaimValidator:
         }
         self.work_exp_by_id = {str(e["id"]): e for e in candidate_profile.get("work_experience", [])}
 
+    VALID_CATEGORIES = {
+        "experience", "skill", "responsibility", "domain",
+        "location", "compensation", "screening", "other"
+    }
+    VALID_IMPORTANCE = {"required", "preferred", "unspecified"}
+    VALID_MATCH_STATUS = {"matched", "partial", "unsupported", "gap"}
+    VALID_REVIEW_STATUS = {"proposed", "confirmed"}
+
     def validate_requirement_analysis(
         self, requirements: List[Dict[str, Any]], jd_text: Optional[str] = None
     ) -> Tuple[bool, List[str]]:
@@ -34,27 +42,89 @@ class ClaimValidator:
                 errors.append("Requirement IDs must be nonempty and unique.")
             else:
                 seen.add(rid)
-            status = req.get("status")
-            if status not in ("matched", "partial", "unsupported", "gap"):
-                errors.append(f"Requirement '{rid}' has an invalid status.")
+
+            status = req.get("match_status") or req.get("status")
+            if status not in self.VALID_MATCH_STATUS:
+                errors.append(f"Requirement '{rid}' has an invalid match_status: '{status}'. Allowed: {self.VALID_MATCH_STATUS}")
+
+            category = req.get("category", "experience")
+            if category not in self.VALID_CATEGORIES:
+                errors.append(f"Requirement '{rid}' has invalid category '{category}'. Allowed: {self.VALID_CATEGORIES}")
+
+            importance = req.get("importance", "required")
+            if importance not in self.VALID_IMPORTANCE:
+                errors.append(f"Requirement '{rid}' has invalid importance '{importance}'. Allowed: {self.VALID_IMPORTANCE}")
+
+            review_status = req.get("review_status", "proposed")
+            if review_status not in self.VALID_REVIEW_STATUS:
+                errors.append(f"Requirement '{rid}' has invalid review_status '{review_status}'. Allowed: {self.VALID_REVIEW_STATUS}")
+
             quote = req.get("jd_quote")
             if not isinstance(quote, str) or not quote.strip() or (jd_text is not None and quote not in jd_text):
                 errors.append(f"Requirement '{rid}' must quote exact JD text.")
-            ids = req.get("matched_fact_ids", [])
+
+            ids = req.get("evidence_fact_ids") if "evidence_fact_ids" in req else req.get("matched_fact_ids", [])
             if not isinstance(ids, list) or any(not isinstance(fid, str) for fid in ids):
                 errors.append(f"Requirement '{rid}' requires a list of fact IDs.")
                 continue
             if status in ("matched", "partial") and not ids:
-                errors.append(f"Requirement '{rid}' has no matched_fact_ids.")
+                errors.append(f"Requirement '{rid}' has no matched_fact_ids (empty evidence).")
             for fid in ids:
                 if fid not in self.verified_facts_by_id:
                     errors.append(f"Requirement '{rid}' references unknown or unapproved fact_id '{fid}'.")
+
+            evidence_quotes = req.get("evidence_quotes", [])
+            if status in ("matched", "partial"):
+                if not isinstance(evidence_quotes, list) or not evidence_quotes:
+                    errors.append(f"Requirement '{rid}' requires evidence_quotes for every proposed match.")
+                else:
+                    cited_texts = {
+                        self.verified_facts_by_id[fid]["text"]
+                        for fid in ids if fid in self.verified_facts_by_id
+                    }
+                    if set(evidence_quotes) != cited_texts:
+                        errors.append(
+                            f"Requirement '{rid}' evidence_quotes must exactly match its cited fact texts."
+                        )
+
             # Semantic correspondence is a proposal, not a deterministic fact check.
             # Exact fact quotations are the only automatically certified matches in V1.
             if status == "matched" and ids and not any(
                 quote == self.verified_facts_by_id.get(fid, {}).get("text") for fid in ids
             ):
-                errors.append(f"Requirement '{rid}': semantic matches must be 'partial' pending human review.")
+                if review_status != "confirmed":
+                    errors.append(f"Requirement '{rid}': semantic matches must be 'partial' pending human review.")
+        return not errors, errors
+
+    def validate_analysis_submission(
+        self,
+        analysis_data: Dict[str, Any],
+        jd_snapshot: Dict[str, Any],
+        candidate_snapshot: Dict[str, Any]
+    ) -> Tuple[bool, List[str]]:
+        errors: List[str] = []
+        if not isinstance(analysis_data, dict):
+            return False, ["Analysis submission must be a JSON object."]
+
+        # Validate snapshot identity against superseding
+        sub_jd_snap = str(analysis_data.get("jd_snapshot_id", ""))
+        actual_jd_snap = str(jd_snapshot.get("id", ""))
+        if sub_jd_snap != actual_jd_snap:
+            errors.append(f"Stale or mismatched jd_snapshot_id '{sub_jd_snap}'. Current snapshot is '{actual_jd_snap}'.")
+
+        sub_cand_snap = str(analysis_data.get("candidate_snapshot_id", ""))
+        actual_cand_snap = str(candidate_snapshot.get("id", ""))
+        if sub_cand_snap != actual_cand_snap:
+            errors.append(f"Stale or mismatched candidate_snapshot_id '{sub_cand_snap}'. Current snapshot is '{actual_cand_snap}'.")
+
+        reqs = analysis_data.get("requirements")
+        if not isinstance(reqs, list) or not reqs:
+            errors.append("Analysis must contain a non-empty list of requirements.")
+        else:
+            jd_text = jd_snapshot.get("cleaned_text") or jd_snapshot.get("raw_text") or ""
+            valid_reqs, req_errors = self.validate_requirement_analysis(reqs, jd_text=jd_text)
+            errors.extend(req_errors)
+
         return not errors, errors
 
     def validate_claim(self, claim: Dict[str, Any]) -> Tuple[bool, List[str]]:

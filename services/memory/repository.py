@@ -3,10 +3,12 @@ import json
 import hashlib
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
+from uuid import uuid4
 import psycopg
 from psycopg.rows import dict_row
 from services.discovery.deduplicator import is_ats_url, detect_ats_type
+from services.discovery.normalizer import generate_content_hash
 
 # Compute freshness at read time, including jobs that are never scraped again.
 FRESHNESS_JOIN = """
@@ -23,13 +25,41 @@ FRESHNESS_JOIN = """
     ) fresh
 """
 
+ALLOWED_WORKFLOW_TRANSITIONS = {
+    "NEW": {"QUALIFIED", "SHORTLISTED", "REVIEWED", "REVIEW", "SKIPPED", "EXPIRED"},
+    "QUALIFIED": {"SHORTLISTED", "REVIEWED", "TAILORING", "SKIPPED", "EXPIRED"},
+    "SHORTLISTED": {"REVIEWED", "TAILORING", "SKIPPED", "EXPIRED"},
+    "REVIEW": {"TAILORING", "READY", "SKIPPED", "REJECTED", "EXPIRED"},
+    "REVIEWED": {"TAILORING", "READY", "SKIPPED", "REJECTED", "EXPIRED"},
+    "TAILORING": {"READY", "SKIPPED", "REJECTED"},
+    "READY": {"APPLICATION_STARTED", "WAITING_FOR_HUMAN", "SKIPPED", "REJECTED"},
+    "APPLICATION_STARTED": {"WAITING_FOR_HUMAN", "SUBMITTED", "WITHDRAWN", "REJECTED"},
+    "WAITING_FOR_HUMAN": {"SUBMITTED", "WITHDRAWN", "REJECTED"},
+    "SUBMITTED": {"SCREEN", "INTERVIEW", "FINAL", "OFFER", "REJECTED", "WITHDRAWN"},
+    "SCREEN": {"INTERVIEW", "FINAL", "OFFER", "REJECTED", "WITHDRAWN"},
+    "INTERVIEW": {"FINAL", "OFFER", "REJECTED", "WITHDRAWN"},
+    "FINAL": {"OFFER", "REJECTED", "WITHDRAWN"},
+    "OFFER": {"ACCEPTED", "REJECTED", "WITHDRAWN"},
+    "SKIPPED": {"NEW", "REVIEWED"},
+    "REJECTED": {"NEW", "REVIEWED"},
+    "EXPIRED": {"NEW"},
+    "WITHDRAWN": {"NEW"},
+    "ACCEPTED": set(),
+}
+
+ACTIVE_APPLICATION_STATES = {
+    "TAILORING", "READY", "APPLICATION_STARTED", "WAITING_FOR_HUMAN",
+    "SUBMITTED", "SCREEN", "INTERVIEW", "FINAL", "OFFER", "ACCEPTED",
+    "SKIPPED", "REJECTED", "WITHDRAWN"
+}
+
 DEFAULT_DB_URL = "postgresql://mouadatfi@localhost:5432/job_system"
 
 class JobRepository:
-    def __init__(self, db_url: Optional[str] = None):
+    def __init__(self, db_url: Optional[str] = None) -> None:
         self.db_url = db_url or os.getenv("DATABASE_URL", DEFAULT_DB_URL)
 
-    def get_connection(self):
+    def get_connection(self) -> psycopg.Connection[Dict[str, Any]]:
         return psycopg.connect(self.db_url, row_factory=dict_row)
 
     def get_candidate_profile(self) -> Optional[Dict[str, Any]]:
@@ -90,6 +120,18 @@ class JobRepository:
         Inserts or updates a job and appends source provenance.
         Returns (job_record, is_new).
         """
+        job_data = dict(job_data)
+        source_data = dict(source_data)
+
+        if not job_data.get("canonical_url"):
+            raise ValueError("canonical_url is required; synthetic job URLs are not permitted.")
+        if not job_data.get("content_hash"):
+            job_data["content_hash"] = generate_content_hash(
+                job_data.get("company", ""),
+                job_data.get("normalized_title") or job_data.get("title", ""),
+                job_data.get("description", "")
+            )
+
         with self.get_connection() as conn:
             with conn.cursor() as cur:
                 # Resolve every deduplication signal against the full database,
@@ -175,13 +217,15 @@ class JobRepository:
                             posted_at_source, posted_at_confidence, first_seen_at, last_seen_at,
                             age_hours, freshness_bucket, description, ats_type, requirements,
                             preferred_requirements, keywords, content_hash, status,
-                            min_amount, max_amount, currency
+                            min_amount, max_amount, currency,
+                            is_observation_age, date_inconsistent, assessment_status
                         ) VALUES (
                             %s, %s, %s, %s, %s, %s,
                             %s, %s, %s, %s, %s,
                             %s, %s, NOW(), NOW(),
                             %s, %s, %s, %s, %s,
                             %s, %s, %s, %s,
+                            %s, %s, %s,
                             %s, %s, %s
                         ) RETURNING *;
                     """, (
@@ -209,7 +253,10 @@ class JobRepository:
                         job_data.get("status", "NEW"),
                         job_data.get("min_amount"),
                         job_data.get("max_amount"),
-                        job_data.get("currency")
+                        job_data.get("currency"),
+                        bool(job_data.get("is_observation_age", False)),
+                        bool(job_data.get("date_inconsistent", False)),
+                        job_data.get("assessment_status", "ANALYSIS_PENDING")
                     ))
                     new_job = cur.fetchone()
                     job_id = new_job["job_id"]
@@ -241,6 +288,9 @@ class JobRepository:
         min_score: Optional[float] = None,
         status: Optional[str] = None,
         max_age_hours: Optional[float] = None,
+        first_seen_since: Optional[datetime] = None,
+        exclude_stale: bool = False,
+        assessment_status: Optional[str] = None,
         limit: int = 50
     ) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:
@@ -265,6 +315,14 @@ class JobRepository:
                 if max_age_hours is not None:
                     query += " AND age.raw_age <= %s"
                     params.append(max_age_hours)
+                if first_seen_since is not None:
+                    query += " AND j.first_seen_at >= %s"
+                    params.append(first_seen_since)
+                if exclude_stale:
+                    query += " AND age.raw_age <= 72.0"
+                if assessment_status:
+                    query += " AND j.assessment_status = %s"
+                    params.append(assessment_status)
 
                 query += " ORDER BY s.overall_score DESC NULLS LAST, j.posted_at DESC NULLS LAST LIMIT %s;"
                 params.append(limit)
@@ -298,18 +356,29 @@ class JobRepository:
 
                 return job
 
-    def save_job_score(self, job_id: str, score_data: Dict[str, Any]) -> Dict[str, Any]:
+    def save_job_score(self, job_id: str, score_data: Dict[str, Any], analysis_id: Optional[str] = None) -> Dict[str, Any]:
         with self.get_connection() as conn:
             with conn.cursor() as cur:
+                # Serialize score-version allocation and workflow updates per job.
+                cur.execute("SELECT status FROM jobs WHERE job_id = %s FOR UPDATE;", (job_id,))
+                job_row = cur.fetchone()
+                if not job_row:
+                    raise ValueError(f"Job {job_id} not found.")
+                current_status = job_row["status"]
+
                 cur.execute("""
                     INSERT INTO job_scores (
                         job_id, overall_score, recommendation, role_alignment, experience_score,
                         seniority_score, skills_score, domain_score, location_score, comp_score,
-                        preference_score, strengths, gaps, risks, evidence_fact_ids, scored_at
+                        preference_score, strengths, gaps, risks, evidence_fact_ids,
+                        analysis_id, is_provisional, evidence_coverage, score_band,
+                        factor_breakdown, uncertainties, scoring_version, scored_at
                     ) VALUES (
                         %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, NOW()
+                        %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s, NOW()
                     )
                     ON CONFLICT (job_id) DO UPDATE SET
                         overall_score = EXCLUDED.overall_score,
@@ -326,6 +395,13 @@ class JobRepository:
                         gaps = EXCLUDED.gaps,
                         risks = EXCLUDED.risks,
                         evidence_fact_ids = EXCLUDED.evidence_fact_ids,
+                        analysis_id = EXCLUDED.analysis_id,
+                        is_provisional = EXCLUDED.is_provisional,
+                        evidence_coverage = EXCLUDED.evidence_coverage,
+                        score_band = EXCLUDED.score_band,
+                        factor_breakdown = EXCLUDED.factor_breakdown,
+                        uncertainties = EXCLUDED.uncertainties,
+                        scoring_version = EXCLUDED.scoring_version,
                         scored_at = NOW()
                     RETURNING *;
                 """, (
@@ -343,22 +419,61 @@ class JobRepository:
                     json.dumps(score_data.get("strengths", [])),
                     json.dumps(score_data.get("gaps", [])),
                     json.dumps(score_data.get("risks", [])),
-                    json.dumps(score_data.get("evidence_fact_ids", []))
+                    json.dumps(score_data.get("evidence_fact_ids", [])),
+                    analysis_id or score_data.get("analysis_id"),
+                    score_data.get("is_provisional", True),
+                    score_data.get("evidence_coverage", 0.0),
+                    score_data.get("score_band", "review"),
+                    json.dumps(score_data.get("factor_breakdown", {}), default=str),
+                    json.dumps(score_data.get("uncertainties", []), default=str),
+                    score_data.get("scoring_version", "v2")
                 ))
                 saved_score = cur.fetchone()
 
-                # Update job status if qualified
-                new_status = "QUALIFIED" if score_data["overall_score"] >= 85 else ("REVIEW" if score_data["overall_score"] >= 75 else "SKIPPED")
                 cur.execute("""
-                    UPDATE jobs 
-                    SET status = %s, updated_at = NOW() 
-                    WHERE job_id = %s;
-                """, (new_status, job_id))
+                    INSERT INTO job_score_versions (
+                        job_id, version_number, analysis_id, score_data, scoring_version
+                    )
+                    SELECT %s, COALESCE(MAX(version_number), 0) + 1, %s, %s, %s
+                    FROM job_score_versions
+                    WHERE job_id = %s
+                    RETURNING *;
+                """, (
+                    job_id,
+                    analysis_id or score_data.get("analysis_id"),
+                    json.dumps(score_data, default=str),
+                    score_data.get("scoring_version", "v2"),
+                    job_id,
+                ))
 
+                # Provisional scores are advisory and cannot advance or reject a
+                # job in the human workflow.
+                if not score_data.get("is_provisional", True) and current_status in ("NEW", "QUALIFIED", "REVIEW"):
+                    if score_data["overall_score"] >= 85:
+                        new_status = "QUALIFIED"
+                    elif score_data["overall_score"] >= 75:
+                        new_status = "REVIEW"
+                    else:
+                        new_status = "SKIPPED"
+
+                    cur.execute("""
+                        UPDATE jobs
+                        SET status = %s, updated_at = NOW()
+                        WHERE job_id = %s;
+                    """, (new_status, job_id))
+
+                    cur.execute("""
+                        INSERT INTO job_events (job_id, event_type, from_status, to_status, details)
+                        VALUES (%s, 'SCORED', %s, %s, %s);
+                    """, (job_id, current_status, new_status, json.dumps({"score": score_data["overall_score"]})))
+
+                # Update assessment status
+                new_assessment = "SCORED" if not score_data.get("is_provisional", True) else "PROVISIONALLY_SCORED"
                 cur.execute("""
-                    INSERT INTO job_events (job_id, event_type, from_status, to_status, details)
-                    VALUES (%s, 'SCORED', 'NEW', %s, %s);
-                """, (job_id, new_status, json.dumps({"score": score_data["overall_score"]})))
+                    UPDATE jobs
+                    SET assessment_status = %s, updated_at = NOW()
+                    WHERE job_id = %s;
+                """, (new_assessment, job_id))
 
                 conn.commit()
                 return saved_score
@@ -427,6 +542,420 @@ class JobRepository:
                 conn.commit()
                 return True
 
+    def start_agent_run(
+        self,
+        run_type: str,
+        schedule_name: Optional[str] = None,
+        sources_used: Optional[List[str]] = None
+    ) -> str:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO agent_runs (
+                        run_type, schedule_name, status, start_time, sources_used
+                    ) VALUES (%s, %s, 'RUNNING', NOW(), %s)
+                    RETURNING id;
+                """, (
+                    run_type,
+                    schedule_name,
+                    json.dumps(sources_used or [])
+                ))
+                run_id = cur.fetchone()["id"]
+                conn.commit()
+                return str(run_id)
+
+    def finalize_agent_run(
+        self,
+        run_id: str,
+        status: str,
+        metrics: Optional[Dict[str, Any]] = None,
+        errors: Optional[List[str]] = None,
+        summary: Optional[Dict[str, Any]] = None,
+        jobs_found: int = 0,
+        jobs_new: int = 0,
+        jobs_duplicate: int = 0,
+        jobs_stale: int = 0,
+        jobs_scored: int = 0,
+        jobs_qualified: int = 0
+    ) -> None:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE agent_runs
+                    SET end_time = NOW(),
+                        status = %s,
+                        metrics = %s,
+                        errors = %s,
+                        summary = %s,
+                        jobs_found = %s,
+                        jobs_new = %s,
+                        jobs_duplicate = %s,
+                        jobs_stale = %s,
+                        jobs_scored = %s,
+                        jobs_qualified = %s
+                    WHERE id = %s;
+                """, (
+                    status,
+                    json.dumps(metrics or {}, default=str),
+                    json.dumps(errors or [], default=str),
+                    json.dumps(summary or {}, default=str),
+                    jobs_found,
+                    jobs_new,
+                    jobs_duplicate,
+                    jobs_stale,
+                    jobs_scored,
+                    jobs_qualified,
+                    run_id
+                ))
+                conn.commit()
+
+    def save_discovery_observation(self, run_id: str, obs: Dict[str, Any]) -> str:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO discovery_observations (
+                        run_id, source_name, query, status, records_received,
+                        records_normalized, records_rejected, errors, duration_ms
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id;
+                """, (
+                    run_id,
+                    obs.get("source", "unknown"),
+                    json.dumps(obs.get("query", {}), default=str),
+                    obs.get("status", "success"),
+                    obs.get("records_received", 0),
+                    obs.get("records_normalized", 0),
+                    obs.get("records_rejected", 0),
+                    json.dumps(obs.get("errors", []), default=str),
+                    obs.get("duration_ms", 0)
+                ))
+                obs_id = cur.fetchone()["id"]
+                conn.commit()
+                return str(obs_id)
+
+    def get_discovery_observations(self, run_id: str) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM discovery_observations WHERE run_id = %s ORDER BY created_at ASC;", (run_id,))
+                return cur.fetchall()
+
+    def acquire_schedule_lock(self, schedule_name: str, run_id: str, ttl_seconds: int = 1800) -> bool:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                # Clear expired locks
+                cur.execute("DELETE FROM schedule_locks WHERE expires_at < NOW();")
+                cur.execute("""
+                    INSERT INTO schedule_locks (schedule_name, locked_at, locked_by, expires_at)
+                    VALUES (%s, NOW(), %s, NOW() + interval '%s second')
+                    ON CONFLICT (schedule_name) DO NOTHING
+                    RETURNING locked_by;
+                """, (schedule_name, run_id, ttl_seconds))
+                row = cur.fetchone()
+                if row:
+                    conn.commit()
+                    return True
+
+                cur.execute("SELECT locked_by FROM schedule_locks WHERE schedule_name = %s;", (schedule_name,))
+                existing = cur.fetchone()
+                conn.commit()
+                if existing and str(existing["locked_by"]) == str(run_id):
+                    return True
+                return False
+
+    def release_schedule_lock(self, schedule_name: str, run_id: str) -> None:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    DELETE FROM schedule_locks
+                    WHERE schedule_name = %s AND locked_by = %s;
+                """, (schedule_name, run_id))
+                conn.commit()
+
+    def transition_job_workflow(
+        self,
+        job_id: str,
+        next_state: str,
+        actor: str = "human",
+        reason: str = "",
+        details: Optional[Dict[str, Any]] = None,
+        human_confirmed: bool = False
+    ) -> Tuple[bool, str]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT status FROM jobs WHERE job_id = %s FOR UPDATE;", (job_id,))
+                row = cur.fetchone()
+                if not row:
+                    return False, f"Job {job_id} not found."
+                current = row["status"]
+
+                if current == next_state:
+                    return True, f"Job already in state '{next_state}'."
+
+                allowed = ALLOWED_WORKFLOW_TRANSITIONS.get(current, set())
+                if next_state not in allowed:
+                    return False, f"Illegal transition from '{current}' to '{next_state}'. Allowed: {sorted(allowed)}."
+
+                if next_state == "READY":
+                    cur.execute("""
+                        SELECT 1 FROM resume_versions
+                        WHERE job_id = %s AND approved_by_human = TRUE
+                        LIMIT 1;
+                    """, (job_id,))
+                    if not cur.fetchone():
+                        return False, "Cannot transition to READY without an approved resume version."
+
+                if next_state == "SUBMITTED":
+                    if not human_confirmed:
+                        return False, "Cannot transition to SUBMITTED without explicit human confirmation."
+
+                cur.execute("""
+                    UPDATE jobs
+                    SET status = %s, updated_at = NOW()
+                    WHERE job_id = %s;
+                """, (next_state, job_id))
+
+                cur.execute("""
+                    INSERT INTO job_events (job_id, event_type, from_status, to_status, details)
+                    VALUES (%s, 'WORKFLOW_TRANSITION', %s, %s, %s);
+                """, (job_id, current, next_state, json.dumps({"actor": actor, "reason": reason, "details": details or {}})))
+
+                conn.commit()
+                return True, f"Transitioned from '{current}' to '{next_state}'."
+
+    def save_job_analysis(
+        self,
+        job_id: str,
+        jd_snapshot_id: str,
+        candidate_snapshot_id: str,
+        requirements: List[Dict[str, Any]],
+        notes: str = "",
+        created_by: str = "antigravity"
+    ) -> Dict[str, Any]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT job_id FROM jobs WHERE job_id = %s FOR UPDATE;", (job_id,))
+                if not cur.fetchone():
+                    raise ValueError(f"Job {job_id} not found.")
+
+                cur.execute("""
+                    SELECT COALESCE(MAX(version_number), 0) + 1 AS next_ver
+                    FROM job_analyses WHERE job_id = %s;
+                """, (job_id,))
+                next_ver = cur.fetchone()["next_ver"]
+
+                cur.execute("""
+                    INSERT INTO job_analyses (
+                        job_id, version_number, jd_snapshot_id, candidate_snapshot_id,
+                        requirements, notes, created_by
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING *;
+                """, (
+                    job_id,
+                    next_ver,
+                    jd_snapshot_id,
+                    candidate_snapshot_id,
+                    json.dumps(requirements, default=str),
+                    notes,
+                    created_by
+                ))
+                saved = cur.fetchone()
+
+                cur.execute("""
+                    UPDATE jobs
+                    SET assessment_status = 'ANALYZED', updated_at = NOW()
+                    WHERE job_id = %s;
+                """, (job_id,))
+
+                conn.commit()
+                return saved
+
+    def get_job_analysis(self, job_id: str, version_number: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                if version_number is not None:
+                    cur.execute("SELECT * FROM job_analyses WHERE job_id = %s AND version_number = %s;", (job_id, version_number))
+                else:
+                    cur.execute("SELECT * FROM job_analyses WHERE job_id = %s ORDER BY version_number DESC LIMIT 1;", (job_id,))
+                return cur.fetchone()
+
+    def get_pending_analysis_jobs(self, limit: int = 10, min_score: Optional[float] = None) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                query = f"""
+                    SELECT j.*, fresh.age_hours, fresh.freshness_bucket, s.overall_score, s.recommendation
+                    FROM jobs j
+                    {FRESHNESS_JOIN}
+                    LEFT JOIN job_scores s ON j.job_id = s.job_id
+                    WHERE j.assessment_status = 'ANALYSIS_PENDING'
+                      AND j.status NOT IN ('SKIPPED', 'REJECTED', 'EXPIRED', 'WITHDRAWN')
+                """
+                params = []
+                if min_score is not None:
+                    query += " AND s.overall_score >= %s"
+                    params.append(min_score)
+                query += " ORDER BY s.overall_score DESC NULLS LAST, j.first_seen_at DESC LIMIT %s;"
+                params.append(limit)
+                cur.execute(query, params)
+                return cur.fetchall()
+
+    def record_review_decision(
+        self,
+        job_id: str,
+        decision: str,
+        skip_reason: Optional[str] = None,
+        notes: Optional[str] = None,
+        deferred_until: Optional[datetime] = None,
+        reviewer: str = "human"
+    ) -> Dict[str, Any]:
+        allowed_decisions = {"reviewed", "tailoring", "skipped", "deferred"}
+        if decision not in allowed_decisions:
+            raise ValueError(f"Invalid review decision '{decision}'.")
+        if decision == "skipped" and not skip_reason:
+            raise ValueError("A skip reason is required.")
+        if decision == "deferred" and (deferred_until is None or deferred_until <= datetime.now(timezone.utc)):
+            raise ValueError("A future deferred_until value is required.")
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT status FROM jobs WHERE job_id = %s FOR UPDATE", (job_id,))
+                job = cur.fetchone()
+                if not job:
+                    raise ValueError(f"Job {job_id} not found.")
+                next_state = {"reviewed": "REVIEWED", "tailoring": "TAILORING", "skipped": "SKIPPED"}.get(decision)
+                if next_state and job["status"] != next_state:
+                    allowed = ALLOWED_WORKFLOW_TRANSITIONS.get(job["status"], set())
+                    if next_state not in allowed:
+                        raise ValueError(f"Illegal transition from '{job['status']}' to '{next_state}'.")
+                    cur.execute("UPDATE jobs SET status = %s, updated_at = NOW() WHERE job_id = %s", (next_state, job_id))
+                    cur.execute("""
+                        INSERT INTO job_events (job_id, event_type, from_status, to_status, details)
+                        VALUES (%s, 'WORKFLOW_TRANSITION', %s, %s, %s)
+                    """, (job_id, job["status"], next_state, json.dumps({"actor": reviewer, "reason": notes or skip_reason or decision})))
+                cur.execute("""
+                    INSERT INTO review_decisions (
+                        job_id, decision, skip_reason, notes, deferred_until, reviewer
+                    ) VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING *;
+                """, (job_id, decision, skip_reason, notes, deferred_until, reviewer))
+                record = cur.fetchone()
+                conn.commit()
+                return record
+
+    def get_shortlist(
+        self,
+        first_seen_since: Optional[datetime] = None,
+        max_age_hours: Optional[float] = None,
+        min_score: Optional[float] = None,
+        limit: int = 10,
+        exclude_skipped: bool = True,
+        exclude_deferred: bool = True,
+        include_provisional: bool = False,
+        exclude_delivered: bool = True
+    ) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE shortlist_reservations
+                    SET status = 'EXPIRED'
+                    WHERE status = 'RESERVED' AND expires_at < NOW();
+                """)
+
+                query = f"""
+                    SELECT j.*, fresh.age_hours, fresh.freshness_bucket,
+                           s.overall_score, s.recommendation, s.score_band, s.is_provisional,
+                           s.evidence_coverage, s.strengths, s.gaps, s.risks, s.evidence_fact_ids,
+                           CASE WHEN s.score_band = 'exceptional' THEN 1
+                                WHEN s.score_band = 'strong' THEN 2
+                                WHEN s.score_band = 'review' THEN 3
+                                ELSE 4 END AS tier_rank
+                    FROM jobs j
+                    {FRESHNESS_JOIN}
+                    LEFT JOIN job_scores s ON j.job_id = s.job_id
+                    WHERE 1=1
+                """
+                params = []
+                if exclude_skipped:
+                    query += " AND j.status NOT IN ('SKIPPED', 'REJECTED', 'EXPIRED', 'WITHDRAWN')"
+                if exclude_deferred:
+                    query += """
+                        AND NOT EXISTS (
+                            SELECT 1 FROM review_decisions rd
+                            WHERE rd.job_id = j.job_id AND rd.decision = 'deferred'
+                              AND rd.deferred_until IS NOT NULL AND rd.deferred_until > NOW()
+                        )
+                    """
+                if not include_provisional:
+                    query += " AND s.is_provisional = FALSE AND j.assessment_status = 'SCORED'"
+                if exclude_delivered:
+                    query += """
+                        AND NOT EXISTS (
+                            SELECT 1 FROM shortlist_reservations sr
+                            WHERE sr.job_id = j.job_id
+                              AND (sr.status = 'ACKNOWLEDGED'
+                                   OR (sr.status = 'RESERVED' AND sr.expires_at >= NOW()))
+                        )
+                    """
+                if first_seen_since:
+                    query += " AND j.first_seen_at >= %s"
+                    params.append(first_seen_since)
+                if max_age_hours is not None:
+                    query += " AND age.raw_age <= %s"
+                    params.append(max_age_hours)
+                if min_score is not None:
+                    query += " AND s.overall_score >= %s"
+                    params.append(min_score)
+
+                query += """
+                    ORDER BY tier_rank ASC, s.overall_score DESC NULLS LAST, age.raw_age ASC, j.job_id ASC
+                    LIMIT %s;
+                """
+                params.append(limit)
+                cur.execute(query, params)
+                return cur.fetchall()
+
+    def reserve_shortlist(self, job_ids: List[str], batch_id: str, ttl_minutes: int = 30) -> List[str]:
+        if ttl_minutes <= 0:
+            raise ValueError("ttl_minutes must be positive.")
+        if not job_ids:
+            return []
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE shortlist_reservations
+                    SET status = 'EXPIRED'
+                    WHERE status = 'RESERVED' AND expires_at < NOW();
+                """)
+                cur.execute("""
+                    INSERT INTO shortlist_reservations (
+                        batch_id, job_id, reserved_at, expires_at, status
+                    )
+                    SELECT %s, requested.job_id, NOW(),
+                           NOW() + make_interval(mins => %s), 'RESERVED'
+                    FROM unnest(%s::uuid[]) AS requested(job_id)
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM shortlist_reservations existing
+                        WHERE existing.job_id = requested.job_id
+                          AND (existing.status = 'ACKNOWLEDGED'
+                               OR (existing.status = 'RESERVED' AND existing.expires_at >= NOW()))
+                    )
+                    ON CONFLICT DO NOTHING
+                    RETURNING job_id
+                """, (batch_id, ttl_minutes, job_ids))
+                reserved = [str(row["job_id"]) for row in cur.fetchall()]
+                conn.commit()
+        return reserved
+
+    def acknowledge_shortlist_delivery(self, batch_id: str, job_ids: List[str]) -> int:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE shortlist_reservations
+                    SET status = 'ACKNOWLEDGED', acknowledged_at = NOW()
+                    WHERE batch_id = %s AND job_id = ANY(%s) AND status = 'RESERVED';
+                """, (batch_id, job_ids))
+                count = cur.rowcount
+                conn.commit()
+                return count
+
     def save_candidate_snapshot(self, candidate_id: str, profile_data: Dict[str, Any]) -> str:
         data_str = json.dumps(profile_data, sort_keys=True, default=str)
         s_hash = hashlib.sha256(data_str.encode("utf-8")).hexdigest()
@@ -439,6 +968,12 @@ class JobRepository:
                 """, (candidate_id, s_hash, data_str))
                 conn.commit()
                 return str(cur.fetchone()["id"])
+
+    def get_candidate_snapshot(self, snapshot_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM candidate_profile_snapshots WHERE id = %s", (snapshot_id,))
+                return cur.fetchone()
 
     def save_jd_snapshot(self, job_id: str, raw_text: str, cleaned_text: str) -> str:
         c_hash = hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()

@@ -4,6 +4,7 @@ def test_scorer_strong_match():
     scorer = FitScorer()
     candidate_profile = {
         "target_titles": ["Senior Product Manager", "Technical Product Manager"],
+        "years_of_experience": 8.0,
         "verified_facts": [
             {
                 "fact_id": "fact_001",

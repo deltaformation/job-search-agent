@@ -14,7 +14,12 @@ def generate_documents(repo: JobRepository, job_id: str, draft: Optional[Dict[st
     if not profile or not job:
         raise ValueError("Job or candidate profile not found.")
     tailor = ResumeTailor(profile)
-    requirements = repo.get_job_requirements(job_id)
+    analysis = repo.get_job_analysis(job_id)
+    requirements = (
+        analysis.get("requirements", [])
+        if analysis
+        else repo.get_job_requirements(job_id)
+    )
     if draft is None:
         matched = [fid for r in requirements for fid in r.get("matched_fact_ids", [])]
         draft = tailor.generate_tailored_draft(job, matched_fact_ids=matched)

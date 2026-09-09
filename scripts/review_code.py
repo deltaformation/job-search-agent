@@ -12,7 +12,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 CLAUDE_BIN = os.getenv("CLAUDE_BIN", "/Users/mouadatfi/.local/bin/claude")
 
-def get_git_diff(target="staged"):
+def get_git_diff(target: str = "staged") -> str:
     try:
         if target == "staged":
             cmd = ["git", "diff", "--cached"]
@@ -89,7 +89,7 @@ Provide a structured, rigorous code review including:
     except Exception as e:
         return f"Exception during Claude Code review: {str(e)}"
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Run Claude Code Review on Job Search Agent repository.")
     parser.add_argument(
         "--target",

@@ -60,10 +60,19 @@ def test_job_repository_roundtrip(isolated_repo: JobRepository) -> None:
         "strengths": ["Strong cloud experience"],
         "gaps": [],
         "risks": [],
-        "evidence_fact_ids": ["fact_001", "fact_002"]
+        "evidence_fact_ids": ["fact_001", "fact_002"],
+        "is_provisional": False,
     }
     saved_score = repo.save_job_score(job_id, score_payload)
     assert float(saved_score["overall_score"]) == 92.5
+    with repo.get_connection() as conn:
+        versions = conn.execute(
+            "SELECT version_number, score_data FROM job_score_versions WHERE job_id = %s",
+            (job_id,),
+        ).fetchall()
+    assert len(versions) == 1
+    assert versions[0]["version_number"] == 1
+    assert versions[0]["score_data"]["overall_score"] == 92.5
 
     # 4. Query job by ID
     retrieved = repo.get_job_by_id(job_id)
