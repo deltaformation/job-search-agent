@@ -1986,3 +1986,236 @@ class JobRepository:
                 params.append(limit)
                 cur.execute(query, params)
                 return cur.fetchall()
+
+    # -------------------------------------------------------------
+    # UI SESSION & OUTBOX METHODS (MILESTONE 5)
+    # -------------------------------------------------------------
+    def create_ui_session(
+        self,
+        token_hash: str,
+        conversation_id: str,
+        workspace_path: str,
+        purpose: str,
+        allowed_actions: List[str],
+        allowed_entity_ids: List[str],
+        expires_at: datetime
+    ) -> Dict[str, Any]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO ui_sessions (
+                        token_hash, conversation_id, workspace_path, purpose,
+                        allowed_actions, allowed_entity_ids, expires_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING *;
+                """, (
+                    token_hash,
+                    conversation_id,
+                    workspace_path,
+                    purpose,
+                    json.dumps(allowed_actions),
+                    json.dumps([str(e) for e in allowed_entity_ids]),
+                    expires_at
+                ))
+                record = cur.fetchone()
+                conn.commit()
+                return record
+
+    def get_ui_session_by_token_hash(self, token_hash: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM ui_sessions WHERE token_hash = %s;", (token_hash,))
+                return cur.fetchone()
+
+    def get_ui_session_by_cookie_hash(self, cookie_hash: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM ui_sessions WHERE session_cookie_hash = %s;", (cookie_hash,))
+                return cur.fetchone()
+
+    def redeem_ui_session_token(self, session_id: str, cookie_hash: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE ui_sessions
+                    SET redeemed_at = NOW(),
+                        session_cookie_hash = %s,
+                        updated_at = NOW()
+                    WHERE id = %s AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > NOW()
+                    RETURNING *;
+                """, (cookie_hash, session_id))
+                record = cur.fetchone()
+                conn.commit()
+                return record
+
+    def revoke_ui_session(self, session_id: str) -> bool:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE ui_sessions
+                    SET revoked_at = NOW(), updated_at = NOW()
+                    WHERE id = %s AND revoked_at IS NULL;
+                """, (session_id,))
+                revoked = cur.rowcount > 0
+                conn.commit()
+                return revoked
+
+    def create_ui_action(
+        self,
+        ui_session_id: str,
+        action_type: str,
+        entity_type: str,
+        entity_id: Optional[str],
+        payload: Dict[str, Any],
+        idempotency_key: str
+    ) -> Tuple[Dict[str, Any], bool]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT * FROM ui_actions
+                    WHERE ui_session_id = %s AND idempotency_key = %s;
+                """, (ui_session_id, idempotency_key))
+                existing = cur.fetchone()
+                if existing:
+                    return existing, False
+
+                cur.execute("""
+                    INSERT INTO ui_actions (
+                        ui_session_id, action_type, entity_type, entity_id,
+                        payload, idempotency_key, status
+                    ) VALUES (%s, %s, %s, %s, %s, %s, 'PENDING')
+                    ON CONFLICT (ui_session_id, idempotency_key) DO NOTHING
+                    RETURNING *;
+                """, (
+                    ui_session_id,
+                    action_type,
+                    entity_type,
+                    entity_id,
+                    json.dumps(payload, default=str),
+                    idempotency_key
+                ))
+                created = cur.fetchone()
+                if created:
+                    conn.commit()
+                    return created, True
+
+                cur.execute("""
+                    SELECT * FROM ui_actions
+                    WHERE ui_session_id = %s AND idempotency_key = %s;
+                """, (ui_session_id, idempotency_key))
+                return cur.fetchone(), False
+
+    def get_ui_action(self, action_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM ui_actions WHERE id = %s;", (action_id,))
+                return cur.fetchone()
+
+    def lease_pending_ui_actions(
+        self,
+        limit: int,
+        lease_duration_seconds: int,
+        worker_token: str
+    ) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    WITH eligible AS (
+                        SELECT a.id, s.conversation_id, s.workspace_path
+                        FROM ui_actions a
+                        JOIN ui_sessions s ON a.ui_session_id = s.id
+                        WHERE (
+                            a.status = 'PENDING'
+                            OR (a.status = 'FAILED' AND a.next_retry_at <= NOW())
+                            OR (a.status = 'LEASED' AND a.lease_expires_at <= NOW())
+                        )
+                        AND s.revoked_at IS NULL
+                        AND s.expires_at > NOW()
+                        ORDER BY a.created_at ASC
+                        LIMIT %s
+                        FOR UPDATE OF a SKIP LOCKED
+                    )
+                    UPDATE ui_actions a
+                    SET status = 'LEASED',
+                        lease_token = %s,
+                        lease_expires_at = NOW() + (INTERVAL '1 second' * %s),
+                        updated_at = NOW()
+                    FROM eligible e
+                    WHERE a.id = e.id
+                    RETURNING a.*, e.conversation_id, e.workspace_path;
+                """, (limit, worker_token, lease_duration_seconds))
+                records = cur.fetchall()
+                conn.commit()
+                return records
+
+    def complete_ui_action_delivery(self, action_id: str, worker_token: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE ui_actions
+                    SET status = 'DELIVERED',
+                        delivered_at = NOW(),
+                        lease_token = NULL,
+                        lease_expires_at = NULL,
+                        updated_at = NOW()
+                    WHERE id = %s AND lease_token = %s
+                    RETURNING *;
+                """, (action_id, worker_token))
+                record = cur.fetchone()
+                conn.commit()
+                return record
+
+    def fail_ui_action_delivery(
+        self,
+        action_id: str,
+        worker_token: str,
+        error_summary: str,
+        is_permanent: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE ui_actions
+                    SET status = CASE WHEN %s THEN 'DEAD_LETTER' ELSE 'FAILED' END,
+                        retry_count = retry_count + 1,
+                        next_retry_at = NOW() + (INTERVAL '1 second' * POWER(2, LEAST(retry_count + 1, 8))),
+                        error_summary = %s,
+                        lease_token = NULL,
+                        lease_expires_at = NULL,
+                        updated_at = NOW()
+                    WHERE id = %s AND lease_token = %s
+                    RETURNING *;
+                """, (is_permanent, error_summary, action_id, worker_token))
+                record = cur.fetchone()
+                conn.commit()
+                return record
+
+    def record_ui_action_delivery_attempt(
+        self,
+        action_id: str,
+        attempt_number: int,
+        status: str,
+        error_details: Optional[str] = None,
+        duration_ms: int = 0
+    ) -> Dict[str, Any]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO ui_action_deliveries (
+                        ui_action_id, attempt_number, status, error_details, duration_ms
+                    ) VALUES (%s, %s, %s, %s, %s)
+                    RETURNING *;
+                """, (action_id, attempt_number, status, error_details, duration_ms))
+                record = cur.fetchone()
+                conn.commit()
+                return record
+
+    def get_ui_action_deliveries(self, action_id: str) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT * FROM ui_action_deliveries
+                    WHERE ui_action_id = %s
+                    ORDER BY attempt_number ASC;
+                """, (action_id,))
+                return cur.fetchall()

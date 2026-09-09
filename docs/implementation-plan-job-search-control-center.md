@@ -457,6 +457,18 @@ There must be no endpoint for final ATS submission.
 - Restarting the sidecar does not lose pending actions.
 - Agent tools cannot invoke the resume approval pathway through MCP.
 
+## Milestone 5 implementation review (2026-09-09)
+
+The post-implementation review verified the following operational and security properties:
+
+- The control service is strictly loopback-only, dynamically binding to free ports on 127.0.0.1 or localhost and rejecting any non-loopback bindings.
+- Security headers (CSP `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and `Cache-Control: no-store`) are enforced on every response.
+- Host header validation prevents DNS rebinding attacks, and Origin/Referer verification protects mutating POST endpoints against CSRF.
+- Single-use redemption URLs exchange opaque tokens for scoped, HttpOnly, SameSite=Strict session cookies, storing only SHA-256 hashes in PostgreSQL.
+- The leased outbox engine uses PostgreSQL `SELECT ... FOR UPDATE SKIP LOCKED` for race-free batch claiming, handles stranded leases on process restart, and employs bounded exponential backoff with dead-letter queueing.
+- Database triggers protect UI action payloads from mutation and guarantee that action delivery logs remain strictly append-only.
+- Resume approval and application submission remain strictly forbidden from MCP tool exposure and automated submission endpoints.
+
 ---
 
 # Milestone 6: Morning Job Dashboard
