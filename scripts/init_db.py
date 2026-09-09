@@ -31,6 +31,7 @@ def init_database(*, with_example_data: bool = False) -> None:
     if not with_example_data:
         print("Candidate data was not seeded. Load the reviewed canonical profile separately when needed.")
         print("Run: .venv/bin/python scripts/load_candidate_profile.py --confirm-replace")
+        print("Database initialization complete.")
         return
 
     # 2. Run synthetic example data only when explicitly requested.
@@ -39,6 +40,7 @@ def init_database(*, with_example_data: bool = False) -> None:
             cur.execute("SELECT 1 FROM candidate_profile LIMIT 1;")
             if cur.fetchone():
                 print("Candidate profile already exists. Skipping seeds to preserve live candidate data.")
+                print("Database initialization complete.")
                 return
 
             print("No candidate profile found. Applying synthetic example data...")

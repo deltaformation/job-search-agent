@@ -154,8 +154,29 @@ Rotate both credentials in their provider consoles, then configure the MCP serve
 
 ---
 
+## 7. [WORKFLOW] Post-commit review of `a4e5085`
+
+### Summary
+The interactive resume-review command could save approval and then return a successful process status even when the job failed to reach `READY`. A later retry stopped at "already approved," so it could not repair the incomplete workflow transition. Invalid UUID arguments also reached PostgreSQL instead of failing at the command boundary.
+
+The profile replacement confirmation flag could be supplied by a non-interactive process, and the discovery title filter used substring matching, causing titles such as `Productivity Manager` to pass a required `product` filter.
+
+### Resolution
+- Resume and job IDs are validated before database access.
+- Resume validation state is checked before prompting for approval.
+- Every workflow transition is checked and failures produce a nonzero exit status.
+- Rerunning review for an already approved resume safely resumes an eligible pending transition to `READY`.
+- Active, terminal, skipped, rejected, expired, and withdrawn jobs are never rewound automatically.
+- Candidate profile replacement now requires an interactive terminal in addition to `--confirm-replace`.
+- Title filters match complete configured terms on word boundaries.
+- Candidate diagnostics tolerate nullable collection fields.
+
+- **Status**: **RESOLVED** by the post-commit review fixes.
+
+---
+
 ## Current Health Status
-- **Automated Tests**: 15 isolated discovery, configuration, and diagnostic checks pass; the database-backed suite was intentionally not rerun.
+- **Automated Tests**: 23 isolated review, discovery, configuration, and diagnostic checks pass. Database-backed checks remain unavailable in the restricted sandbox and are not included in this result.
 - **PostgreSQL Database**: Canonical profile was reported loaded; migration ledger status must be checked outside the restricted sandbox.
 - **Playwright MCP**: Pinned configuration entry is present; live tool startup remains a per-session runtime check.
-- **Git State**: The diagnostic fixes are ready for local commit after review.
+- **Git State**: The diagnostic and post-review fixes are tracked in local repository history.

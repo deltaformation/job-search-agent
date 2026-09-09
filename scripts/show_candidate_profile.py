@@ -15,8 +15,8 @@ from services.memory.repository import JobRepository
 
 def build_summary(profile: Dict[str, Any]) -> Dict[str, Any]:
     """Build a bounded summary without changing or inferring candidate facts."""
-    experiences = profile.get("work_experience", [])
-    facts = profile.get("verified_facts", [])
+    experiences = profile.get("work_experience") or []
+    facts = profile.get("verified_facts") or []
     return {
         "full_name": profile.get("full_name"),
         "email": profile.get("email"),
@@ -32,8 +32,8 @@ def build_summary(profile: Dict[str, Any]) -> Dict[str, Any]:
             for item in facts
             if isinstance(item, dict)
         ],
-        "skills_count": len(profile.get("skills", [])),
-        "preferences": profile.get("preferences", {}),
+        "skills_count": len(profile.get("skills") or []),
+        "preferences": profile.get("preferences") or {},
     }
 
 

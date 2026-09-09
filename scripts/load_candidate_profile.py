@@ -9,6 +9,7 @@ import os
 import sys
 import argparse
 from pathlib import Path
+from typing import List, Optional
 import psycopg
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -435,7 +436,8 @@ def load_profile(*, human_confirmed: bool = False) -> None:
 
     print("\n✅ Candidate profile and verified facts loaded successfully into PostgreSQL.")
 
-if __name__ == "__main__":
+def main(argv: Optional[List[str]] = None) -> int:
+    """Replace the profile only after explicit confirmation in a human terminal."""
     parser = argparse.ArgumentParser(
         description="Replace candidate memory with the reviewed canonical profile"
     )
@@ -444,7 +446,14 @@ if __name__ == "__main__":
         action="store_true",
         help="Confirm replacement of current candidate memory and invalidation of old resume snapshots",
     )
-    arguments = parser.parse_args()
+    arguments = parser.parse_args(argv)
     if not arguments.confirm_replace:
         parser.error("--confirm-replace is required")
+    if not sys.stdin.isatty():
+        parser.error("Candidate profile replacement requires an interactive terminal.")
     load_profile(human_confirmed=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

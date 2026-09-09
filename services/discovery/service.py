@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
@@ -10,6 +11,15 @@ from services.discovery.config import AppConfig
 from services.discovery.scraper import fetch_jobs_from_boards
 
 logger = logging.getLogger("discovery_service")
+
+
+def title_contains_term(title: str, term: str) -> bool:
+    """Match a configured title term on word boundaries, case-insensitively."""
+    cleaned_term = term.strip()
+    if not cleaned_term:
+        return False
+    return re.search(rf"(?<!\w){re.escape(cleaned_term)}(?!\w)", title, re.IGNORECASE) is not None
+
 
 class DiscoveryService:
     def __init__(self, repo: Optional[JobRepository] = None, scorer: Optional[FitScorer] = None, config: Optional[AppConfig] = None) -> None:
@@ -104,20 +114,22 @@ class DiscoveryService:
                             jobs_found += raw_pair_count
                             title_filter = params.get("title_filter", {})
                             required_terms = [
-                                str(term).strip().lower()
+                                str(term).strip()
                                 for term in title_filter.get("required_terms", [])
                             ]
                             excluded_terms = [
-                                str(term).strip().lower()
+                                str(term).strip()
                                 for term in title_filter.get("excluded_terms", [])
                             ]
                             eligible_pairs = []
                             for pair in pairs:
-                                title = str(pair[0].get("title") or "").lower()
+                                title = str(pair[0].get("title") or "")
                                 has_required = not required_terms or any(
-                                    term in title for term in required_terms
+                                    title_contains_term(title, term) for term in required_terms
                                 )
-                                has_excluded = any(term in title for term in excluded_terms)
+                                has_excluded = any(
+                                    title_contains_term(title, term) for term in excluded_terms
+                                )
                                 if has_required and not has_excluded:
                                     eligible_pairs.append(pair)
                             filtered_count = raw_pair_count - len(eligible_pairs)

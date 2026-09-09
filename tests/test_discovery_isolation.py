@@ -217,12 +217,13 @@ def test_title_filter_discards_unrelated_results():
     }
     pairs = [
         ({"title": "Lead Product Manager"}, {}),
+        ({"title": "Productivity Manager"}, {}),
         ({"title": "Regional Sourcing Manager"}, {}),
         ({"title": "Product Sourcing Manager"}, {}),
     ]
     observation = {
         "source": "indeed", "query": {}, "status": "success",
-        "records_received": 3, "records_normalized": 3,
+        "records_received": 4, "records_normalized": 4,
         "records_rejected": 0, "errors": [],
     }
     with patch(
@@ -231,6 +232,6 @@ def test_title_filter_discards_unrelated_results():
     ):
         result = DiscoveryService(repo=repo, config=config).run_discovery(dry_run=True)
 
-    assert result["metrics"]["raw_observations"] == 3
-    assert result["metrics"]["title_filtered"] == 2
-    assert result["observations"][0]["records_filtered"] == 2
+    assert result["metrics"]["raw_observations"] == 4
+    assert result["metrics"]["title_filtered"] == 3
+    assert result["observations"][0]["records_filtered"] == 3
