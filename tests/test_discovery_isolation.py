@@ -129,6 +129,34 @@ def test_zero_results_vs_failure():
         assert obs["records_received"] == 0
         assert len(obs["errors"]) == 0
 
+
+def test_linkedin_description_fetch_is_board_specific():
+    with patch("services.discovery.scraper.scrape_jobs", return_value=pd.DataFrame()) as mocked:
+        fetch_single_board_query(
+            site="linkedin", search_term="Product Manager", location="Toronto",
+            country="Canada", hours_old=24, results_wanted=2, max_retries=0,
+        )
+        assert mocked.call_args.kwargs["linkedin_fetch_description"] is True
+
+        fetch_single_board_query(
+            site="indeed", search_term="Product Manager", location="Toronto",
+            country="Canada", hours_old=24, results_wanted=2, max_retries=0,
+        )
+        assert mocked.call_args.kwargs["linkedin_fetch_description"] is False
+
+
+def test_empty_description_is_rejected():
+    raw = {
+        "title": "Product Manager",
+        "company": "Example Co",
+        "location": "Toronto",
+        "job_url": "https://example.com/job/1",
+        "description": "",
+        "site": "linkedin",
+    }
+    with pytest.raises(ValueError, match="Missing job description"):
+        normalize_single_job_row(raw, "Toronto", "linkedin")
+
 def test_schedule_locking(clean_db):
     """Schedule lock prevents overlapping executions of the same schedule."""
     repo = clean_db
@@ -175,3 +203,34 @@ def test_dry_run_has_no_database_side_effects():
     repo.save_discovery_observation.assert_not_called()
     repo.upsert_job.assert_not_called()
     repo.finalize_agent_run.assert_not_called()
+
+
+def test_title_filter_discards_unrelated_results():
+    repo = MagicMock()
+    repo.get_candidate_profile.return_value = None
+    config = MagicMock()
+    config.resolve_discovery_params.return_value = {
+        "roles": ["Lead Product Manager"], "locations": ["Ontario"],
+        "sources": ["indeed"], "country": "Canada", "hours_old": 24,
+        "max_results_per_query": 5, "pipeline": {"auto_score": True},
+        "title_filter": {"required_terms": ["product"], "excluded_terms": ["sourcing"]},
+    }
+    pairs = [
+        ({"title": "Lead Product Manager"}, {}),
+        ({"title": "Regional Sourcing Manager"}, {}),
+        ({"title": "Product Sourcing Manager"}, {}),
+    ]
+    observation = {
+        "source": "indeed", "query": {}, "status": "success",
+        "records_received": 3, "records_normalized": 3,
+        "records_rejected": 0, "errors": [],
+    }
+    with patch(
+        "services.discovery.service.fetch_jobs_from_boards",
+        return_value=(pairs, [observation]),
+    ):
+        result = DiscoveryService(repo=repo, config=config).run_discovery(dry_run=True)
+
+    assert result["metrics"]["raw_observations"] == 3
+    assert result["metrics"]["title_filtered"] == 2
+    assert result["observations"][0]["records_filtered"] == 2

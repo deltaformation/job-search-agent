@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-Load canonical candidate profile and verified career facts from resume into PostgreSQL.
-Idempotent and transactional.
+Replace candidate memory with the reviewed canonical profile and career facts.
+This is a transactional, human-operated replacement command. Replacing the
+profile invalidates older resume snapshots and requires regeneration and review.
 """
 import json
 import os
 import sys
+import argparse
 from pathlib import Path
 import psycopg
 
@@ -14,8 +16,12 @@ sys.path.insert(0, str(BASE_DIR))
 
 DB_URL = os.getenv("DATABASE_URL", "postgresql://mouadatfi@localhost:5432/job_system")
 
-def load_profile() -> None:
-    print(f"Connecting to database: {DB_URL}")
+def load_profile(*, human_confirmed: bool = False) -> None:
+    if not human_confirmed:
+        raise ValueError(
+            "Explicit human confirmation is required. Run this script with --confirm-replace."
+        )
+    print("Connecting to configured PostgreSQL database...")
     with psycopg.connect(DB_URL) as conn:
         with conn.cursor() as cur:
             # 1. Candidate Profile
@@ -92,7 +98,8 @@ def load_profile() -> None:
 
             print(f"Loaded Candidate Profile ID: {cand_id}")
 
-            # Clean out dependent profile tables to refresh canonical facts cleanly
+            # Replace dependent profile tables in one transaction. This changes
+            # the candidate snapshot and intentionally invalidates older resumes.
             cur.execute("""
                 DELETE FROM achievements WHERE work_experience_id IN (
                     SELECT id FROM work_experience WHERE candidate_id = %s
@@ -411,8 +418,8 @@ def load_profile() -> None:
 
             # 7. Insert Standard Answers
             answers = [
-                ("work_auth", "Are you legally authorized to work in Canada?", "Yes", False, False),
-                ("sponsorship", "Will you now or in the future require visa sponsorship?", "No", False, False),
+                ("work_auth", "Are you legally authorized to work in Canada?", "Yes", True, True),
+                ("sponsorship", "Will you now or in the future require visa sponsorship?", "No", True, True),
                 ("location", "Where are you currently located?", "Pickering, Ontario, Canada", False, False),
                 ("salary", "What are your salary expectations?", "Competitive for Lead / Senior Product Manager roles in Canada (approx $180,000 - $220,000 CAD base)", True, True),
                 ("notice_period", "What is your notice period?", "2 to 4 weeks", False, False)
@@ -429,4 +436,15 @@ def load_profile() -> None:
     print("\n✅ Candidate profile and verified facts loaded successfully into PostgreSQL.")
 
 if __name__ == "__main__":
-    load_profile()
+    parser = argparse.ArgumentParser(
+        description="Replace candidate memory with the reviewed canonical profile"
+    )
+    parser.add_argument(
+        "--confirm-replace",
+        action="store_true",
+        help="Confirm replacement of current candidate memory and invalidation of old resume snapshots",
+    )
+    arguments = parser.parse_args()
+    if not arguments.confirm_replace:
+        parser.error("--confirm-replace is required")
+    load_profile(human_confirmed=True)

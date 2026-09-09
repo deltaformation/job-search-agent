@@ -72,6 +72,11 @@ KNOWN_ATS_HOST_SUFFIXES = (
     "greenhouse.io",
     "lever.co",
     "ashbyhq.com",
+    "myworkdayjobs.com",
+    "workday.com",
+    "taleo.net",
+    "icims.com",
+    "smartrecruiters.com",
 )
 
 

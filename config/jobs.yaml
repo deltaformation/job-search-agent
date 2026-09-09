@@ -19,6 +19,12 @@ search:
     primary_hours: 24      # Prioritize HOT jobs <=24h
     secondary_hours: 72    # Secondary freshness <=72h
   max_results_per_query: 25
+  title_filter:
+    required_terms:
+      - "product"
+    excluded_terms:
+      - "sourcing"
+      - "procurement"
 
 deduplication:
   similarity_threshold: 0.85

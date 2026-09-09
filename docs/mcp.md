@@ -32,12 +32,12 @@ This document details the Model Context Protocol (MCP) servers integrated with A
 - **Exposed Tools**:
   - `search_jobs`: Query raw postings by keyword, country, location, and age.
 
-### 3. `playwright` (Optional Browser Automation)
+### 3. `playwright` (Configured Browser Automation)
 - **Purpose**: Visible, headed browser automation for inspecting ATS applications and filling safe, verified fields.
-- **Recommended Package Pin**: `@playwright/mcp@0.0.80`
+- **Configured Package Pin**: `@playwright/mcp@0.0.80`
 - **Transport**: `stdio` via `npx`
-- **Recommended Command**: `npx -y @playwright/mcp@0.0.80`
-- **Expected Capabilities**:
+- **Configured Command**: `npx -y @playwright/mcp@0.0.80`
+- **Expected Capabilities after Runtime Verification**:
   - Navigation & Inspection: `browser_navigate`, `browser_snapshot`, `browser_take_screenshot`, `browser_tabs`
   - Interaction: `browser_fill_form`, `browser_click`, `browser_type`, `browser_select_option`, `browser_file_upload`
 - **Operational Boundaries**:
@@ -48,11 +48,10 @@ This document details the Model Context Protocol (MCP) servers integrated with A
 ### 4. `github` & `cloudflare`
 - Pre-existing user configurations maintained without alteration.
 
-The current Gemini MCP configuration contains `career-memory` but no `playwright`
-entry. The application policy, persistence, and synthetic HTML tests are available;
-browser orchestration remains unavailable until the user configures and verifies the
-optional Playwright server. Do not describe real ATS browser support as operational
-until that check succeeds.
+The current Gemini MCP configuration contains both `career-memory` and the pinned
+`playwright` entry. Verify that both servers start and expose their expected tools in
+each Antigravity session. Do not describe a particular live ATS as supported until it
+has been checked without submission.
 
 ## Recommended User MCP Configuration (`~/.gemini/config/mcp_config.json`)
 

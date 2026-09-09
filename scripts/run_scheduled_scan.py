@@ -42,7 +42,8 @@ def format_review_report(
         lines.append(
             f"  * Board [{o.get('source', '').upper()}]: '{q.get('role')}' in '{q.get('location')}' -> "
             f"{o.get('status').upper()} (Received: {o.get('records_received')}, "
-            f"Normalized: {o.get('records_normalized')}, Rejected: {o.get('records_rejected')}){err_str}"
+            f"Normalized: {o.get('records_normalized')}, Rejected: {o.get('records_rejected')}, "
+            f"Title-filtered: {o.get('records_filtered', 0)}){err_str}"
         )
     lines.append("-" * 70)
     lines.append("INGESTION METRICS:")
@@ -50,6 +51,7 @@ def format_review_report(
     lines.append(f"  * New Canonical: {metrics.get('new_canonical', 0)}")
     lines.append(f"  * Duplicates Merged: {metrics.get('duplicates_merged', 0)}")
     lines.append(f"  * Stale Postings: {metrics.get('stale_excluded', 0)}")
+    lines.append(f"  * Title Filtered: {metrics.get('title_filtered', 0)}")
     lines.append(f"  * Jobs Scored: {metrics.get('scored', 0)}")
     lines.append(f"  * Qualified Jobs: {metrics.get('qualified', 0)}")
     lines.append(f"  * Awaiting Antigravity Analysis: {metrics.get('pending_analysis', 0)}")

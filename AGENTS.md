@@ -36,6 +36,8 @@ This repository is a **local-first, MCP-native job-search and application automa
   - Database operations should use parameterized queries (`%s`) to prevent SQL injection.
 - **Testing**:
   - Always run `pytest tests/` after modifying services or logic. All tests must pass with zero errors.
+- **Operational Commands**:
+  - Prefer checked-in scripts for multiline diagnostics. Do not embed escaped Python f-strings in `python -c` shell commands. Use `scripts/show_candidate_profile.py` for candidate-memory inspection.
 
 ## Code Review Checklist (for Codex & Reviewers)
 1. **Fact Integrity**: Does the code respect candidate memory and `fact_id` provenance?

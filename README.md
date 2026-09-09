@@ -45,7 +45,7 @@ job-search-agent/
 │   └── mcp/                  # FastMCP career-memory server
 │
 ├── scripts/
-│   ├── init_db.py            # Migration and seed runner
+│   ├── init_db.py            # Schema migration runner; demo data is opt-in
 │   └── run_discovery.py      # Manual and scheduled discovery runner
 │
 └── tests/                    # Automated pytest suite
@@ -64,6 +64,7 @@ job-search-agent/
 ```bash
 /opt/homebrew/opt/postgresql@16/bin/createdb -U mouadatfi job_system
 .venv/bin/python scripts/init_db.py
+.venv/bin/python scripts/load_candidate_profile.py --confirm-replace
 ```
 
 ### 3. Run Automated Tests

@@ -78,6 +78,7 @@ class DiscoveryService:
         jobs_stale = 0
         jobs_scored = 0
         jobs_qualified = 0
+        jobs_filtered = 0
         all_errors: List[str] = []
         board_observations: List[Dict[str, Any]] = []
 
@@ -99,6 +100,33 @@ class DiscoveryService:
                             )
 
                             obs = obs_list[0] if obs_list else {}
+                            raw_pair_count = len(pairs)
+                            jobs_found += raw_pair_count
+                            title_filter = params.get("title_filter", {})
+                            required_terms = [
+                                str(term).strip().lower()
+                                for term in title_filter.get("required_terms", [])
+                            ]
+                            excluded_terms = [
+                                str(term).strip().lower()
+                                for term in title_filter.get("excluded_terms", [])
+                            ]
+                            eligible_pairs = []
+                            for pair in pairs:
+                                title = str(pair[0].get("title") or "").lower()
+                                has_required = not required_terms or any(
+                                    term in title for term in required_terms
+                                )
+                                has_excluded = any(term in title for term in excluded_terms)
+                                if has_required and not has_excluded:
+                                    eligible_pairs.append(pair)
+                            filtered_count = raw_pair_count - len(eligible_pairs)
+                            jobs_filtered += filtered_count
+                            pairs = eligible_pairs
+                            obs["records_filtered"] = (
+                                int(obs.get("records_filtered", 0))
+                                + filtered_count
+                            )
                             board_observations.append(obs)
                             if not dry_run:
                                 self.repo.save_discovery_observation(run_id, obs)
@@ -106,8 +134,6 @@ class DiscoveryService:
                             if obs.get("errors"):
                                 for e in obs["errors"]:
                                     all_errors.append(f"[{source}] {e.get('message', str(e))}")
-
-                            jobs_found += len(pairs)
 
                             if not dry_run:
                                 for job_data, source_data in pairs:
@@ -147,6 +173,7 @@ class DiscoveryService:
                 "stale_excluded": jobs_stale,
                 "scored": jobs_scored,
                 "qualified": jobs_qualified,
+                "title_filtered": jobs_filtered,
                 "board_queries_total": len(board_observations),
                 "board_failures": sum(1 for o in board_observations if o.get("status") == "failed")
             }

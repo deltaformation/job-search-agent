@@ -72,6 +72,18 @@ def validate_jobs_config(data: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(max_res, int) or max_res <= 0:
         raise ConfigurationError("jobs.yaml: search.max_results_per_query must be a positive integer.")
 
+    title_filter = search.get("title_filter", {})
+    if not isinstance(title_filter, dict):
+        raise ConfigurationError("jobs.yaml: search.title_filter must be a mapping.")
+    for key in ("required_terms", "excluded_terms"):
+        terms = title_filter.get(key, [])
+        if not isinstance(terms, list) or any(
+            not isinstance(term, str) or not term.strip() for term in terms
+        ):
+            raise ConfigurationError(
+                f"jobs.yaml: search.title_filter.{key} must be a list of non-empty strings."
+            )
+
     dedupe = data.get("deduplication", {})
     if not isinstance(dedupe, dict):
         raise ConfigurationError("jobs.yaml: deduplication must be a mapping.")
@@ -240,6 +252,7 @@ class AppConfig:
             "hours_old": res_hours_old,
             "primary_hours": float(base_search["freshness_windows"]["primary_hours"]),
             "secondary_hours": float(base_search["freshness_windows"]["secondary_hours"]),
+            "title_filter": base_search.get("title_filter", {}),
             "schedule": schedule_info,
             "pipeline": self.jobs["pipeline"],
             "scoring": self.scoring,

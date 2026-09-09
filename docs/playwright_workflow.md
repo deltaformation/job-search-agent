@@ -4,7 +4,7 @@ This document describes the orchestration sequence for **Antigravity** when assi
 
 ---
 
-## Recommended Playwright MCP Configuration
+## Configured Playwright MCP Integration
 - **Package pin**: `@playwright/mcp@0.0.80` (Official Microsoft Playwright MCP)
 - **Transport**: `stdio` via `npx -y @playwright/mcp@0.0.80`
 - **Execution Mode**: Headed browser session (visible to the user)
@@ -15,10 +15,10 @@ This document describes the orchestration sequence for **Antigravity** when assi
   - `browser_file_upload`: Uploads the bound approved resume PDF.
   - `browser_take_screenshot`: Captures pre-submit visual state for review.
 
-The current Gemini MCP configuration does not contain a Playwright server entry.
-Configure and inspect the live server before using this workflow. Synthetic ATS
-fixtures validate the repository policy path, but they do not prove that browser
-tools are installed or that a real ATS is supported.
+The current Gemini MCP configuration contains the pinned Playwright server entry.
+Inspect the live tool catalog when Antigravity starts because configuration alone
+does not prove that the package launched successfully. Synthetic ATS fixtures
+validate the repository policy path but do not prove support for a particular live ATS.
 
 ---
 
@@ -44,6 +44,7 @@ tools are installed or that a real ATS is supported.
 1. Agent retrieves scoped context via `career-memory:get_application_context(application_id, attempt_id)`.
 2. Agent calls `playwright:browser_navigate(url=application_url)`.
 3. Agent checks that final URL is on the expected employer or ATS domain (e.g. `boards.greenhouse.io`, `jobs.lever.co`). If redirected to an unknown or suspicious domain, halt immediately.
+4. For LinkedIn listings, follow only the visible external employer-application link. Record the form snapshot after reaching the recognized ATS page. Easy Apply, authentication prompts, and account challenges require human takeover.
 
 ### Stage 3: Form Inspection & Snapshot
 1. Agent captures the accessibility tree using `playwright:browser_snapshot()`.

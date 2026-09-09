@@ -1,5 +1,7 @@
 -- Seed: 001_candidate_seed.sql
--- Description: Canonical verified candidate profile with strict Fact-ID provenance
+-- Description: Synthetic candidate fixture for disposable development and tests.
+-- This file is never loaded by default. It must not be treated as verified career
+-- memory or used for resume generation or real applications.
 
 DO $$
 DECLARE
@@ -153,8 +155,8 @@ BEGIN
 
         -- 7. Insert Standard Answers (with sensitivity & human approval flags)
         INSERT INTO standard_answers (candidate_id, category, question_pattern, answer_text, is_sensitive, requires_human_approval) VALUES
-        (v_candidate_id, 'work_auth', 'Are you legally authorized to work in Canada?', 'Yes', FALSE, FALSE),
-        (v_candidate_id, 'sponsorship', 'Will you now or in the future require visa sponsorship?', 'No', FALSE, FALSE),
+        (v_candidate_id, 'work_auth', 'Are you legally authorized to work in Canada?', 'Yes', TRUE, TRUE),
+        (v_candidate_id, 'sponsorship', 'Will you now or in the future require visa sponsorship?', 'No', TRUE, TRUE),
         (v_candidate_id, 'location', 'Where are you currently located?', 'Toronto, Ontario, Canada', FALSE, FALSE),
         (v_candidate_id, 'salary', 'What are your salary expectations?', 'Competitive for Senior Product Manager roles in Canada (approx $160,000 - $190,000 CAD base)', TRUE, TRUE),
         (v_candidate_id, 'notice_period', 'What is your notice period?', '2 to 3 weeks', FALSE, FALSE);

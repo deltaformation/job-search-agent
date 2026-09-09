@@ -61,6 +61,7 @@ def main() -> int:
     print(f"New Canonical Jobs: {metrics.get('new_canonical', 0)}")
     print(f"Duplicates Merged: {metrics.get('duplicates_merged', 0)}")
     print(f"Stale Excluded: {metrics.get('stale_excluded', 0)}")
+    print(f"Title Filtered: {metrics.get('title_filtered', 0)}")
     print(f"Jobs Scored: {metrics.get('scored', 0)}")
     print(f"Qualified Jobs: {metrics.get('qualified', 0)}")
     if result.get("errors"):

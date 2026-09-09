@@ -70,6 +70,8 @@ def normalize_single_job_row(
     norm_loc, remote_type = normalize_location(raw_loc, is_remote)
 
     desc = str(raw_dict.get("description") or "").strip()
+    if not desc:
+        raise ValueError("Missing job description")
     company = str(raw_dict.get("company") or "").strip() or "Unknown Company"
     c_hash = generate_content_hash(company, norm_title, desc)
 
@@ -154,7 +156,8 @@ def fetch_single_board_query(
                 location=location,
                 country_indeed=country,
                 results_wanted=results_wanted,
-                hours_old=int(math.ceil(hours_old))
+                hours_old=int(math.ceil(hours_old)),
+                linkedin_fetch_description=site.strip().lower() == "linkedin"
             )
             break
         except Exception as exc:

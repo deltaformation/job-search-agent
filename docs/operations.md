@@ -37,6 +37,24 @@ The database migration subsystem uses an advisory-locked ledger (`schema_migrati
 
 > **Note**: Database upgrades never re-run candidate profile seeds (`db/seeds/001_candidate_seed.sql`). Seed operations are strictly guarded to preserve candidate modifications.
 
+Fresh initialization creates the schema without candidate facts. Load the reviewed
+canonical profile only after checking the source data:
+
+```bash
+.venv/bin/python scripts/load_candidate_profile.py --confirm-replace
+```
+
+This replacement changes the candidate snapshot, so previously generated resumes
+must be regenerated and reviewed. To inspect the current profile without fragile
+shell quoting:
+
+```bash
+.venv/bin/python scripts/show_candidate_profile.py
+```
+
+Use `scripts/init_db.py --with-example-data` only for a disposable development
+database. The example seed contains synthetic test facts.
+
 ---
 
 ## 3. Discovery Operations
