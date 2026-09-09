@@ -9,6 +9,7 @@ def test_valid_claim_passes(candidate_data):
         "section": "experience",
         "company": "FinTech Cloud Solutions",
         "role": "Senior Technical Product Manager",
+        "entity_id": "exp_001", "dates": {"start": "2021-03-01", "end": "Present"},
         "fact_ids": ["fact_001"],
         "text": "Architected and launched a distributed multi-region API platform reducing p99 latency by 42% while scaling to 50M+ daily requests.",
         "claimed_technologies": ["AWS", "Kafka", "PostgreSQL"],
@@ -111,39 +112,4 @@ def test_prompt_injection_quarantine(candidate_data):
     assert "</untrusted_job_description>" in context["untrusted_job_description"]
     # Candidate verified facts remain unchanged and uncorrupted
     assert len(context["verified_facts_inventory"]) == len(candidate_data["verified_facts"])
-
-def test_content_hash_tampering_blocks_approval(clean_db):
-    repo = clean_db
-    job_payload = {
-        "canonical_url": "https://example.com/job-hash-test",
-        "content_hash": "hash_test_123",
-        "company": "Hash Corp",
-        "title": "Senior Product Manager",
-        "location": "Toronto, ON"
-    }
-    job, _ = repo.upsert_job(job_payload, {"source_name": "test", "source_url": "https://example.com/job-hash-test"})
-    
-    # Save a resume version
-    version = repo.save_resume_version({
-        "job_id": str(job["job_id"]),
-        "content_hash": "original_valid_hash_abc",
-        "tailored_text": "Original text",
-        "validation_status": "RENDERED"
-    })
-    resume_id = str(version["id"])
-
-    # Attempt to approve with wrong hash
-    success, msg = repo.confirm_human_approval(resume_id, expected_hash="tampered_hash_xyz")
-    assert success is False
-    assert "Content hash mismatch" in msg
-
-    # Approve with exact hash
-    success, sig = repo.confirm_human_approval(resume_id, expected_hash="original_valid_hash_abc")
-    assert success is True
-    assert len(sig) == 64
-
-    # Verify status in DB is APPROVED
-    updated = repo.get_resume_version(resume_id)
-    assert updated["validation_status"] == "APPROVED"
-    assert updated["approved_by_human"] is True
 

@@ -43,3 +43,8 @@ This repository is a **local-first, MCP-native job-search and application automa
 3. **Security**: Are credentials kept out of source code (using `.env` / environment variables)?
 4. **Data Consistency**: Does deduplication maintain canonical URL resolution and preserve source provenance in `job_sources`?
 5. **Freshness Accuracy**: Does posting age calculation correctly bucket into `HOT` (0-24h), `FRESH` (24-48h), `RECENT` (48-72h), and `STALE` (>72h)?
+
+## Milestone 2 Human Review Boundary
+- Never run `scripts/review_resume.py` or call repository approval with `human_confirmed=True` autonomously. The local review command is operated by the human after inspecting the exact PDF/version.
+- Content hashes and the legacy `approval_signature` field are integrity/audit metadata, not evidence of human consent or digital signatures.
+- Generate a new immutable version for revisions; never overwrite a reviewed artifact. Resume approval never authorizes application submission.

@@ -27,8 +27,8 @@ def isolated_repo() -> Iterator[JobRepository]:
     repo = IsolatedRepository(base.db_url)
     try:
         with repo.get_connection() as conn:
-            conn.execute((root / "db/migrations/001_initial_schema.sql").read_text())
-            conn.execute((root / "db/migrations/002_tailoring_and_provenance.sql").read_text())
+            for migration in sorted((root / "db/migrations").glob("*.sql")):
+                conn.execute(migration.read_text())
             conn.execute((root / "db/seeds/001_candidate_seed.sql").read_text())
         yield repo
     finally:

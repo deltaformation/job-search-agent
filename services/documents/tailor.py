@@ -1,10 +1,11 @@
 import difflib
+import html
 import json
 import hashlib
 from typing import Dict, Any, List, Optional, Tuple
 
 class ResumeTailor:
-    def __init__(self, candidate_profile: Dict[str, Any]):
+    def __init__(self, candidate_profile: Dict[str, Any]) -> None:
         self.profile = candidate_profile
         self.verified_facts = {
             f["fact_id"]: f for f in candidate_profile.get("verified_facts", [])
@@ -19,7 +20,7 @@ class ResumeTailor:
         Builds the safe prompt context for Antigravity, quarantining the untrusted JD text
         and providing the complete verified facts inventory.
         """
-        raw_desc = job.get("description", "")
+        raw_desc = job.get("description") or ""
         # Sanitize JD text to prevent injection characters
         cleaned_desc = raw_desc.replace("\x00", "").strip()
 
@@ -39,7 +40,7 @@ class ResumeTailor:
             "candidate_name": self.profile.get("full_name", "Candidate"),
             "target_titles": self.profile.get("target_titles", []),
             "verified_facts_inventory": facts_inventory,
-            "verified_skills": [s["name"] for s in self.skills if s.get("verified", True)],
+            "verified_skills": [s["name"] for s in self.skills if s.get("verified") is True],
             "work_experiences": [
                 {
                     "id": str(exp["id"]),
@@ -47,7 +48,7 @@ class ResumeTailor:
                     "role": exp["role"],
                     "location": exp.get("location"),
                     "start_date": str(exp["start_date"]),
-                    "end_date": str(exp["end_date"]) if exp.get("end_date") else "Present"
+                    "end_date": str(exp["end_date"]) if exp.get("end_date") else ("Present" if exp.get("is_current") else "")
                 }
                 for exp in self.work_experiences
             ],
@@ -62,7 +63,7 @@ class ResumeTailor:
             "job_id": str(job["job_id"]),
             "job_title": job.get("title"),
             "company": job.get("company"),
-            "untrusted_job_description": f"<untrusted_job_description>\n{cleaned_desc}\n</untrusted_job_description>"
+            "untrusted_job_description": f"<untrusted_job_description>\n{html.escape(cleaned_desc)}\n</untrusted_job_description>"
         }
 
     def generate_tailored_draft(
@@ -107,21 +108,15 @@ class ResumeTailor:
         claims: List[Dict[str, Any]] = []
         claim_counter = 1
 
-        # Summary claim
-        summary_text = (
-            f"Senior Technical Product Manager with 8+ years leading cross-functional engineering squads "
-            f"to deliver cloud infrastructure platforms, high-throughput APIs, and enterprise SaaS solutions."
-        )
-        claims.append({
-            "claim_id": f"claim_{claim_counter:03d}",
-            "section": "summary",
-            "text": summary_text,
-            "fact_ids": [],
-            "claimed_technologies": ["AWS", "PostgreSQL", "REST APIs"],
-            "claimed_metrics": [],
-            "generation_strategy": "constrained_template"
-        })
-        claim_counter += 1
+        # Summaries are optional. Do not manufacture a career narrative or tenure.
+        if top_fact_ids:
+            fact = self.verified_facts[top_fact_ids[0]]
+            claims.append({
+                "claim_id": f"claim_{claim_counter:03d}", "section": "summary",
+                "text": fact["text"], "fact_ids": [fact["fact_id"]],
+                "generation_strategy": "verbatim"
+            })
+            claim_counter += 1
 
         # Experience claims (verbatim from approved facts)
         for exp in self.work_experiences:
@@ -141,7 +136,7 @@ class ResumeTailor:
                     "role": exp["role"],
                     "dates": {
                         "start": str(exp["start_date"]),
-                        "end": str(exp["end_date"]) if exp.get("end_date") else "Present"
+                        "end": str(exp["end_date"]) if exp.get("end_date") else ("Present" if exp.get("is_current") else "")
                     },
                     "text": fact["text"],
                     "fact_ids": [fact["fact_id"]],
@@ -219,7 +214,7 @@ class ResumeTailor:
         # Group by company
         grouped = {}
         for ec in exp_claims:
-            comp = ec.get("company", "Company")
+            comp = ec["entity_id"]
             if comp not in grouped:
                 grouped[comp] = []
             grouped[comp].append(ec)
@@ -228,14 +223,14 @@ class ResumeTailor:
             first = c_list[0]
             dates = first.get("dates", {})
             date_str = f"{dates.get('start', '')} - {dates.get('end', 'Present')}"
-            lines.append(f"{first.get('role', 'Role')} | {comp} | {date_str}")
+            lines.append(f"{first.get('role', 'Role')} | {first['company']} | {date_str}")
             for c in c_list:
                 lines.append(f"  • {c['text']}")
             lines.append("")
 
         # Skills
         lines.append("TECHNICAL & PRODUCT SKILLS")
-        skill_names = [s["name"] for s in self.skills if s.get("verified", True)]
+        skill_names = [s["name"] for s in self.skills if s.get("verified") is True]
         lines.append(", ".join(skill_names))
         lines.append("")
 

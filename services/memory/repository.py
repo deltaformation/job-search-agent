@@ -1,6 +1,7 @@
 import os
 import json
 import hashlib
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 import psycopg
@@ -49,10 +50,11 @@ class JobRepository:
 
                 # Fetch achievements (facts)
                 cur.execute("""
-                    SELECT * FROM achievements 
-                    WHERE verification_status = 'approved'
-                    ORDER BY fact_id ASC;
-                """)
+                    SELECT a.* FROM achievements a
+                    JOIN work_experience w ON w.id = a.work_experience_id
+                    WHERE a.verification_status = 'approved' AND w.candidate_id = %s
+                    ORDER BY a.fact_id ASC;
+                """, (profile["id"],))
                 profile["verified_facts"] = cur.fetchall()
 
                 # Fetch skills
@@ -77,6 +79,10 @@ class JobRepository:
                 """, (profile["id"],))
                 profile["standard_answers"] = cur.fetchall()
 
+                for table in ("education", "credentials"):
+                    # Table names are a fixed internal allowlist.
+                    cur.execute(f"SELECT * FROM {table} WHERE candidate_id = %s ORDER BY id", (profile["id"],))
+                    profile[table] = cur.fetchall()
                 return profile
 
     def upsert_job(self, job_data: Dict[str, Any], source_data: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
@@ -497,8 +503,17 @@ class JobRepository:
                 return cur.fetchall()
 
     def save_resume_version(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        actual_hash = hashlib.sha256(data["tailored_text"].strip().encode("utf-8")).hexdigest()
+        if data["content_hash"] != actual_hash:
+            raise ValueError("Content hash mismatch for supplied resume text.")
         with self.get_connection() as conn:
             with conn.cursor() as cur:
+                # Serialize allocation per job; different jobs remain independent.
+                cur.execute("SELECT job_id FROM jobs WHERE job_id = %s FOR UPDATE", (data["job_id"],))
+                if not cur.fetchone():
+                    raise ValueError("Job not found.")
+                cur.execute("SELECT id FROM resume_versions WHERE job_id = %s ORDER BY version_number DESC, created_at DESC LIMIT 1", (data["job_id"],))
+                parent = cur.fetchone()
                 cur.execute("""
                     SELECT COALESCE(MAX(version_number), 0) + 1 AS next_ver
                     FROM resume_versions WHERE job_id = %s;
@@ -510,19 +525,21 @@ class JobRepository:
                         job_id, application_id, base_version, version_number, parent_version_id,
                         content_hash, tailored_text, structured_content, claim_evidence_map,
                         fact_ids_used, diff_summary, validation_status, validation_report,
-                        html_path, pdf_path, approved_by_human
+                        html_path, pdf_path, approved_by_human,
+                        profile_snapshot_id, jd_snapshot_id, baseline_text, requirements_snapshot
                     ) VALUES (
                         %s, %s, %s, %s, %s,
                         %s, %s, %s, %s,
                         %s, %s, %s, %s,
-                        %s, %s, %s
+                        %s, %s, %s,
+                        %s, %s, %s, %s
                     ) RETURNING *;
                 """, (
                     data["job_id"],
                     data.get("application_id"),
                     data.get("base_version", "canonical_v1"),
                     next_ver,
-                    data.get("parent_version_id"),
+                    parent["id"] if parent else None,
                     data["content_hash"],
                     data["tailored_text"],
                     json.dumps(data.get("structured_content", {}), default=str),
@@ -533,7 +550,9 @@ class JobRepository:
                     json.dumps(data.get("validation_report", {}), default=str),
                     data.get("html_path"),
                     data.get("pdf_path"),
-                    False
+                    False,
+                    data.get("profile_snapshot_id"), data.get("jd_snapshot_id"),
+                    data.get("baseline_text"), json.dumps(data.get("requirements_snapshot", []), default=str)
                 ))
                 saved = cur.fetchone()
 
@@ -553,6 +572,14 @@ class JobRepository:
         html_path: Optional[str] = None,
         pdf_path: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
+        if status not in {"AWAITING_HUMAN_REVIEW", "FAILED"}:
+            raise ValueError("Unsupported validation transition.")
+        pdf_hash = html_hash = None
+        if status == "AWAITING_HUMAN_REVIEW":
+            if not pdf_path or not html_path or not report.get("is_valid"):
+                raise ValueError("Validated HTML and PDF artifacts are required.")
+            pdf_hash = hashlib.sha256(Path(pdf_path).read_bytes()).hexdigest()
+            html_hash = hashlib.sha256(Path(html_path).read_bytes()).hexdigest()
         with self.get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -560,10 +587,12 @@ class JobRepository:
                     SET validation_status = %s,
                         validation_report = %s,
                         html_path = COALESCE(%s, html_path),
-                        pdf_path = COALESCE(%s, pdf_path)
-                    WHERE id = %s
+                        pdf_path = COALESCE(%s, pdf_path),
+                        pdf_hash = %s, html_hash = %s
+                    WHERE id = %s AND approved_by_human = FALSE
+                      AND validation_status = 'VALIDATED'
                     RETURNING *;
-                """, (status, json.dumps(report, default=str), html_path, pdf_path, resume_id))
+                """, (status, json.dumps(report, default=str), html_path, pdf_path, pdf_hash, html_hash, resume_id))
                 updated = cur.fetchone()
                 if updated:
                     cur.execute("""
@@ -573,10 +602,14 @@ class JobRepository:
                     conn.commit()
                 return updated
 
-    def confirm_human_approval(self, resume_id: str, expected_hash: str, reviewer: str = "human") -> tuple[bool, str]:
+    def confirm_human_approval(self, resume_id: str, expected_hash: str, reviewer: str = "human", *, human_confirmed: bool = False) -> tuple[bool, str]:
+        # Only the local interactive review entrypoint may attest confirmation.
+        # A content digest is an integrity check, not authentication or consent.
+        if not human_confirmed:
+            return False, "Explicit human confirmation through the local review CLI is required."
         with self.get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT * FROM resume_versions WHERE id = %s;", (resume_id,))
+                cur.execute("SELECT * FROM resume_versions WHERE id = %s FOR UPDATE;", (resume_id,))
                 record = cur.fetchone()
                 if not record:
                     return False, f"Resume version {resume_id} not found."
@@ -584,8 +617,19 @@ class JobRepository:
                 if record["content_hash"] != expected_hash:
                     return False, f"Content hash mismatch. Expected: {expected_hash}, Actual in DB: {record['content_hash']}. Document was modified."
 
-                if record["validation_status"] not in ["RENDERED", "AWAITING_HUMAN_REVIEW", "VALIDATED"]:
+                if record["validation_status"] != "AWAITING_HUMAN_REVIEW":
                     return False, f"Cannot approve resume with validation status '{record['validation_status']}'."
+
+                actual_hash = hashlib.sha256(record["tailored_text"].strip().encode("utf-8")).hexdigest()
+                if actual_hash != expected_hash:
+                    return False, "Stored resume text was modified."
+                for kind in ("pdf", "html"):
+                    try:
+                        digest = hashlib.sha256(Path(record[f"{kind}_path"]).read_bytes()).hexdigest()
+                    except (OSError, TypeError):
+                        return False, f"Missing {kind} artifact."
+                    if not record.get(f"{kind}_hash") or digest != record[f"{kind}_hash"]:
+                        return False, f"Modified {kind} artifact."
 
                 sig = hashlib.sha256(f"{resume_id}:{expected_hash}:{reviewer}".encode("utf-8")).hexdigest()
 
@@ -625,4 +669,10 @@ class JobRepository:
                 cur.execute("""
                     SELECT * FROM resume_versions WHERE job_id = %s ORDER BY version_number DESC LIMIT 1;
                 """, (job_id,))
+                return cur.fetchone()
+
+    def get_resume_for_job(self, job_id: str, version_number: int) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM resume_versions WHERE job_id = %s AND version_number = %s", (job_id, version_number))
                 return cur.fetchone()
