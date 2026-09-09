@@ -53,6 +53,29 @@ ACTIVE_APPLICATION_STATES = {
     "SKIPPED", "REJECTED", "WITHDRAWN"
 }
 
+ALLOWED_APPLICATION_TRANSITIONS = {
+    "DRAFT": {"PREPARING", "ABANDONED", "FAILED"},
+    "PREPARING": {"NEEDS_HUMAN_INPUT", "READY_FOR_HUMAN_REVIEW", "ABANDONED", "FAILED"},
+    "NEEDS_HUMAN_INPUT": {"PREPARING", "READY_FOR_HUMAN_REVIEW", "ABANDONED", "FAILED"},
+    "READY_FOR_HUMAN_REVIEW": {"HUMAN_COMPLETING", "NEEDS_HUMAN_INPUT", "ABANDONED", "FAILED"},
+    "HUMAN_COMPLETING": {"SUBMITTED_CONFIRMED", "NEEDS_HUMAN_INPUT", "ABANDONED", "FAILED"},
+    "SUBMITTED_CONFIRMED": set(),
+    "ABANDONED": {"DRAFT", "PREPARING"},
+    "FAILED": {"DRAFT", "PREPARING"},
+    "APPLICATION_STARTED": {"PREPARING", "NEEDS_HUMAN_INPUT", "READY_FOR_HUMAN_REVIEW", "ABANDONED"},
+}
+
+ALLOWED_ATTEMPT_TRANSITIONS = {
+    "CREATED": {"INSPECTING", "CHECKPOINTED", "FAILED"},
+    "INSPECTING": {"PLANNED", "CHECKPOINTED", "INTERRUPTED", "FAILED"},
+    "PLANNED": {"FILLING", "CHECKPOINTED", "INTERRUPTED", "FAILED"},
+    "FILLING": {"CHECKPOINTED", "COMPLETED_WITHOUT_SUBMISSION", "INTERRUPTED", "FAILED"},
+    "CHECKPOINTED": {"FILLING", "COMPLETED_WITHOUT_SUBMISSION", "INTERRUPTED", "FAILED"},
+    "INTERRUPTED": set(),
+    "COMPLETED_WITHOUT_SUBMISSION": set(),
+    "FAILED": set(),
+}
+
 DEFAULT_DB_URL = "postgresql://mouadatfi@localhost:5432/job_system"
 
 class JobRepository:
@@ -697,12 +720,14 @@ class JobRepository:
 
                 if next_state == "READY":
                     cur.execute("""
-                        SELECT 1 FROM resume_versions
-                        WHERE job_id = %s AND approved_by_human = TRUE
+                        SELECT approved_by_human FROM resume_versions
+                        WHERE job_id = %s
+                        ORDER BY version_number DESC
                         LIMIT 1;
                     """, (job_id,))
-                    if not cur.fetchone():
-                        return False, "Cannot transition to READY without an approved resume version."
+                    latest_resume = cur.fetchone()
+                    if not latest_resume or not latest_resume["approved_by_human"]:
+                        return False, "Cannot transition to READY without an approved resume version (latest version must be approved)."
 
                 if next_state == "SUBMITTED":
                     if not human_confirmed:
@@ -1061,13 +1086,14 @@ class JobRepository:
                         content_hash, tailored_text, structured_content, claim_evidence_map,
                         fact_ids_used, diff_summary, validation_status, validation_report,
                         html_path, pdf_path, approved_by_human,
-                        profile_snapshot_id, jd_snapshot_id, baseline_text, requirements_snapshot
+                        profile_snapshot_id, jd_snapshot_id, baseline_text,
+                        requirements_snapshot, analysis_id
                     ) VALUES (
                         %s, %s, %s, %s, %s,
                         %s, %s, %s, %s,
                         %s, %s, %s, %s,
                         %s, %s, %s,
-                        %s, %s, %s, %s
+                        %s, %s, %s, %s, %s
                     ) RETURNING *;
                 """, (
                     data["job_id"],
@@ -1087,7 +1113,8 @@ class JobRepository:
                     data.get("pdf_path"),
                     False,
                     data.get("profile_snapshot_id"), data.get("jd_snapshot_id"),
-                    data.get("baseline_text"), json.dumps(data.get("requirements_snapshot", []), default=str)
+                    data.get("baseline_text"), json.dumps(data.get("requirements_snapshot", []), default=str),
+                    data.get("analysis_id")
                 ))
                 saved = cur.fetchone()
 
@@ -1211,3 +1238,576 @@ class JobRepository:
             with conn.cursor() as cur:
                 cur.execute("SELECT * FROM resume_versions WHERE job_id = %s AND version_number = %s", (job_id, version_number))
                 return cur.fetchone()
+
+    # -------------------------------------------------------------
+    # APPLICATION COPILOT & SESSION MANAGEMENT (MILESTONE 3)
+    # -------------------------------------------------------------
+    def get_application_by_job_id(self, job_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM applications WHERE job_id = %s;", (job_id,))
+                return cur.fetchone()
+
+    def get_application_by_id(self, application_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM applications WHERE id = %s;", (application_id,))
+                return cur.fetchone()
+
+    def create_or_get_application(
+        self,
+        job_id: str,
+        resume_version_id: str,
+        content_hash: str,
+        pdf_hash: str,
+        analysis_id: Optional[str],
+        application_url: str,
+        ats_type: Optional[str] = None
+    ) -> Tuple[Dict[str, Any], bool]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT job_id FROM jobs WHERE job_id = %s FOR UPDATE;", (job_id,))
+                if not cur.fetchone():
+                    raise ValueError(f"Job '{job_id}' not found.")
+                cur.execute("SELECT * FROM applications WHERE job_id = %s FOR UPDATE;", (job_id,))
+                existing = cur.fetchone()
+                if existing:
+                    expected_binding = {
+                        "resume_version_id": resume_version_id,
+                        "resume_content_hash": content_hash,
+                        "resume_pdf_hash": pdf_hash,
+                        "analysis_id": analysis_id,
+                        "application_url": application_url,
+                    }
+                    mismatches = [
+                        key for key, expected in expected_binding.items()
+                        if str(existing.get(key) or "") != str(expected or "")
+                    ]
+                    if mismatches:
+                        raise ValueError(
+                            "Existing application binding differs from the current approved package: "
+                            + ", ".join(mismatches)
+                        )
+                    return existing, False
+
+                cur.execute("""
+                    INSERT INTO applications (
+                        job_id, status, resume_version_id, resume_content_hash,
+                        resume_pdf_hash, analysis_id, application_url, ats_detected
+                    ) VALUES (%s, 'DRAFT', %s, %s, %s, %s, %s, %s)
+                    RETURNING *;
+                """, (job_id, resume_version_id, content_hash, pdf_hash, analysis_id, application_url, ats_type))
+                new_app = cur.fetchone()
+
+                cur.execute("""
+                    INSERT INTO application_events (application_id, event_type, from_status, to_status, actor, reason, details)
+                    VALUES (%s, 'APPLICATION_CREATED', NULL, 'DRAFT', 'copilot', 'Bound to approved resume version', %s);
+                """, (new_app["id"], json.dumps({"resume_version_id": resume_version_id, "pdf_hash": pdf_hash})))
+                conn.commit()
+                return new_app, True
+
+    def create_application_attempt(
+        self,
+        application_id: str,
+        idempotency_key: str,
+        stage_label: str = "initial",
+        current_page_url: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Tuple[Dict[str, Any], bool]:
+        if not idempotency_key or len(idempotency_key) > 100:
+            raise ValueError("idempotency_key must contain 1 to 100 characters.")
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT status FROM applications WHERE id = %s FOR UPDATE;", (application_id,))
+                application = cur.fetchone()
+                if not application:
+                    raise ValueError(f"Application '{application_id}' not found.")
+                if application["status"] == "SUBMITTED_CONFIRMED":
+                    raise ValueError("Cannot create an attempt for a submitted application.")
+                cur.execute("""
+                    SELECT * FROM application_attempts
+                    WHERE application_id = %s AND idempotency_key = %s
+                    FOR UPDATE;
+                """, (application_id, idempotency_key))
+                existing = cur.fetchone()
+                if existing:
+                    return existing, False
+
+                cur.execute("""
+                    SELECT COALESCE(MAX(attempt_number), 0) + 1 AS next_num
+                    FROM application_attempts
+                    WHERE application_id = %s;
+                """, (application_id,))
+                next_num = cur.fetchone()["next_num"]
+
+                cur.execute("""
+                    INSERT INTO application_attempts (
+                        application_id, attempt_number, idempotency_key, status,
+                        stage_label, current_page_url, metadata
+                    ) VALUES (%s, %s, %s, 'CREATED', %s, %s, %s)
+                    RETURNING *;
+                """, (application_id, next_num, idempotency_key, stage_label, current_page_url, json.dumps(metadata or {})))
+                attempt = cur.fetchone()
+
+                cur.execute("""
+                    INSERT INTO application_events (application_id, attempt_id, event_type, from_status, to_status, actor, details)
+                    VALUES (%s, %s, 'ATTEMPT_STARTED', NULL, 'CREATED', 'copilot', %s);
+                """, (application_id, attempt["id"], json.dumps({"attempt_number": next_num, "idempotency_key": idempotency_key})))
+                conn.commit()
+                return attempt, True
+
+    def get_application_attempt(self, attempt_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM application_attempts WHERE id = %s;", (attempt_id,))
+                return cur.fetchone()
+
+    def get_latest_attempt(self, application_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT * FROM application_attempts
+                    WHERE application_id = %s
+                    ORDER BY attempt_number DESC LIMIT 1;
+                """, (application_id,))
+                return cur.fetchone()
+
+    def transition_application_state(
+        self,
+        application_id: str,
+        to_status: str,
+        actor: str = "copilot",
+        reason: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+        attempt_id: Optional[str] = None
+    ) -> Tuple[bool, str]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT status FROM applications WHERE id = %s FOR UPDATE;", (application_id,))
+                row = cur.fetchone()
+                if not row:
+                    return False, f"Application '{application_id}' not found."
+                current = row["status"]
+                if current == to_status:
+                    return True, f"Application already in status '{to_status}'."
+
+                allowed = ALLOWED_APPLICATION_TRANSITIONS.get(current, set())
+                if to_status not in allowed:
+                    return False, f"Illegal application transition from '{current}' to '{to_status}'. Allowed: {sorted(allowed)}."
+
+                cur.execute("""
+                    UPDATE applications
+                    SET status = %s, updated_at = NOW()
+                    WHERE id = %s;
+                """, (to_status, application_id))
+
+                cur.execute("""
+                    INSERT INTO application_events (
+                        application_id, attempt_id, event_type, from_status, to_status, actor, reason, details
+                    ) VALUES (%s, %s, 'STATE_TRANSITION', %s, %s, %s, %s, %s);
+                """, (application_id, attempt_id, current, to_status, actor, reason, json.dumps(details or {})))
+                conn.commit()
+                return True, f"Application transitioned to '{to_status}'."
+
+    def transition_attempt_state(
+        self,
+        attempt_id: str,
+        to_status: str,
+        stage_label: Optional[str] = None,
+        current_page_url: Optional[str] = None,
+        error_summary: Optional[str] = None
+    ) -> Tuple[bool, str]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM application_attempts WHERE id = %s FOR UPDATE;", (attempt_id,))
+                row = cur.fetchone()
+                if not row:
+                    return False, f"Attempt '{attempt_id}' not found."
+                current = row["status"]
+                if current == to_status:
+                    return True, f"Attempt already in status '{to_status}'."
+
+                allowed = ALLOWED_ATTEMPT_TRANSITIONS.get(current, set())
+                if to_status not in allowed:
+                    return False, f"Illegal attempt transition from '{current}' to '{to_status}'. Allowed: {sorted(allowed)}."
+
+                ended_at = datetime.now(timezone.utc) if to_status in ("COMPLETED_WITHOUT_SUBMISSION", "INTERRUPTED", "FAILED") else None
+
+                cur.execute("""
+                    UPDATE application_attempts
+                    SET status = %s,
+                        stage_label = COALESCE(%s, stage_label),
+                        current_page_url = COALESCE(%s, current_page_url),
+                        error_summary = COALESCE(%s, error_summary),
+                        ended_at = COALESCE(%s, ended_at),
+                        updated_at = NOW()
+                    WHERE id = %s;
+                """, (to_status, stage_label, current_page_url, error_summary, ended_at, attempt_id))
+
+                cur.execute("""
+                    INSERT INTO application_events (
+                        application_id, attempt_id, event_type, from_status, to_status, actor, reason, details
+                    ) VALUES (%s, %s, 'ATTEMPT_TRANSITION', %s, %s, 'copilot', %s, %s);
+                """, (row["application_id"], attempt_id, current, to_status, error_summary, json.dumps({"stage": stage_label})))
+                conn.commit()
+                return True, f"Attempt transitioned to '{to_status}'."
+
+    def save_form_snapshot(
+        self,
+        attempt_id: str,
+        page_url: str,
+        form_fingerprint: str,
+        fields_metadata: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO form_snapshots (attempt_id, page_url, form_fingerprint, fields_metadata)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING *;
+                """, (attempt_id, page_url, form_fingerprint, json.dumps(fields_metadata, default=str)))
+                snapshot = cur.fetchone()
+                conn.commit()
+                return snapshot
+
+    def get_form_snapshot(self, snapshot_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM form_snapshots WHERE id = %s;", (snapshot_id,))
+                return cur.fetchone()
+
+    def get_latest_form_snapshot(self, attempt_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT * FROM form_snapshots
+                    WHERE attempt_id = %s
+                    ORDER BY captured_at DESC LIMIT 1;
+                """, (attempt_id,))
+                return cur.fetchone()
+
+    def save_field_plan(
+        self,
+        attempt_id: str,
+        form_snapshot_id: str,
+        fields: List[Dict[str, Any]],
+        validation_status: str,
+        validation_errors: List[str]
+    ) -> Dict[str, Any]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO field_plans (attempt_id, form_snapshot_id, fields, validation_status, validation_errors)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING *;
+                """, (attempt_id, form_snapshot_id, json.dumps(fields, default=str), validation_status, json.dumps(validation_errors)))
+                plan = cur.fetchone()
+                conn.commit()
+                return plan
+
+    def get_latest_validated_field_plan(
+        self,
+        attempt_id: str,
+        form_snapshot_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT * FROM field_plans
+                    WHERE attempt_id = %s
+                      AND form_snapshot_id = %s
+                      AND validation_status = 'VALIDATED'
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT 1;
+                """, (attempt_id, form_snapshot_id))
+                return cur.fetchone()
+
+    def record_fill_actions(
+        self,
+        attempt_id: str,
+        form_snapshot_id: str,
+        field_plan_id: str,
+        actions: List[Dict[str, Any]]
+    ) -> int:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id FROM field_plans
+                    WHERE id = %s AND attempt_id = %s AND form_snapshot_id = %s
+                      AND validation_status = 'VALIDATED'
+                    FOR SHARE;
+                """, (field_plan_id, attempt_id, form_snapshot_id))
+                if not cur.fetchone():
+                    raise ValueError("Actions must reference the matching validated field plan.")
+                count = 0
+                for act in actions:
+                    val_hash = act.get("value_hash")
+                    redacted = act.get("redacted_value")
+                    if not val_hash and act.get("value"):
+                        val_hash = hashlib.sha256(str(act["value"]).encode("utf-8")).hexdigest()
+                        redacted = str(act["value"])[:3] + "***" if len(str(act["value"])) > 3 else "***"
+
+                    cur.execute("""
+                        INSERT INTO application_fill_actions (
+                            attempt_id, form_snapshot_id, field_plan_id, idempotency_key,
+                            field_key, action_type, value_hash, redacted_value, status, error_message
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (attempt_id, idempotency_key) DO NOTHING;
+                    """, (
+                        attempt_id,
+                        form_snapshot_id,
+                        field_plan_id,
+                        act["idempotency_key"],
+                        act["field_key"],
+                        act["action_type"],
+                        val_hash,
+                        redacted,
+                        act.get("status", "SUCCESS"),
+                        act.get("error_message")
+                    ))
+                    count += cur.rowcount
+                conn.commit()
+                return count
+
+    def save_application_checkpoint(
+        self,
+        application_id: str,
+        attempt_id: str,
+        idempotency_key: str,
+        stage: str,
+        page_url: str,
+        blockers: List[str],
+        next_action: str,
+        human_checklist: List[Dict[str, Any]],
+        application_status: str,
+        snapshot_metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        if not idempotency_key or len(idempotency_key) > 100:
+            raise ValueError("idempotency_key must contain 1 to 100 characters.")
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT status, job_id FROM applications WHERE id = %s FOR UPDATE;", (application_id,))
+                application = cur.fetchone()
+                if not application:
+                    raise ValueError(f"Application '{application_id}' not found.")
+                cur.execute("SELECT * FROM application_attempts WHERE id = %s FOR UPDATE;", (attempt_id,))
+                attempt = cur.fetchone()
+                if not attempt or str(attempt["application_id"]) != str(application_id):
+                    raise ValueError("Attempt does not belong to the application.")
+
+                cur.execute("""
+                    SELECT * FROM application_checkpoints
+                    WHERE application_id = %s AND idempotency_key = %s;
+                """, (application_id, idempotency_key))
+                existing = cur.fetchone()
+                if existing:
+                    return existing
+
+                current_attempt = attempt["status"]
+                if current_attempt != "CHECKPOINTED":
+                    allowed_attempt = ALLOWED_ATTEMPT_TRANSITIONS.get(current_attempt, set())
+                    if "CHECKPOINTED" not in allowed_attempt:
+                        raise ValueError(f"Attempt cannot checkpoint from '{current_attempt}'.")
+
+                current_application = application["status"]
+                if current_application != application_status:
+                    allowed_application = ALLOWED_APPLICATION_TRANSITIONS.get(current_application, set())
+                    if application_status not in allowed_application:
+                        raise ValueError(
+                            f"Application cannot transition from '{current_application}' to '{application_status}'."
+                        )
+
+                cur.execute("""
+                    INSERT INTO application_checkpoints (
+                        application_id, attempt_id, idempotency_key, stage, page_url, blockers,
+                        next_action, human_checklist, snapshot_metadata
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING *;
+                """, (
+                    application_id,
+                    attempt_id,
+                    idempotency_key,
+                    stage,
+                    page_url,
+                    json.dumps(blockers),
+                    next_action,
+                    json.dumps(human_checklist, default=str),
+                    json.dumps(snapshot_metadata or {}, default=str)
+                ))
+                checkpoint = cur.fetchone()
+
+                if current_attempt != "CHECKPOINTED":
+                    cur.execute("""
+                        UPDATE application_attempts
+                        SET status = 'CHECKPOINTED', stage_label = %s,
+                            current_page_url = %s, updated_at = NOW()
+                        WHERE id = %s;
+                    """, (stage, page_url, attempt_id))
+                    cur.execute("""
+                        INSERT INTO application_events (
+                            application_id, attempt_id, event_type, from_status,
+                            to_status, actor, reason, details
+                        ) VALUES (%s, %s, 'ATTEMPT_TRANSITION', %s,
+                                  'CHECKPOINTED', 'copilot', %s, %s);
+                    """, (
+                        application_id, attempt_id, current_attempt, next_action,
+                        json.dumps({"stage": stage}),
+                    ))
+
+                if current_application != application_status:
+                    cur.execute("""
+                        UPDATE applications SET status = %s, updated_at = NOW()
+                        WHERE id = %s;
+                    """, (application_status, application_id))
+                    cur.execute("""
+                        INSERT INTO application_events (
+                            application_id, attempt_id, event_type, from_status,
+                            to_status, actor, reason, details
+                        ) VALUES (%s, %s, 'STATE_TRANSITION', %s, %s,
+                                  'copilot', %s, %s);
+                    """, (
+                        application_id, attempt_id, current_application,
+                        application_status, next_action,
+                        json.dumps({"stage": stage, "blockers": blockers}),
+                    ))
+
+                cur.execute("SELECT status FROM jobs WHERE job_id = %s FOR UPDATE;", (application["job_id"],))
+                job = cur.fetchone()
+                if job and job["status"] == "APPLICATION_STARTED":
+                    cur.execute("UPDATE jobs SET status = 'WAITING_FOR_HUMAN', updated_at = NOW() WHERE job_id = %s;", (application["job_id"],))
+                    cur.execute("""
+                        INSERT INTO job_events (job_id, event_type, from_status, to_status, details)
+                        VALUES (%s, 'WORKFLOW_TRANSITION', 'APPLICATION_STARTED',
+                                'WAITING_FOR_HUMAN', %s);
+                    """, (
+                        application["job_id"],
+                        json.dumps({"actor": "copilot", "reason": "Application checkpoint created"}),
+                    ))
+
+                cur.execute("""
+                    INSERT INTO application_events (
+                        application_id, attempt_id, event_type, from_status, to_status, actor, reason, details
+                    ) VALUES (%s, %s, 'CHECKPOINT_CREATED', NULL, NULL, 'copilot', %s, %s);
+                """, (application_id, attempt_id, next_action, json.dumps({"stage": stage, "blockers": blockers})))
+                conn.commit()
+                return checkpoint
+
+    def get_latest_checkpoint(self, application_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT * FROM application_checkpoints
+                    WHERE application_id = %s
+                    ORDER BY created_at DESC LIMIT 1;
+                """, (application_id,))
+                return cur.fetchone()
+
+    def record_human_submission(
+        self,
+        application_id: str,
+        reviewer: str,
+        notes: Optional[str] = None,
+        reference_number: Optional[str] = None,
+        *,
+        human_confirmed: bool = False
+    ) -> Tuple[bool, str]:
+        if not human_confirmed:
+            return False, "Explicit human confirmation through the local CLI is required to record submission."
+        if not reviewer or not reviewer.strip():
+            return False, "Reviewer identity is required."
+
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM applications WHERE id = %s FOR UPDATE;", (application_id,))
+                app = cur.fetchone()
+                if not app:
+                    return False, f"Application '{application_id}' not found."
+                if app["status"] == "SUBMITTED_CONFIRMED":
+                    return True, "Application was already recorded as submitted."
+                if app["status"] not in {"NEEDS_HUMAN_INPUT", "READY_FOR_HUMAN_REVIEW", "HUMAN_COMPLETING"}:
+                    return False, "A persisted human-review checkpoint is required before recording submission."
+
+                cur.execute("""
+                    SELECT id FROM application_checkpoints
+                    WHERE application_id = %s
+                    ORDER BY created_at DESC LIMIT 1;
+                """, (application_id,))
+                if not cur.fetchone():
+                    return False, "A persisted human-review checkpoint is required before recording submission."
+
+                # Verify resume artifact integrity
+                cur.execute("SELECT * FROM resume_versions WHERE id = %s;", (app["resume_version_id"],))
+                resume = cur.fetchone()
+                if not resume:
+                    return False, "Bound resume version not found."
+                if not resume["approved_by_human"] or str(resume["job_id"]) != str(app["job_id"]):
+                    return False, "Bound resume is not an approved artifact for this job."
+                if resume["content_hash"] != app["resume_content_hash"] or resume["pdf_hash"] != app["resume_pdf_hash"]:
+                    return False, "Bound resume ledger no longer matches the application binding."
+
+                actual_text_hash = hashlib.sha256(resume["tailored_text"].strip().encode("utf-8")).hexdigest()
+                if actual_text_hash != app["resume_content_hash"]:
+                    return False, "Bound resume content hash mismatch; integrity compromised."
+
+                # Verify PDF digest
+                try:
+                    actual_pdf_hash = hashlib.sha256(Path(resume["pdf_path"]).read_bytes()).hexdigest()
+                    if actual_pdf_hash != app["resume_pdf_hash"]:
+                        return False, "Bound resume PDF hash mismatch."
+                except Exception as e:
+                    return False, f"Cannot verify bound PDF artifact: {e}"
+
+                cur.execute("SELECT status FROM jobs WHERE job_id = %s FOR UPDATE;", (app["job_id"],))
+                job = cur.fetchone()
+                if not job:
+                    return False, "Bound job not found."
+                if job["status"] == "SUBMITTED":
+                    return False, "Job is already submitted but the application audit is inconsistent."
+                if "SUBMITTED" not in ALLOWED_WORKFLOW_TRANSITIONS.get(job["status"], set()):
+                    return False, f"Job cannot transition to SUBMITTED from '{job['status']}'."
+
+                previous_application_status = app["status"]
+                cur.execute("""
+                    UPDATE applications
+                    SET status = 'SUBMITTED_CONFIRMED',
+                        applied_at = NOW(),
+                        notes = COALESCE(%s, notes),
+                        updated_at = NOW()
+                    WHERE id = %s;
+                """, (notes, application_id))
+
+                cur.execute("UPDATE jobs SET status = 'SUBMITTED', updated_at = NOW() WHERE job_id = %s;", (app["job_id"],))
+                cur.execute("""
+                    INSERT INTO job_events (job_id, event_type, from_status, to_status, details)
+                    VALUES (%s, 'WORKFLOW_TRANSITION', %s, 'SUBMITTED', %s);
+                """, (
+                    app["job_id"],
+                    job["status"],
+                    json.dumps({
+                        "actor": reviewer,
+                        "reason": "Human-confirmed external submission",
+                        "application_id": application_id,
+                        "reference_number": reference_number,
+                    }),
+                ))
+
+                cur.execute("""
+                    UPDATE application_attempts
+                    SET status = 'COMPLETED_WITHOUT_SUBMISSION', ended_at = NOW(), updated_at = NOW()
+                    WHERE application_id = %s AND status = 'CHECKPOINTED';
+                """, (application_id,))
+
+                # Add application event
+                cur.execute("""
+                    INSERT INTO application_events (
+                        application_id, event_type, from_status, to_status, actor, reason, details
+                    ) VALUES (%s, 'SUBMITTED_CONFIRMED', %s, 'SUBMITTED_CONFIRMED', %s, %s, %s);
+                """, (
+                    application_id,
+                    previous_application_status,
+                    reviewer,
+                    f"Human confirmed external submission. Reference: {reference_number or 'None'}",
+                    json.dumps({"notes": notes, "reference_number": reference_number})
+                ))
+                conn.commit()
+                return True, "Application successfully recorded as submitted."

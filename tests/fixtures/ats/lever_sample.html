@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lever Synthetic Application - Technical Product Manager</title>
+</head>
+<body>
+  <div class="application-page">
+    <h2>Apply for Technical Product Manager</h2>
+    <form class="lever-form" action="/jobs/apply" method="POST" enctype="multipart/form-data">
+      <div class="section-candidate">
+        <label>Resume/CV <span>✱</span></label>
+        <input type="file" name="resume" class="file-upload" required />
+
+        <label>Full name <span>✱</span></label>
+        <input type="text" name="name" required />
+
+        <label>Email <span>✱</span></label>
+        <input type="email" name="email" required />
+
+        <label>Phone <span>✱</span></label>
+        <input type="tel" name="phone" required />
+
+        <label>Current company</label>
+        <input type="text" name="org" />
+      </div>
+
+      <div class="section-links">
+        <label>LinkedIn URL</label>
+        <input type="url" name="urls[LinkedIn]" />
+
+        <label>GitHub URL</label>
+        <input type="url" name="urls[GitHub]" />
+
+        <label>Other website</label>
+        <input type="url" name="urls[Other]" />
+      </div>
+
+      <div class="section-custom">
+        <label>Are you legally eligible to work in Canada without sponsorship? <span>✱</span></label>
+        <input type="radio" id="auth_y" name="cards[work_auth]" value="yes" /><label for="auth_y">Yes</label>
+        <input type="radio" id="auth_n" name="cards[work_auth]" value="no" /><label for="auth_n">No</label>
+
+        <label>What is your expected annual compensation (CAD)?</label>
+        <input type="text" name="cards[comp]" />
+
+        <label>What is your earliest possible start date?</label>
+        <input type="text" name="cards[start_date]" />
+      </div>
+
+      <div class="section-eeo">
+        <label>Voluntary Self-Identification: Gender</label>
+        <select name="eeo[gender]">
+          <option value="decline">Decline to self-identify</option>
+          <option value="male">Man</option>
+          <option value="female">Woman</option>
+        </select>
+      </div>
+
+      <div class="form-submit">
+        <button type="submit" class="postings-btn">Submit application</button>
+      </div>
+    </form>
+  </div>
+</body>
+</html>

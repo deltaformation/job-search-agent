@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Generic Company Application Form</title>
+</head>
+<body>
+  <h1>Careers at Unknown Portal</h1>
+  <form id="generic_apply" action="/submit-cv" method="POST">
+    <div class="form-row">
+      <label for="applicant_name">Candidate Name</label>
+      <input type="text" id="applicant_name" name="applicant_name" />
+    </div>
+
+    <div class="form-row">
+      <label for="applicant_email">Contact Email</label>
+      <input type="email" id="applicant_email" name="applicant_email" />
+    </div>
+
+    <div class="form-row">
+      <label for="custom_code_test">Provide link to your coding test or portfolio</label>
+      <input type="text" id="custom_code_test" name="custom_code_test" />
+    </div>
+
+    <div class="form-row">
+      <label for="obscure_radio">Select Preferred Evaluation Tier</label>
+      <input type="radio" id="tier_standard" name="eval_tier" value="standard" /><label for="tier_standard">Standard</label>
+      <input type="radio" id="tier_expedited" name="eval_tier" value="expedited" /><label for="tier_expedited">Expedited</label>
+    </div>
+
+    <div class="form-row">
+      <button type="submit" id="btn_send">Send My CV</button>
+    </div>
+  </form>
+</body>
+</html>

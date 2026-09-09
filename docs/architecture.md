@@ -25,7 +25,7 @@ flowchart TD
         CAND[candidate_profile & verified_facts]
         JOBS[jobs & job_sources]
         SCORES[job_scores & requirements]
-        APPS[applications & document_versions]
+        APPS[applications & resume_versions]
         AUDIT[job_events & agent_runs]
     end
 
@@ -75,6 +75,16 @@ flowchart TD
    - Compensation Fit: 5%
    - Company & Preference Fit: 5%
    - Recommendation bands: `exceptional` (90–100), `strong` (85–89), `review` (75–84), `weak` (65–74), `skip` (<65).
-6. **Human-in-the-Loop Safety**:
+6. **Application Copilot & Guarded Automation Architecture**:
+   - **Artifact & Readiness Gate**: Before any application action can begin, the system verifies that the job is in `READY` state, targets a secure HTTPS apply URL, and binds to the exact approved resume. Both the tailored text SHA256 digest and the on-disk compiled PDF SHA256 digest are re-computed and matched against database records. Symlinks and path traversal attempts are strictly forbidden.
+   - **Form Snapshot & Immutability**: Antigravity extracts ATS form controls and records an immutable `form_snapshot` containing stable field keys, control types, labels, names, options, required flags, and a structural fingerprint.
+   - **Deterministic Risk Governance**: Field inputs are classified into `SAFE`, `HUMAN_REVIEW`, and `PROHIBITED`. Any proposed field plan is deterministically validated by `FieldPlanValidator`:
+     - Safe inputs must match verified candidate memory verbatim (no hallucinations).
+     - Resume uploads must match the approved PDF artifact path and digest.
+     - Ambiguous, legal, or demographic inputs cannot be filled automatically.
+   - **Playwright MCP Action Boundary**: When the optional pinned Playwright MCP is configured and verified, Antigravity may use a headed browser to fill validated safe inputs and attach the approved PDF. Every reported action is audited in `application_fill_actions`.
+   - **Checkpoint & Human Takeover**: Automation stops strictly at `WAITING_FOR_HUMAN`. An immutable `application_checkpoint` is created. The human user performs manual review, answers gated questions (authorization, disclosures), and executes the final submit button.
+   - **Human-Only Outcome Recording**: `scripts/record_application_outcome.py` is invoked interactively by the user on a TTY to record confirmation of submission and update `applications` to `SUBMITTED_CONFIRMED`.
+7. **Human-in-the-Loop Safety**:
    - Autonomous: Searching, collecting, normalizing, deduplicating, scoring, drafting documents, inspecting application forms, filling safe fields.
    - Strictly Gated: Work authorization, legal disclosures, demographic data, salary negotiation, and final application submission require explicit user review and confirmation.

@@ -48,3 +48,10 @@ This repository is a **local-first, MCP-native job-search and application automa
 - Never run `scripts/review_resume.py` or call repository approval with `human_confirmed=True` autonomously. The local review command is operated by the human after inspecting the exact PDF/version.
 - Content hashes and the legacy `approval_signature` field are integrity/audit metadata, not evidence of human consent or digital signatures.
 - Generate a new immutable version for revisions; never overwrite a reviewed artifact. Resume approval never authorizes application submission.
+
+## Milestone 3 Browser & Application Submission Boundary
+- **Never Submit Applications Autonomously**: The agent harness (Antigravity) and background workers must NEVER click final submit buttons, submit ATS forms, or attest to legal/work authorization disclosures.
+- **Strict Human Takeover**: Automation must stop at `WAITING_FOR_HUMAN` and emit a checkpoint. The human completes final review and manual submission in a headed browser.
+- **Deterministic Field Governance**: Only factual candidate fields matching canonical profile memory verbatim may be planned or filled (`SAFE`). Legal, auth, and voluntary self-ID fields are `HUMAN_REVIEW` or `PROHIBITED`.
+- **Approved Artifact Binding**: Application workflows require a `READY` job with an approved resume. The validator verifies on-disk SHA256 digests and forbids symlinks, path traversals, or unapproved versions.
+- **Human-Only Outcome Recording**: `scripts/record_application_outcome.py` is strictly interactive and requires an active human TTY typing `CONFIRM`. Autonomous agents must never execute or mock this confirmation.

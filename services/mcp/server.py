@@ -419,5 +419,114 @@ def get_tailoring_audit(job_id: str, version_number: Optional[int] = None) -> st
         return json.dumps({"error": f"No resume versions found for job '{job_id}'."})
     return json.dumps(latest, indent=2, default=str)
 
+# -------------------------------------------------------------
+# APPLICATION COPILOT TOOLS (MILESTONE 3)
+# -------------------------------------------------------------
+from services.applications.service import ApplicationCopilotService
+app_service = ApplicationCopilotService(repo=repo)
+
+@mcp.tool()
+def prepare_application(job_id: str, idempotency_key: Optional[str] = None) -> str:
+    """
+    Validate that a job is in READY status with an approved resume artifact,
+    bind the application session to the exact approved version and digests,
+    and create an append-only application attempt.
+    """
+    result = app_service.prepare_application(job_id, idempotency_key=idempotency_key)
+    return json.dumps(result, indent=2, default=str)
+
+@mcp.tool()
+def get_application_context(application_id: str, attempt_id: str) -> str:
+    """
+    Retrieve scoped, safe application context for Antigravity:
+    - Job metadata and application URL.
+    - Approved resume artifact info (path and digest).
+    - Safe candidate profile fields (redacted of internal IDs).
+    - Policy summary.
+    """
+    result = app_service.get_application_context(application_id, attempt_id)
+    return json.dumps(result, indent=2, default=str)
+
+@mcp.tool()
+def record_form_snapshot(
+    attempt_id: str,
+    page_url: str,
+    form_fingerprint: str,
+    fields_metadata: List[Dict[str, Any]]
+) -> str:
+    """
+    Persist a sanitized form snapshot containing field metadata (labels, control types, names).
+    Transitions attempt state to INSPECTING.
+    """
+    result = app_service.record_form_snapshot(attempt_id, page_url, form_fingerprint, fields_metadata)
+    return json.dumps(result, indent=2, default=str)
+
+@mcp.tool()
+def submit_field_plan(
+    application_id: str,
+    attempt_id: str,
+    form_snapshot_id: str,
+    fields: List[Dict[str, Any]]
+) -> str:
+    """
+    Deterministically validate proposed field fill actions against candidate memory and policy.
+    AI proposals cannot downgrade risk class (e.g. human-review/prohibited cannot be marked safe).
+    Returns list of allowed safe fields to fill versus blocked fields requiring human input.
+    """
+    result = app_service.submit_field_plan(application_id, attempt_id, form_snapshot_id, fields)
+    return json.dumps(result, indent=2, default=str)
+
+@mcp.tool()
+def record_application_actions(
+    attempt_id: str,
+    form_snapshot_id: str,
+    actions: List[Dict[str, Any]]
+) -> str:
+    """
+    Audit executed fill and upload actions into the immutable application log.
+    Does not execute browser actions or accept final submissions.
+    """
+    result = app_service.record_actions(attempt_id, form_snapshot_id, actions)
+    return json.dumps(result, indent=2, default=str)
+
+@mcp.tool()
+def checkpoint_application(
+    application_id: str,
+    attempt_id: str,
+    stage: str,
+    page_url: str,
+    blockers: List[str],
+    next_action: str,
+    human_checklist: List[Dict[str, Any]],
+    idempotency_key: Optional[str] = None,
+    snapshot_metadata: Optional[Dict[str, Any]] = None
+) -> str:
+    """
+    Persist a pre-submission review checkpoint and human checklist.
+    Halts autonomous execution before any submit/apply button or attestation.
+    Leaves browser open for human takeover.
+    """
+    result = app_service.create_checkpoint(
+        application_id=application_id,
+        attempt_id=attempt_id,
+        stage=stage,
+        page_url=page_url,
+        blockers=blockers,
+        next_action=next_action,
+        human_checklist=human_checklist,
+        idempotency_key=idempotency_key,
+        snapshot_metadata=snapshot_metadata
+    )
+    return json.dumps(result, indent=2, default=str)
+
+@mcp.tool()
+def get_application_status(application_id: str) -> str:
+    """
+    Retrieve application status, latest attempt, pre-submit checkpoints,
+    and outstanding human checklist items.
+    """
+    result = app_service.get_application_status(application_id)
+    return json.dumps(result, indent=2, default=str)
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

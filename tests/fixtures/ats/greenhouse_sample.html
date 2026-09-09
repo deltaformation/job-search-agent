@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Greenhouse Synthetic Job Application - Senior Product Manager</title>
+</head>
+<body>
+  <h1>Apply for Senior Product Manager at Acme Cloud Corp</h1>
+  <form id="application_form" action="/apply" method="POST" enctype="multipart/form-data">
+    <div class="field">
+      <label for="first_name">First Name <span class="required">*</span></label>
+      <input type="text" id="first_name" name="first_name" required />
+    </div>
+
+    <div class="field">
+      <label for="last_name">Last Name <span class="required">*</span></label>
+      <input type="text" id="last_name" name="last_name" required />
+    </div>
+
+    <div class="field">
+      <label for="email">Email <span class="required">*</span></label>
+      <input type="email" id="email" name="email" required />
+    </div>
+
+    <div class="field">
+      <label for="phone">Phone <span class="required">*</span></label>
+      <input type="tel" id="phone" name="phone" required />
+    </div>
+
+    <div class="field">
+      <label for="job_application_location">Location (City, Province/State) <span class="required">*</span></label>
+      <input type="text" id="job_application_location" name="location" required />
+    </div>
+
+    <div class="field">
+      <label for="resume">Resume/CV (PDF, DOCX) <span class="required">*</span></label>
+      <input type="file" id="resume" name="resume" accept=".pdf,.docx" required />
+    </div>
+
+    <div class="field">
+      <label for="linkedin">LinkedIn Profile</label>
+      <input type="url" id="linkedin" name="urls[LinkedIn]" />
+    </div>
+
+    <div class="field">
+      <label for="website">Personal Website / Portfolio</label>
+      <input type="url" id="website" name="urls[Portfolio]" />
+    </div>
+
+    <!-- Human Review Required: Work Authorization & Compensation -->
+    <div class="field">
+      <label for="work_auth">Are you legally authorized to work in Canada? <span class="required">*</span></label>
+      <select id="work_auth" name="custom_work_authorization" required>
+        <option value="">Select an option</option>
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="sponsorship">Will you now or in the future require visa sponsorship? <span class="required">*</span></label>
+      <select id="sponsorship" name="custom_sponsorship" required>
+        <option value="">Select an option</option>
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="salary">What are your salary expectations (CAD)?</label>
+      <input type="text" id="salary" name="custom_salary_expectations" />
+    </div>
+
+    <div class="field">
+      <label for="why_us">Why are you interested in joining Acme Cloud Corp?</label>
+      <textarea id="why_us" name="custom_why_us" rows="4"></textarea>
+    </div>
+
+    <!-- Prohibited: Voluntary Demographic / EEO Questions -->
+    <div class="section eeo">
+      <h2>Equal Opportunity Employment Questions</h2>
+      <div class="field">
+        <label for="gender">Gender Identity</label>
+        <select id="gender" name="eeo_gender">
+          <option value="decline">I decline to self-identify</option>
+          <option value="female">Female</option>
+          <option value="male">Male</option>
+          <option value="non_binary">Non-binary</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="race">Race / Ethnicity</label>
+        <select id="race" name="eeo_race">
+          <option value="decline">I decline to self-identify</option>
+          <option value="asian">Asian</option>
+          <option value="black">Black or African American</option>
+          <option value="hispanic">Hispanic or Latino</option>
+          <option value="white">White</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="veteran">Veteran Status</label>
+        <select id="veteran" name="eeo_veteran">
+          <option value="decline">I decline to self-identify</option>
+          <option value="veteran">I am a veteran</option>
+          <option value="not_veteran">I am not a veteran</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Prohibited: Legal Attestation -->
+    <div class="field">
+      <input type="checkbox" id="legal_attest" name="legal_attestation" />
+      <label for="legal_attest">I certify that all statements made in this application are true and correct.</label>
+    </div>
+
+    <!-- Final Submission Action (PROHIBITED FOR AI AUTOMATION) -->
+    <div class="actions">
+      <button type="submit" id="submit_app" name="submit_app">Submit Application</button>
+    </div>
+  </form>
+</body>
+</html>

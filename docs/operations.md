@@ -164,9 +164,46 @@ repo.acknowledge_shortlist_delivery(batch_id, reserved_job_ids)
 
 ---
 
-## 8. Test Suite Verification
+## 8. Application Copilot & Human Takeover Workflow
 
-Run the full automated test suite to ensure all discovery, scoring, provenance, document generation, and workflow state constraints pass:
+The Application Copilot automates safe, factual ATS field entry while enforcing strict human takeover before submission.
+
+### End-to-End Workflow
+
+1. **Pre-flight Readiness Gate**:
+   - Ensure the job is in `READY` status with an approved resume version (`approved_by_human = True`).
+   - Call `prepare_application(job_id)` to validate on-disk SHA256 digests, verify contact information, and initialize an application record.
+
+2. **Form Inspection & Snapshot**:
+   - Antigravity navigates to the ATS URL in a headed browser using Playwright MCP (`browser_navigate`, `browser_snapshot`).
+   - Call `record_form_snapshot(attempt_id, page_url, form_fingerprint, fields_metadata)` to create an immutable snapshot of detected form controls.
+
+3. **Field Plan Proposal & Validation**:
+   - Classify fields into `SAFE`, `HUMAN_REVIEW`, and `PROHIBITED`.
+   - Propose a field plan and submit it to `submit_field_plan(application_id, attempt_id, form_snapshot_id, fields)`.
+   - The deterministic `FieldPlanValidator` enforces that factual values match candidate memory verbatim, resume files match the approved PDF digest, and sensitive questions remain untouched.
+
+4. **Guarded Action Execution**:
+   - Antigravity executes validated actions in the browser (`browser_fill_form`, `browser_file_upload`).
+   - Log observed actions via `record_application_actions(attempt_id, form_snapshot_id, actions)`. Each action must carry an idempotency key and match the persisted validated plan.
+
+5. **Human Checkpoint & Takeover**:
+   - Call `checkpoint_application(application_id, attempt_id, stage, page_url, blockers, next_action, human_checklist)` to persist the handoff state.
+   - The job workflow transitions to `WAITING_FOR_HUMAN`.
+   - The user inspects the headed browser, answers work authorization and demographic questions, reviews the attached resume, and clicks the final submit button.
+
+6. **Interactive Human Outcome Recording**:
+   - After manually submitting, the human records the final outcome using the local interactive CLI:
+     ```bash
+     .venv/bin/python scripts/record_application_outcome.py --app-id <APPLICATION_UUID>
+     ```
+   - This tool enforces an active TTY session, displays the application context and resume digest, and requires typing `CONFIRM` to advance state to `SUBMITTED_CONFIRMED`. Autonomous agents are blocked from calling this script.
+
+---
+
+## 9. Test Suite Verification
+
+Run the full automated test suite to ensure all discovery, scoring, provenance, document generation, and application copilot constraints pass:
 
 ```bash
 .venv/bin/pytest tests/

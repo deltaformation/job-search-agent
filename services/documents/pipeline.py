@@ -41,6 +41,7 @@ def generate_documents(repo: JobRepository, job_id: str, draft: Optional[Dict[st
         "diff_summary": tailor.compute_diff(baseline, plain),
         "validation_status": "VALIDATED", "validation_report": report,
         "profile_snapshot_id": profile_id, "jd_snapshot_id": jd_id,
+        "analysis_id": str(analysis["id"]) if analysis else None,
         "baseline_text": baseline, "requirements_snapshot": requirements,
     })
     resume_id = str(record["id"])
