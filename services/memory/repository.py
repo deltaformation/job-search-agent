@@ -1,5 +1,6 @@
 import os
 import json
+import hashlib
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 import psycopg
@@ -419,3 +420,209 @@ class JobRepository:
                 """, (job_id, old_status, new_status, json.dumps(details or {})))
                 conn.commit()
                 return True
+
+    def save_candidate_snapshot(self, candidate_id: str, profile_data: Dict[str, Any]) -> str:
+        data_str = json.dumps(profile_data, sort_keys=True, default=str)
+        s_hash = hashlib.sha256(data_str.encode("utf-8")).hexdigest()
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO candidate_profile_snapshots (candidate_id, snapshot_hash, profile_data)
+                    VALUES (%s, %s, %s)
+                    RETURNING id;
+                """, (candidate_id, s_hash, data_str))
+                conn.commit()
+                return str(cur.fetchone()["id"])
+
+    def save_jd_snapshot(self, job_id: str, raw_text: str, cleaned_text: str) -> str:
+        c_hash = hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO jd_snapshots (job_id, content_hash, raw_text, cleaned_text)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (job_id, content_hash) DO UPDATE SET cleaned_text = EXCLUDED.cleaned_text
+                    RETURNING id;
+                """, (job_id, c_hash, raw_text, cleaned_text))
+                conn.commit()
+                return str(cur.fetchone()["id"])
+
+    def get_jd_snapshot(self, job_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT * FROM jd_snapshots WHERE job_id = %s ORDER BY created_at DESC LIMIT 1;
+                """, (job_id,))
+                return cur.fetchone()
+
+    def save_job_requirements(self, job_id: str, requirements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM job_requirements WHERE job_id = %s;", (job_id,))
+                saved = []
+                for req in requirements:
+                    cur.execute("""
+                        INSERT INTO job_requirements (
+                            job_id, requirement_id, jd_quote, description, requirement_type,
+                            classification, is_required, matched_fact_ids, omitted_from_base_resume,
+                            match_status, analysis_notes
+                        ) VALUES (
+                            %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s
+                        ) RETURNING *;
+                    """, (
+                        job_id,
+                        req.get("requirement_id"),
+                        req.get("jd_quote", ""),
+                        req.get("description", req.get("jd_quote", "")),
+                        req.get("requirement_type", "required"),
+                        req.get("classification", "general"),
+                        req.get("is_required", True),
+                        json.dumps(req.get("matched_fact_ids", [])),
+                        req.get("omitted_from_base_resume", False),
+                        req.get("status", "unsupported"),
+                        req.get("analysis_notes", "")
+                    ))
+                    saved.append(cur.fetchone())
+                conn.commit()
+                return saved
+
+    def get_job_requirements(self, job_id: str) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT * FROM job_requirements WHERE job_id = %s ORDER BY created_at ASC;
+                """, (job_id,))
+                return cur.fetchall()
+
+    def save_resume_version(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT COALESCE(MAX(version_number), 0) + 1 AS next_ver
+                    FROM resume_versions WHERE job_id = %s;
+                """, (data["job_id"],))
+                next_ver = cur.fetchone()["next_ver"]
+
+                cur.execute("""
+                    INSERT INTO resume_versions (
+                        job_id, application_id, base_version, version_number, parent_version_id,
+                        content_hash, tailored_text, structured_content, claim_evidence_map,
+                        fact_ids_used, diff_summary, validation_status, validation_report,
+                        html_path, pdf_path, approved_by_human
+                    ) VALUES (
+                        %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s
+                    ) RETURNING *;
+                """, (
+                    data["job_id"],
+                    data.get("application_id"),
+                    data.get("base_version", "canonical_v1"),
+                    next_ver,
+                    data.get("parent_version_id"),
+                    data["content_hash"],
+                    data["tailored_text"],
+                    json.dumps(data.get("structured_content", {}), default=str),
+                    json.dumps(data.get("claim_evidence_map", []), default=str),
+                    json.dumps(data.get("fact_ids_used", []), default=str),
+                    data.get("diff_summary", ""),
+                    data.get("validation_status", "DRAFT"),
+                    json.dumps(data.get("validation_report", {}), default=str),
+                    data.get("html_path"),
+                    data.get("pdf_path"),
+                    False
+                ))
+                saved = cur.fetchone()
+
+                cur.execute("""
+                    INSERT INTO job_events (job_id, event_type, from_status, to_status, details)
+                    VALUES (%s, 'RESUME_VERSION_CREATED', NULL, %s, %s);
+                """, (data["job_id"], saved["validation_status"], json.dumps({"version": next_ver, "hash": data["content_hash"]})))
+
+                conn.commit()
+                return saved
+
+    def update_resume_validation(
+        self,
+        resume_id: str,
+        status: str,
+        report: Dict[str, Any],
+        html_path: Optional[str] = None,
+        pdf_path: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE resume_versions
+                    SET validation_status = %s,
+                        validation_report = %s,
+                        html_path = COALESCE(%s, html_path),
+                        pdf_path = COALESCE(%s, pdf_path)
+                    WHERE id = %s
+                    RETURNING *;
+                """, (status, json.dumps(report, default=str), html_path, pdf_path, resume_id))
+                updated = cur.fetchone()
+                if updated:
+                    cur.execute("""
+                        INSERT INTO job_events (job_id, event_type, from_status, to_status, details)
+                        VALUES (%s, 'RESUME_VALIDATED', NULL, %s, %s);
+                    """, (updated["job_id"], status, json.dumps({"resume_id": resume_id, "status": status})))
+                    conn.commit()
+                return updated
+
+    def confirm_human_approval(self, resume_id: str, expected_hash: str, reviewer: str = "human") -> tuple[bool, str]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM resume_versions WHERE id = %s;", (resume_id,))
+                record = cur.fetchone()
+                if not record:
+                    return False, f"Resume version {resume_id} not found."
+                
+                if record["content_hash"] != expected_hash:
+                    return False, f"Content hash mismatch. Expected: {expected_hash}, Actual in DB: {record['content_hash']}. Document was modified."
+
+                if record["validation_status"] not in ["RENDERED", "AWAITING_HUMAN_REVIEW", "VALIDATED"]:
+                    return False, f"Cannot approve resume with validation status '{record['validation_status']}'."
+
+                sig = hashlib.sha256(f"{resume_id}:{expected_hash}:{reviewer}".encode("utf-8")).hexdigest()
+
+                cur.execute("""
+                    UPDATE resume_versions
+                    SET approved_by_human = TRUE,
+                        validation_status = 'APPROVED',
+                        human_approved_at = NOW(),
+                        human_reviewer = %s,
+                        approval_signature = %s
+                    WHERE id = %s
+                    RETURNING *;
+                """, (reviewer, sig, resume_id))
+                
+                cur.execute("""
+                    INSERT INTO job_events (job_id, event_type, from_status, to_status, details)
+                    VALUES (%s, 'RESUME_APPROVED', 'AWAITING_HUMAN_REVIEW', 'APPROVED', %s);
+                """, (record["job_id"], json.dumps({"resume_id": resume_id, "reviewer": reviewer, "signature": sig})))
+                
+                cur.execute("""
+                    INSERT INTO review_events (entity_type, entity_id, decision, notes, reviewer)
+                    VALUES ('resume', %s, 'approved', 'Explicit human review confirmed with hash match', %s);
+                """, (resume_id, reviewer))
+
+                conn.commit()
+                return True, sig
+
+    def get_resume_version(self, resume_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM resume_versions WHERE id = %s;", (resume_id,))
+                return cur.fetchone()
+
+    def get_latest_resume_for_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT * FROM resume_versions WHERE job_id = %s ORDER BY version_number DESC LIMIT 1;
+                """, (job_id,))
+                return cur.fetchone()
