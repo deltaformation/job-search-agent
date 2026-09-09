@@ -5,6 +5,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
+from services.intelligence.models import CanonicalRequirement, KeywordCoverageResult
+
 CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "scoring.yaml"
 
 class FitScorer:
@@ -65,7 +67,10 @@ class FitScorer:
         penalty_total = 0.0
 
         is_provisional = analysis is None
-        requirements = analysis.get("requirements", []) if analysis else []
+        requirements = [
+            CanonicalRequirement.model_validate(requirement).model_dump()
+            for requirement in analysis.get("requirements", [])
+        ] if analysis else []
 
         # ---------------------------------------------------------
         # 1. Role Alignment (Weight: 25%)
@@ -408,12 +413,19 @@ class FitScorer:
             score_band = "weak"
             recommendation = "skip"
 
+        keyword_coverage = self.calculate_keyword_coverage(
+            job,
+            candidate_profile,
+            analysis={"requirements": requirements} if analysis else None,
+        )
+
         return {
             "overall_score": overall_score,
             "score_band": score_band,
             "recommendation": recommendation,
             "is_provisional": is_provisional,
             "evidence_coverage": evidence_coverage,
+            "keyword_coverage": keyword_coverage,
             "role_alignment": round(role_score, 1),
             "experience_score": round(exp_score, 1),
             "seniority_score": round(seniority_score, 1),
@@ -430,6 +442,123 @@ class FitScorer:
             "evidence_fact_ids": sorted(list(set(evidence_fact_ids))),
             "scoring_version": "v2"
         }
+
+    def calculate_keyword_coverage(
+        self,
+        job: Dict[str, Any],
+        candidate_profile: Dict[str, Any],
+        required_terms: Optional[List[str]] = None,
+        analysis: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Calculate transparent keyword coverage grounded strictly in verified candidate evidence.
+        Formula: (supported normalized required terms / total normalized required terms) * 100
+        Only verified skills/technologies or exact approved candidate fact texts count as support.
+        """
+        terms_to_check: List[str] = []
+        if required_terms is not None:
+            terms_to_check = [t.strip().lower() for t in required_terms if t and t.strip()]
+        else:
+            requirements = [
+                CanonicalRequirement.model_validate(requirement).model_dump()
+                for requirement in analysis.get("requirements", [])
+            ] if analysis else []
+            derived: List[str] = []
+            for req in requirements:
+                if req.get("importance", "required") == "required":
+                    desc_text = req.get("description") or req.get("jd_quote") or ""
+                    if desc_text and len(desc_text.split()) <= 4:
+                        derived.append(desc_text.strip().lower())
+            if not derived:
+                desc = (job.get("description") or "").lower()
+                common_tokens = [
+                    "python", "kafka", "postgresql", "sql", "api", "rest", "graphql", "aws", "gcp", "azure",
+                    "cloud", "docker", "kubernetes", "agile", "scrum", "microservices", "streaming", "platform",
+                    "analytics", "strategy", "data", "ml", "ai"
+                ]
+                for tok in common_tokens:
+                    if re.search(rf"\b{re.escape(tok)}\b", desc):
+                        derived.append(tok)
+            terms_to_check = derived
+
+        # Deduplicate while preserving order
+        seen_terms = set()
+        normalized_terms = []
+        for t in terms_to_check:
+            if t not in seen_terms:
+                seen_terms.add(t)
+                normalized_terms.append(t)
+
+        if not normalized_terms:
+            return KeywordCoverageResult(
+                coverage_percentage=0.0,
+                matched_terms=[],
+                unsupported_terms=[],
+                term_sources={},
+                skill_sources={},
+                algorithm_version="keyword_v1",
+                total_required_terms=0,
+                supported_required_terms=0,
+            ).model_dump()
+
+        verified_skills = {
+            s["name"].strip().lower(): s["name"].strip()
+            for s in candidate_profile.get("skills", [])
+            if s.get("verified") is True and isinstance(s.get("name"), str) and s["name"].strip()
+        }
+        approved_facts = [
+            f for f in candidate_profile.get("verified_facts", [])
+            if f.get("verification_status") == "approved"
+        ]
+
+        matched_terms: List[str] = []
+        unsupported_terms: List[str] = []
+        term_sources: Dict[str, List[str]] = {}
+        skill_sources: Dict[str, List[str]] = {}
+
+        for term in normalized_terms:
+            term_sources_for_t: List[str] = []
+            skill_sources_for_t: List[str] = []
+            is_supported = False
+
+            for skill, display_name in verified_skills.items():
+                if term == skill or re.search(rf"\b{re.escape(term)}\b", skill):
+                    is_supported = True
+                    skill_sources_for_t.append(display_name)
+
+            for fact in approved_facts:
+                fid = fact.get("fact_id")
+                techs = [t.strip().lower() for t in fact.get("technologies", [])]
+                fact_text = (fact.get("text") or "").lower()
+
+                has_tech_match = any(term == tech or re.search(rf"\b{re.escape(term)}\b", tech) for tech in techs)
+                has_text_match = bool(re.search(rf"\b{re.escape(term)}\b", fact_text))
+
+                if has_tech_match or has_text_match:
+                    is_supported = True
+                    if fid and fid not in term_sources_for_t:
+                        term_sources_for_t.append(fid)
+
+            if is_supported:
+                matched_terms.append(term)
+                term_sources[term] = sorted(term_sources_for_t)
+                skill_sources[term] = sorted(skill_sources_for_t)
+            else:
+                unsupported_terms.append(term)
+
+        total = len(normalized_terms)
+        coverage_pct = round((len(matched_terms) / total) * 100.0, 1) if total > 0 else 0.0
+
+        return KeywordCoverageResult(
+            coverage_percentage=coverage_pct,
+            matched_terms=matched_terms,
+            unsupported_terms=unsupported_terms,
+            term_sources=term_sources,
+            skill_sources=skill_sources,
+            algorithm_version="keyword_v1",
+            total_required_terms=total,
+            supported_required_terms=len(matched_terms),
+        ).model_dump()
 
     @staticmethod
     def _verified_experience_years(candidate_profile: Dict[str, Any]) -> Optional[float]:

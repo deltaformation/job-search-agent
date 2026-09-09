@@ -96,7 +96,13 @@ def create_job(repo: JobRepository) -> str:
     key = uuid4().hex
     job, _ = repo.upsert_job({"canonical_url": f"https://example.com/{key}", "content_hash": key,
                              "company": key, "title": "PM", "location": "Toronto", "description": "API"}, {})
-    return str(job["job_id"])
+    job_id = str(job["job_id"])
+    profile = repo.get_candidate_profile()
+    if profile:
+        cand_snap_id = repo.save_candidate_snapshot(str(profile["id"]), profile)
+        jd_snap_id = repo.save_jd_snapshot(job_id, "API", "API")
+        repo.save_job_analysis(job_id, jd_snap_id, cand_snap_id, [], notes="Test analysis")
+    return job_id
 
 
 def test_pipeline_snapshots_lineage_and_failure(clean_db: JobRepository, tmp_path: Path) -> None:

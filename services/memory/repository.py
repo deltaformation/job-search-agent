@@ -9,6 +9,10 @@ import psycopg
 from psycopg.rows import dict_row
 from services.discovery.deduplicator import is_ats_url, detect_ats_type
 from services.discovery.normalizer import generate_content_hash
+from services.intelligence.models import (
+    CanonicalRequirement,
+    validate_preparation_request_transition,
+)
 
 # Compute freshness at read time, including jobs that are never scraped again.
 FRESHNESS_JOIN = """
@@ -319,7 +323,8 @@ class JobRepository:
         with self.get_connection() as conn:
             with conn.cursor() as cur:
                 query = f"""
-                    SELECT j.*, fresh.age_hours, fresh.freshness_bucket, s.overall_score, s.recommendation, s.strengths, s.gaps, s.evidence_fact_ids
+                    SELECT j.*, fresh.age_hours, fresh.freshness_bucket, s.overall_score, s.recommendation,
+                           s.strengths, s.gaps, s.evidence_fact_ids, s.keyword_coverage
                     FROM jobs j
                     {FRESHNESS_JOIN}
                     LEFT JOIN job_scores s ON j.job_id = s.job_id
@@ -358,6 +363,7 @@ class JobRepository:
             with conn.cursor() as cur:
                 cur.execute(f"""
                     SELECT j.*, fresh.age_hours, fresh.freshness_bucket, s.overall_score, s.recommendation, s.strengths, s.gaps, s.risks, s.evidence_fact_ids,
+                           s.keyword_coverage,
                            s.role_alignment, s.experience_score, s.seniority_score, s.skills_score,
                            s.domain_score, s.location_score, s.comp_score, s.preference_score
                     FROM jobs j
@@ -393,13 +399,13 @@ class JobRepository:
                     INSERT INTO job_scores (
                         job_id, overall_score, recommendation, role_alignment, experience_score,
                         seniority_score, skills_score, domain_score, location_score, comp_score,
-                        preference_score, strengths, gaps, risks, evidence_fact_ids,
+                        preference_score, strengths, gaps, risks, evidence_fact_ids, keyword_coverage,
                         analysis_id, is_provisional, evidence_coverage, score_band,
                         factor_breakdown, uncertainties, scoring_version, scored_at
                     ) VALUES (
                         %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s,
                         %s, %s, %s, NOW()
                     )
@@ -418,6 +424,7 @@ class JobRepository:
                         gaps = EXCLUDED.gaps,
                         risks = EXCLUDED.risks,
                         evidence_fact_ids = EXCLUDED.evidence_fact_ids,
+                        keyword_coverage = EXCLUDED.keyword_coverage,
                         analysis_id = EXCLUDED.analysis_id,
                         is_provisional = EXCLUDED.is_provisional,
                         evidence_coverage = EXCLUDED.evidence_coverage,
@@ -443,6 +450,8 @@ class JobRepository:
                     json.dumps(score_data.get("gaps", [])),
                     json.dumps(score_data.get("risks", [])),
                     json.dumps(score_data.get("evidence_fact_ids", [])),
+                    json.dumps(score_data.get("keyword_coverage"), default=str)
+                    if score_data.get("keyword_coverage") is not None else None,
                     analysis_id or score_data.get("analysis_id"),
                     score_data.get("is_provisional", True),
                     score_data.get("evidence_coverage", 0.0),
@@ -756,6 +765,10 @@ class JobRepository:
         notes: str = "",
         created_by: str = "antigravity"
     ) -> Dict[str, Any]:
+        canonical_reqs = [
+            CanonicalRequirement.model_validate(requirement).model_dump()
+            for requirement in requirements
+        ]
         with self.get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT job_id FROM jobs WHERE job_id = %s FOR UPDATE;", (job_id,))
@@ -768,6 +781,20 @@ class JobRepository:
                 """, (job_id,))
                 next_ver = cur.fetchone()["next_ver"]
 
+                cur.execute(
+                    "SELECT id FROM jd_snapshots WHERE id = %s AND job_id = %s;",
+                    (jd_snapshot_id, job_id),
+                )
+                if not cur.fetchone():
+                    raise ValueError("JD snapshot does not belong to the requested job.")
+
+                cur.execute(
+                    "SELECT id FROM candidate_profile_snapshots WHERE id = %s;",
+                    (candidate_snapshot_id,),
+                )
+                if not cur.fetchone():
+                    raise ValueError("Candidate profile snapshot not found.")
+
                 cur.execute("""
                     INSERT INTO job_analyses (
                         job_id, version_number, jd_snapshot_id, candidate_snapshot_id,
@@ -779,7 +806,7 @@ class JobRepository:
                     next_ver,
                     jd_snapshot_id,
                     candidate_snapshot_id,
-                    json.dumps(requirements, default=str),
+                    json.dumps(canonical_reqs, default=str),
                     notes,
                     created_by
                 ))
@@ -888,6 +915,7 @@ class JobRepository:
                     SELECT j.*, fresh.age_hours, fresh.freshness_bucket,
                            s.overall_score, s.recommendation, s.score_band, s.is_provisional,
                            s.evidence_coverage, s.strengths, s.gaps, s.risks, s.evidence_fact_ids,
+                           s.keyword_coverage,
                            CASE WHEN s.score_band = 'exceptional' THEN 1
                                 WHEN s.score_band = 'strong' THEN 2
                                 WHEN s.score_band = 'review' THEN 3
@@ -1007,11 +1035,20 @@ class JobRepository:
                 cur.execute("""
                     INSERT INTO jd_snapshots (job_id, content_hash, raw_text, cleaned_text)
                     VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (job_id, content_hash) DO UPDATE SET cleaned_text = EXCLUDED.cleaned_text
+                    ON CONFLICT (job_id, content_hash) DO NOTHING
                     RETURNING id;
                 """, (job_id, c_hash, raw_text, cleaned_text))
+                snapshot = cur.fetchone()
+                if not snapshot:
+                    cur.execute(
+                        "SELECT id FROM jd_snapshots WHERE job_id = %s AND content_hash = %s;",
+                        (job_id, c_hash),
+                    )
+                    snapshot = cur.fetchone()
                 conn.commit()
-                return str(cur.fetchone()["id"])
+                if not snapshot:
+                    raise RuntimeError("JD snapshot conflict could not be resolved.")
+                return str(snapshot["id"])
 
     def get_jd_snapshot(self, job_id: str) -> Optional[Dict[str, Any]]:
         with self.get_connection() as conn:
@@ -1019,6 +1056,15 @@ class JobRepository:
                 cur.execute("""
                     SELECT * FROM jd_snapshots WHERE job_id = %s ORDER BY created_at DESC LIMIT 1;
                 """, (job_id,))
+                return cur.fetchone()
+
+    def get_jd_snapshot_by_hash(self, job_id: str, content_hash: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT * FROM jd_snapshots
+                    WHERE job_id = %s AND content_hash = %s;
+                """, (job_id, content_hash))
                 return cur.fetchone()
 
     def save_job_requirements(self, job_id: str, requirements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -1811,3 +1857,132 @@ class JobRepository:
                 ))
                 conn.commit()
                 return True, "Application successfully recorded as submitted."
+
+    # -------------------------------------------------------------
+    # PREPARATION REQUEST METHODS (MILESTONE 4)
+    # -------------------------------------------------------------
+    def create_preparation_request(
+        self,
+        job_id: str,
+        idempotency_key: str,
+        requested_by: str = "antigravity",
+        briefing_id: Optional[str] = None
+    ) -> Tuple[Dict[str, Any], bool]:
+        """
+        Idempotently create or retrieve a preparation request for a job.
+        Enforces UNIQUE (job_id, idempotency_key).
+        Returns (record, is_new).
+        """
+        if not isinstance(idempotency_key, str) or not idempotency_key.strip() or len(idempotency_key) > 100:
+            raise ValueError("idempotency_key must contain 1 to 100 non-whitespace characters.")
+        if not isinstance(requested_by, str) or not requested_by.strip() or len(requested_by) > 100:
+            raise ValueError("requested_by must contain 1 to 100 non-whitespace characters.")
+
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                # Check if job exists
+                cur.execute("SELECT job_id FROM jobs WHERE job_id = %s;", (job_id,))
+                if not cur.fetchone():
+                    raise ValueError(f"Job '{job_id}' not found.")
+
+                # Check if existing request matches (job_id, idempotency_key)
+                cur.execute("""
+                    SELECT * FROM preparation_requests
+                    WHERE job_id = %s AND idempotency_key = %s;
+                """, (job_id, idempotency_key))
+                existing = cur.fetchone()
+                if existing:
+                    return existing, False
+
+                cur.execute("""
+                    INSERT INTO preparation_requests (
+                        job_id, briefing_id, requested_by, idempotency_key, status
+                    ) VALUES (%s, %s, %s, %s, 'QUEUED')
+                    ON CONFLICT (job_id, idempotency_key) DO NOTHING
+                    RETURNING *;
+                """, (job_id, briefing_id, requested_by, idempotency_key))
+                created = cur.fetchone()
+                if created:
+                    conn.commit()
+                    return created, True
+
+                # If conflict occurred concurrently, fetch existing
+                cur.execute("""
+                    SELECT * FROM preparation_requests
+                    WHERE job_id = %s AND idempotency_key = %s;
+                """, (job_id, idempotency_key))
+                return cur.fetchone(), False
+
+    def get_preparation_request(self, request_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM preparation_requests WHERE id = %s;", (request_id,))
+                return cur.fetchone()
+
+    def get_preparation_request_by_idempotency(self, job_id: str, idempotency_key: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT * FROM preparation_requests
+                    WHERE job_id = %s AND idempotency_key = %s;
+                """, (job_id, idempotency_key))
+                return cur.fetchone()
+
+    def update_preparation_request_status(
+        self,
+        request_id: str,
+        status: str,
+        analysis_id: Optional[str] = None,
+        resume_version_id: Optional[str] = None,
+        error_summary: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM preparation_requests WHERE id = %s FOR UPDATE;",
+                    (request_id,),
+                )
+                current = cur.fetchone()
+                if not current:
+                    return None
+                normalized_status = validate_preparation_request_transition(current["status"], status)
+                next_error_summary = (
+                    error_summary if error_summary is not None else current.get("error_summary")
+                ) if normalized_status.value in {"BLOCKED", "FAILED"} else None
+
+                cur.execute("""
+                    UPDATE preparation_requests
+                    SET status = %s,
+                        analysis_id = COALESCE(%s, analysis_id),
+                        resume_version_id = COALESCE(%s, resume_version_id),
+                        error_summary = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    RETURNING *;
+                """, (normalized_status.value, analysis_id, resume_version_id, next_error_summary, request_id))
+                updated = cur.fetchone()
+                conn.commit()
+                return updated
+
+    def list_preparation_requests(
+        self,
+        job_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        if limit < 1 or limit > 500:
+            raise ValueError("limit must be between 1 and 500.")
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                query = "SELECT * FROM preparation_requests WHERE 1=1"
+                params: List[Any] = []
+                if job_id is not None:
+                    query += " AND job_id = %s"
+                    params.append(job_id)
+                if status is not None:
+                    query += " AND status = %s"
+                    params.append(status)
+                query += " ORDER BY created_at DESC LIMIT %s;"
+                params.append(limit)
+                cur.execute(query, params)
+                return cur.fetchall()

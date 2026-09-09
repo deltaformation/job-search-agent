@@ -69,7 +69,8 @@ class ResumeTailor:
     def generate_tailored_draft(
         self,
         job: Dict[str, Any],
-        matched_fact_ids: Optional[List[str]] = None
+        matched_fact_ids: Optional[List[str]] = None,
+        evidence_fact_ids: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Synthesizes a structured tailored resume following Option A (Verbatim Selection).
@@ -77,6 +78,8 @@ class ResumeTailor:
         """
         desc = (job.get("description") or "").lower()
         title = (job.get("title") or "").lower()
+
+        priority_fact_ids = set(evidence_fact_ids if evidence_fact_ids is not None else (matched_fact_ids or []))
 
         # Score relevance of each verified fact against the JD
         fact_scores: List[Tuple[str, float]] = []
@@ -95,7 +98,7 @@ class ResumeTailor:
                 if tok in desc and tok in fact_text:
                     score += 1.0
 
-            if matched_fact_ids and fid in matched_fact_ids:
+            if fid in priority_fact_ids:
                 score += 5.0
 
             fact_scores.append((fid, score))

@@ -61,10 +61,21 @@ def test_job_repository_roundtrip(isolated_repo: JobRepository) -> None:
         "gaps": [],
         "risks": [],
         "evidence_fact_ids": ["fact_001", "fact_002"],
+        "keyword_coverage": {
+            "coverage_percentage": 100.0,
+            "matched_terms": ["aws"],
+            "unsupported_terms": [],
+            "term_sources": {"aws": ["fact_001"]},
+            "skill_sources": {"aws": ["AWS"]},
+            "algorithm_version": "keyword_v1",
+            "total_required_terms": 1,
+            "supported_required_terms": 1,
+        },
         "is_provisional": False,
     }
     saved_score = repo.save_job_score(job_id, score_payload)
     assert float(saved_score["overall_score"]) == 92.5
+    assert saved_score["keyword_coverage"]["coverage_percentage"] == 100.0
     with repo.get_connection() as conn:
         versions = conn.execute(
             "SELECT version_number, score_data FROM job_score_versions WHERE job_id = %s",
@@ -78,6 +89,7 @@ def test_job_repository_roundtrip(isolated_repo: JobRepository) -> None:
     retrieved = repo.get_job_by_id(job_id)
     assert retrieved is not None
     assert retrieved["status"] == "QUALIFIED"
+    assert retrieved["keyword_coverage"]["matched_terms"] == ["aws"]
     assert len(retrieved["sources"]) >= 1
 
     # 5. Query feed with filters

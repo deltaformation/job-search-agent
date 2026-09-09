@@ -68,12 +68,16 @@ class ClaimValidator:
                 errors.append(f"Requirement '{rid}' requires a list of fact IDs.")
                 continue
             if status in ("matched", "partial") and not ids:
-                errors.append(f"Requirement '{rid}' has no matched_fact_ids (empty evidence).")
+                errors.append(f"Requirement '{rid}' has no matched_fact_ids / evidence_fact_ids (empty evidence).")
+            if status in ("unsupported", "gap") and ids:
+                errors.append(f"Requirement '{rid}' has match_status '{status}' but contains evidence fact IDs.")
             for fid in ids:
                 if fid not in self.verified_facts_by_id:
                     errors.append(f"Requirement '{rid}' references unknown or unapproved fact_id '{fid}'.")
 
             evidence_quotes = req.get("evidence_quotes", [])
+            if status in ("unsupported", "gap") and evidence_quotes:
+                errors.append(f"Requirement '{rid}' has match_status '{status}' but contains evidence quotes.")
             if status in ("matched", "partial"):
                 if not isinstance(evidence_quotes, list) or not evidence_quotes:
                     errors.append(f"Requirement '{rid}' requires evidence_quotes for every proposed match.")

@@ -5,6 +5,7 @@ import hashlib
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
+from uuid import uuid4
 
 # Ensure project root is in path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -180,12 +181,13 @@ def get_pending_analysis(limit: int = 10, min_score: Optional[float] = None) -> 
 
     results = []
     for j in jobs:
-        # Ensure JD snapshot exists
-        jd_snap = repo.get_jd_snapshot(str(j["job_id"]))
+        # Ensure the context always references a snapshot of the current JD.
+        raw_text = (j.get("description") or "").replace("\x00", "").strip()
+        current_hash = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
+        jd_snap = repo.get_jd_snapshot_by_hash(str(j["job_id"]), current_hash)
         if not jd_snap:
-            raw_text = j.get("description") or ""
             snap_id = repo.save_jd_snapshot(str(j["job_id"]), raw_text, raw_text)
-            jd_snap = {"id": snap_id, "cleaned_text": raw_text}
+            jd_snap = {"id": snap_id, "cleaned_text": raw_text, "content_hash": current_hash}
 
         results.append({
             "job_id": str(j["job_id"]),
@@ -219,9 +221,16 @@ def submit_analysis_version(analysis_data: Dict[str, Any]) -> str:
     if not profile:
         return json.dumps({"status": "error", "message": "Candidate profile not found."})
 
-    jd_snap = repo.get_jd_snapshot(job_id)
+    current_jd = (job.get("description") or "").replace("\x00", "").strip()
+    current_jd_hash = hashlib.sha256(current_jd.encode("utf-8")).hexdigest()
+    jd_snap = repo.get_jd_snapshot_by_hash(job_id, current_jd_hash)
     if not jd_snap:
-        return json.dumps({"status": "error", "message": "No JD snapshot found for job."})
+        current_snapshot_id = repo.save_jd_snapshot(job_id, current_jd, current_jd)
+        return json.dumps({
+            "status": "error",
+            "message": "No snapshot exists for the current JD; retrieve a new analysis context.",
+            "current_jd_snapshot_id": current_snapshot_id,
+        })
 
     candidate_snap_id = analysis_data.get("candidate_snapshot_id")
     cand_snap = repo.get_candidate_snapshot(str(candidate_snap_id)) if candidate_snap_id else None
@@ -418,6 +427,65 @@ def get_tailoring_audit(job_id: str, version_number: Optional[int] = None) -> st
     if not latest:
         return json.dumps({"error": f"No resume versions found for job '{job_id}'."})
     return json.dumps(latest, indent=2, default=str)
+
+# -------------------------------------------------------------
+# PREPARATION REQUEST TOOLS (MILESTONE 4)
+# -------------------------------------------------------------
+@mcp.tool()
+def create_preparation_request(
+    job_id: str,
+    idempotency_key: str,
+    briefing_id: Optional[str] = None
+) -> str:
+    """
+    Idempotently create or retrieve a preparation request for job analysis and resume tailoring.
+    Enforces uniqueness on (job_id, idempotency_key). Retrying returns the existing request.
+    """
+    if not job_id:
+        return json.dumps({"status": "error", "message": "job_id is required."})
+    if not isinstance(idempotency_key, str) or not idempotency_key.strip() or len(idempotency_key) > 100:
+        return json.dumps({
+            "status": "error",
+            "message": "idempotency_key must contain 1 to 100 non-whitespace characters."
+        })
+
+    job = repo.get_job_by_id(job_id)
+    if not job:
+        return json.dumps({"status": "error", "message": f"Job '{job_id}' not found."})
+
+    try:
+        record, is_new = repo.create_preparation_request(
+            job_id=job_id,
+            idempotency_key=idempotency_key,
+            requested_by="mcp_user",
+            briefing_id=briefing_id
+        )
+        return json.dumps({
+            "status": "success",
+            "is_new": is_new,
+            "request_id": str(record["id"]),
+            "preparation_request": record
+        }, indent=2, default=str)
+    except Exception as exc:
+        return json.dumps({"status": "error", "message": str(exc)})
+
+@mcp.tool()
+def get_preparation_status(request_id: str) -> str:
+    """
+    Retrieve the current status, bound analysis, tailored resume, or blockers
+    for a preparation request.
+    """
+    if not request_id:
+        return json.dumps({"status": "error", "message": "request_id is required."})
+
+    record = repo.get_preparation_request(request_id)
+    if not record:
+        return json.dumps({"status": "error", "message": f"Preparation request '{request_id}' not found."})
+
+    return json.dumps({
+        "status": "success",
+        "preparation_request": record
+    }, indent=2, default=str)
 
 # -------------------------------------------------------------
 # APPLICATION COPILOT TOOLS (MILESTONE 3)
