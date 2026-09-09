@@ -1,12 +1,21 @@
 # AGENTS.md - Job Search Operating System
 
-This document provides instructions, architectural context, and code review guidelines for AI coding agents (including ChatGPT Codex).
+This document provides shared instructions, architectural context, and code review guidelines for every coding agent working in this repository, including Codex and Gemini sessions launched through Antigravity or Nimbalyst.
 
 ## Project Overview
-This repository is a **local-first, MCP-native job-search and application automation system** designed to run under **Antigravity** as the primary agent harness.
+This repository is a **local-first, MCP-native job-search and application automation system** managed as a multi-agent project in **Nimbalyst**.
 - **Persistence**: Local PostgreSQL 16 database (`job_system`).
 - **MCP Layer**: FastMCP server (`career-memory`) exposing discovery, candidate profile, fit scoring, and application tracking tools.
-- **AI Reasoning**: Antigravity itself is the primary LLM reasoning layer. No local Ollama, vLLM, or separate LLMs are used.
+- **AI Reasoning**: Codex and Gemini/Antigravity are interchangeable reasoning clients over the same deterministic services and candidate memory. Provider-specific adapters may exist at the edges, but no agent is the source of truth.
+- **Project Control**: `nimbalyst-local/` contains the human-readable dashboard, milestone records, plans, decisions, and the unified `project-work` tracker. Its lifecycle is `backlog` → `in-progress` → `in-review` → `done`, with `blocked` for a real dependency.
+
+## Multi-Agent Coordination
+- Read `nimbalyst-local/project-summary.md`, `nimbalyst-local/agent-handoff.md`, and `nimbalyst-local/tracker/tasks.md` before starting milestone work.
+- Treat PostgreSQL and verified repository artifacts as runtime truth. Treat Nimbalyst files as the project-status projection. Never infer completion from a plan label alone.
+- Claim one bounded task per session. Use a separate Nimbalyst session or worktree for parallel changes that may touch overlapping files.
+- Move project work to `in-progress` when work begins, `in-review` when implementation and local verification are complete, and `done` only after acceptance evidence is recorded. Use `kind` and `milestone` fields for filtering; do not create built-in task, plan, milestone, decision, or idea tracker items that add competing Kanban columns.
+- Update the matching milestone and plan document when scope, status, evidence, dependencies, or remaining work changes.
+- Do not attribute work to a specific model unless the session or commit provides that evidence.
 
 ## Architecture & Monorepo Structure
 - `config/`: Configuration files for search criteria (`jobs.yaml`), scoring weights (`scoring.yaml`), and schedule (`schedule.yaml`).
@@ -15,7 +24,7 @@ This repository is a **local-first, MCP-native job-search and application automa
 - `services/discovery/`: Scraper (JobSpy wrapper), normalizer, deduplicator (5-signal), and freshness bucketer.
 - `services/intelligence/`: Fit scorer evaluating JD against verified candidate profile.
 - `services/memory/`: PostgreSQL repository and data access layer.
-- `services/mcp/`: FastMCP server (`career-memory`) for Antigravity integration.
+- `services/mcp/`: FastMCP server (`career-memory`) for compatible agent clients.
 - `scripts/`: Operational entrypoints (`init_db.py`, `run_discovery.py`).
 - `tests/`: Pytest test suite (`pytest tests/`).
 
@@ -39,7 +48,7 @@ This repository is a **local-first, MCP-native job-search and application automa
 - **Operational Commands**:
   - Prefer checked-in scripts for multiline diagnostics. Do not embed escaped Python f-strings in `python -c` shell commands. Use `scripts/show_candidate_profile.py` for candidate-memory inspection.
 
-## Code Review Checklist (for Codex & Reviewers)
+## Code Review Checklist (for All Agents & Reviewers)
 1. **Fact Integrity**: Does the code respect candidate memory and `fact_id` provenance?
 2. **Resilience**: Are third-party failures (HTTP 403, 400, rate limits) caught and logged without crashing the pipeline?
 3. **Security**: Are credentials kept out of source code (using `.env` / environment variables)?
@@ -52,7 +61,7 @@ This repository is a **local-first, MCP-native job-search and application automa
 - Generate a new immutable version for revisions; never overwrite a reviewed artifact. Resume approval never authorizes application submission.
 
 ## Milestone 3 Browser & Application Submission Boundary
-- **Never Submit Applications Autonomously**: The agent harness (Antigravity) and background workers must NEVER click final submit buttons, submit ATS forms, or attest to legal/work authorization disclosures.
+- **Never Submit Applications Autonomously**: Agents and background workers must NEVER click final submit buttons, submit ATS forms, or attest to legal/work authorization disclosures.
 - **Strict Human Takeover**: Automation must stop at `WAITING_FOR_HUMAN` and emit a checkpoint. The human completes final review and manual submission in a headed browser.
 - **Deterministic Field Governance**: Only factual candidate fields matching canonical profile memory verbatim may be planned or filled (`SAFE`). Legal, auth, and voluntary self-ID fields are `HUMAN_REVIEW` or `PROHIBITED`.
 - **Approved Artifact Binding**: Application workflows require a `READY` job with an approved resume. The validator verifies on-disk SHA256 digests and forbids symlinks, path traversals, or unapproved versions.

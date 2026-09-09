@@ -2,9 +2,8 @@
 Briefing service implementing morning job discovery windowing,
 snapshot freezing, normalization, and Markdown summary presentation.
 """
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
-from uuid import UUID
 
 from services.memory.repository import JobRepository
 from services.intelligence.scorer import FitScorer
@@ -77,12 +76,20 @@ class BriefingService:
         self,
         schedule_name: str = "morning_scan",
         window_hours: float = 24.0,
-        limit: int = 50
+        limit: int = 50,
+        trigger_run_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Evaluate new/updated jobs since the last acknowledged briefing,
         gather audit metrics, freeze snapshot items, and persist the briefing.
         """
+        if not isinstance(schedule_name, str) or not schedule_name.strip():
+            raise ValueError("schedule_name is required.")
+        if window_hours <= 0 or window_hours > 168:
+            raise ValueError("window_hours must be greater than 0 and no more than 168.")
+        if limit < 1 or limit > 100:
+            raise ValueError("limit must be between 1 and 100.")
+
         window_started_at, window_ended_at = self.repo.compute_new_jobs_window(
             schedule_name=schedule_name,
             default_window_hours=window_hours
@@ -96,15 +103,12 @@ class BriefingService:
             created = run.get("created_at")
             if created and created >= window_started_at:
                 source_run_ids.append(str(run.get("run_id") or run.get("id")))
-                metrics_data = run.get("metrics") or {}
-                boards = metrics_data.get("boards") or {}
-                for board, b_info in boards.items():
-                    if isinstance(b_info, dict):
-                        b_status = b_info.get("status", "SUCCESS")
-                    else:
-                        b_status = "SUCCESS"
+                observations = self.repo.get_discovery_observations(str(run.get("id")))
+                for observation in observations:
+                    board = str(observation.get("source_name") or "unknown")
+                    board_status = str(observation.get("status") or "success").upper()
                     if board not in source_status or source_status[board] == "SUCCESS":
-                        source_status[board] = b_status
+                        source_status[board] = board_status
 
         # Query all active jobs
         all_jobs = self.repo.get_jobs(
@@ -224,7 +228,8 @@ class BriefingService:
             window_ended_at=window_ended_at,
             source_run_ids=source_run_ids,
             metrics=metrics,
-            items=briefing_items
+            items=briefing_items,
+            trigger_run_id=trigger_run_id,
         )
 
         return briefing
@@ -248,7 +253,10 @@ class BriefingService:
         ]
 
         if source_status:
-            source_pills = " | ".join(f"`{k}: {v}`" for k, v in source_status.items())
+            source_pills = " | ".join(
+                f"`{self._escape_markdown_table_cell(k)}: {self._escape_markdown_table_cell(v)}`"
+                for k, v in source_status.items()
+            )
             header_lines.append(f"**Sources:** {source_pills}")
 
         header_lines.append("")
@@ -258,13 +266,15 @@ class BriefingService:
         for item in items[:10]:  # Top 10 for chat readability
             snap = item.get("snapshot") or {}
             rank = item.get("rank", 1)
-            title = snap.get("title", "Role")
-            company = snap.get("company", "Company")
-            remote = snap.get("remote_type", "Remote")
+            title = self._escape_markdown_table_cell(snap.get("title", "Role"))
+            company = self._escape_markdown_table_cell(snap.get("company", "Company"))
+            remote = self._escape_markdown_table_cell(snap.get("remote_type", "Remote"))
             score = f"{snap.get('overall_score'):.0f}%" if snap.get("overall_score") is not None else "Pending"
-            freshness = snap.get("freshness", "RECENT")
+            freshness = self._escape_markdown_table_cell(snap.get("freshness", "RECENT"))
             rec = snap.get("recommendation", "-")
-            rec_badge = "⭐ **REC**" if rec == "RECOMMENDED" else ("⚖️ Consider" if rec == "CONSIDER" else rec)
+            rec_badge = "⭐ **REC**" if rec == "RECOMMENDED" else (
+                "⚖️ Consider" if rec == "CONSIDER" else self._escape_markdown_table_cell(rec)
+            )
 
             header_lines.append(f"| {rank} | **{title}** | {company} | {remote} | {score} | {freshness} | {rec_badge} |")
 
@@ -274,3 +284,8 @@ class BriefingService:
         header_lines.append(f"\n👉 **[Open Morning Job Dashboard]({dashboard_url})** to inspect match evidence and prepare selected jobs.")
 
         return "\n".join(header_lines)
+
+    @staticmethod
+    def _escape_markdown_table_cell(value: Any) -> str:
+        """Keep untrusted job-board text inside one Markdown table cell."""
+        return str(value).replace("\\", "\\\\").replace("|", "\\|").replace("\r", " ").replace("\n", " ")

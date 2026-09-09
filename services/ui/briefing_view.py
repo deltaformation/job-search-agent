@@ -3,6 +3,7 @@ Accessible, modern HTML/CSS/JS generator for the Morning Job Dashboard (Mileston
 Implements semantic tables, responsive filters, row expansion, sticky prepare toolbar,
 native <dialog> outcomes, and strict WCAG AA / a11y standards.
 """
+import html
 import json
 from typing import Any, Dict, List
 
@@ -13,9 +14,8 @@ def render_briefing_dashboard_html(
     csrf_token: str
 ) -> str:
     briefing_id = str(briefing["id"])
-    schedule_name = briefing.get("schedule_name", "morning_scan")
+    schedule_name = html.escape(str(briefing.get("schedule_name", "morning_scan")))
     metrics = briefing.get("metrics") or {}
-    source_status = metrics.get("source_status") or {}
 
     # Serialize items as JSON safely for clientside filter/sort
     items_json = json.dumps([
@@ -25,7 +25,7 @@ def render_briefing_dashboard_html(
             **(it.get("snapshot") or {})
         }
         for it in items
-    ], default=str).replace("</script>", "<\\/script>")
+    ], default=str).replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -517,6 +517,24 @@ def render_briefing_dashboard_html(
         let selectedJobIds = new Set();
         let visibleJobIds = [];
 
+        function escapeHtml(value) {{
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#039;');
+        }}
+
+        function safeSourceUrl(value) {{
+            try {{
+                const parsed = new URL(String(value || ''));
+                return ['http:', 'https:'].includes(parsed.protocol) ? escapeHtml(parsed.href) : '#';
+            }} catch (_) {{
+                return '#';
+            }}
+        }}
+
         function renderTable() {{
             const searchVal = document.getElementById('search-input').value.toLowerCase();
             const recVal = document.getElementById('filter-rec').value;
@@ -571,24 +589,24 @@ def render_briefing_dashboard_html(
                 tr.innerHTML = `
                     <td>
                         <input type="checkbox" class="job-checkbox" data-job-id="${{j.job_id}}"
-                            aria-label="Select ${{j.title}} at ${{j.company}}"
+                            aria-label="Select ${{escapeHtml(j.title)}} at ${{escapeHtml(j.company)}}"
                             ${{isSelected ? 'checked' : ''}}>
                     </td>
                     <td>
-                        <span class="badge ${{recClass}}">${{j.recommendation || 'REVIEW'}}</span>
+                        <span class="badge ${{escapeHtml(recClass)}}">${{escapeHtml(j.recommendation || 'REVIEW')}}</span>
                     </td>
                     <td>
-                        <strong>${{j.title}}</strong><br>
-                        <span style="color: var(--text-secondary);">${{j.company}}</span>
+                        <strong>${{escapeHtml(j.title)}}</strong><br>
+                        <span style="color: var(--text-secondary);">${{escapeHtml(j.company)}}</span>
                     </td>
-                    <td>${{j.remote_type || 'On-site'}}</td>
-                    <td>${{j.location || 'Remote'}}</td>
-                    <td>${{j.compensation || 'Not disclosed'}}</td>
-                    <td><span class="badge ${{freshClass}}">${{j.freshness}}</span></td>
+                    <td>${{escapeHtml(j.remote_type || 'On-site')}}</td>
+                    <td>${{escapeHtml(j.location || 'Remote')}}</td>
+                    <td>${{escapeHtml(j.compensation || 'Not disclosed')}}</td>
+                    <td><span class="badge ${{escapeHtml(freshClass)}}">${{escapeHtml(j.freshness)}}</span></td>
                     <td class="score-cell">${{scoreText}}</td>
                     <td>${{kwText}}</td>
                     <td>${{evText}}</td>
-                    <td style="max-width: 180px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" title="${{topGapText}}">${{topGapText}}</td>
+                    <td style="max-width: 180px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" title="${{escapeHtml(topGapText)}}">${{escapeHtml(topGapText)}}</td>
                     <td>
                         <button type="button" class="btn btn-toggle-details" data-job-id="${{j.job_id}}" aria-expanded="false" aria-controls="details-${{j.job_id}}">
                             Details
@@ -607,16 +625,16 @@ def render_briefing_dashboard_html(
                         <div class="details-grid">
                             <div class="detail-box">
                                 <h4>Top Strengths</h4>
-                                <ul>${{(j.strengths || []).slice(0, 3).map(s => `<li>${{s}}</li>`).join('') || '<li>No explicit strengths recorded</li>'}}</ul>
+                                <ul>${{(j.strengths || []).slice(0, 3).map(s => `<li>${{escapeHtml(s)}}</li>`).join('') || '<li>No explicit strengths recorded</li>'}}</ul>
                             </div>
                             <div class="detail-box">
                                 <h4>Gaps & Risks</h4>
-                                <ul>${{(j.gaps || []).slice(0, 3).map(g => `<li>${{g}}</li>`).join('') || '<li>No critical gaps detected</li>'}}</ul>
+                                <ul>${{(j.gaps || []).slice(0, 3).map(g => `<li>${{escapeHtml(g)}}</li>`).join('') || '<li>No critical gaps detected</li>'}}</ul>
                             </div>
                             <div class="detail-box">
                                 <h4>Post Provenance</h4>
-                                <p style="margin-bottom: 0.5rem;">Source: <a href="${{j.source_url}}" target="_blank" rel="noopener noreferrer">View Original Posting</a></p>
-                                <p style="color: var(--text-secondary); font-size: 0.75rem;">Job ID: ${{j.job_id}}</p>
+                                <p style="margin-bottom: 0.5rem;">Source: <a href="${{safeSourceUrl(j.source_url)}}" target="_blank" rel="noopener noreferrer">View Original Posting</a></p>
+                                <p style="color: var(--text-secondary); font-size: 0.75rem;">Job ID: ${{escapeHtml(j.job_id)}}</p>
                             </div>
                         </div>
                     </td>
@@ -735,12 +753,12 @@ def render_briefing_dashboard_html(
                         itemDiv.className = 'outcome-item';
                         itemDiv.innerHTML = `
                             <div>
-                                <strong>${{job.title}}</strong> (${{job.company}})<br>
-                                <span style="font-size: 0.75rem; color: var(--text-secondary);">${{outcome.reason || 'Preparation request active'}}</span>
+                                <strong>${{escapeHtml(job.title)}}</strong> (${{escapeHtml(job.company)}})<br>
+                                <span style="font-size: 0.75rem; color: var(--text-secondary);">${{escapeHtml(outcome.reason || 'Preparation request active')}}</span>
                             </div>
                             <div>
                                 <span class="badge ${{outcome.status === 'QUEUED' || outcome.status === 'ALREADY_PREPARED' ? 'badge-rec' : 'badge-hot'}}">
-                                    ${{outcome.status}}
+                                    ${{escapeHtml(outcome.status)}}
                                 </span>
                             </div>
                         `;

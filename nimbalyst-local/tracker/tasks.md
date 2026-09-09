@@ -1,44 +1,78 @@
-# Project Tasks
+# Project Work Board
 
-## Milestone 1: Local Job Discovery & Ingestion (Completed)
-- [x] Set up PostgreSQL 16 schema and initial migrations #task[id:tsk_01M1F8PQ0K442GJFCD87CGM0N2 status:done priority:critical created:2026-09-01]
-- [x] Implement JobSpy multi-board scraper wrapper with rate-limit backoff #task[id:tsk_01M1HV3E0KF9H58F3WNBSEX9SF status:done priority:high created:2026-09-01]
-- [x] Build 5-signal job deduplicator preserving multi-source provenance #task[id:tsk_01M1HV3E0K5S3EQ1QTS7XZV2TK status:done priority:high created:2026-09-02]
-- [x] Implement posting age calculation with freshness bucketing (HOT, FRESH, RECENT, STALE) #task[id:tsk_01M1MDG50K3NSS8WBRMRXA0NBB status:done priority:medium created:2026-09-02]
-- [x] Implement FastMCP career-memory server with stdio transport #task[id:tsk_01M1MDG50KJDS1E950GA5X0F20 status:done priority:critical created:2026-09-02]
+This is the single Kanban source for milestones and executable work. Completed implementation details stay searchable but are archived so the default board remains focused.
 
-## Milestone 2: Truthful Resume Tailoring & Provenance (Completed)
-- [x] Build candidate career memory repository with canonical fact-ID verification #task[id:tsk_01M1PZWW0KNRM6PG736HSV9QJ4 status:done priority:critical created:2026-09-03]
-- [x] Create strict fact integrity engine ensuring zero fabricated experience #task[id:tsk_01M1PZWW0KKKXY35BZ14RK60PW status:done priority:critical created:2026-09-03]
-- [x] Implement WeasyPrint ATS-friendly PDF resume renderer #task[id:tsk_01M1SJ9K0KQJSEPTKE6K4R3W72 status:done priority:high created:2026-09-04]
-- [x] Build tamper-proof resume approval with SHA256 integrity metadata #task[id:tsk_01M1SJ9K0KR4P4GD720HJBMQVZ status:done priority:high created:2026-09-04]
-- [x] Add interactive CLI review tool (scripts/review_resume.py) with human-only consent boundary #task[id:tsk_01M1SJ9K0KF99ZR1V5MW4VPJ65 status:done priority:critical created:2026-09-04]
+## Milestones
 
-## Milestone 3: Guarded Application Copilot (Completed)
-- [x] Implement Playwright browser integration for automated navigation #task[id:tsk_01M1W4PA0KWVWG0D9138J75V08 status:done priority:high created:2026-09-05]
-- [x] Define deterministic field safety governance (SAFE, HUMAN_REVIEW, PROHIBITED) #task[id:tsk_01M1W4PA0KKG6G2HVMFQ9HKJEJ status:done priority:critical created:2026-09-05]
-- [x] Enforce strict human takeover boundary (WAITING_FOR_HUMAN checkpoint) #task[id:tsk_01M1W4PA0KQBAVTWZZKKNWW1VT status:done priority:critical created:2026-09-05]
-- [x] Implement SHA256 digest validation forbidding unapproved or symlinked resumes #task[id:tsk_01M1YQ310KCNNJVZW2SQC27A7J status:done priority:high created:2026-09-06]
-- [x] Build interactive application outcome recorder (scripts/record_application_outcome.py) #task[id:tsk_01M1YQ310KXP9X59XMKA7EFP49 status:done priority:high created:2026-09-06]
+- [x] Milestone 1: Discovery & Ingestion #project-work[id:wrk_01K4Q8ABCDEF1234567890GHA1 status:done kind:milestone milestone:m1 priority:critical created:2026-09-08]
+- [x] Milestone 2: Truthful Resume Engine #project-work[id:wrk_01K4Q8ABCDEF1234567890GHA2 status:done kind:milestone milestone:m2 priority:critical created:2026-09-08]
+- [x] Milestone 3: Guarded Application Copilot #project-work[id:wrk_01K4Q8ABCDEF1234567890GHA3 status:done kind:milestone milestone:m3 priority:critical created:2026-09-09]
+- [x] Milestone 4: Evidence & Preparation Contract #project-work[id:wrk_01K4Q8ABCDEF1234567890GHA4 status:done kind:milestone milestone:m4 priority:high created:2026-09-09]
+- [x] Milestone 5: Local Control Service & Bridge #project-work[id:wrk_01K4Q8ABCDEF1234567890GHA5 status:done kind:milestone milestone:m5 priority:high created:2026-09-09]
+- [ ] Milestone 6: Morning Job Radar #project-work[id:wrk_01K4Q8ABCDEF1234567890GHA6 status:in-progress kind:milestone milestone:m6 priority:high created:2026-09-09]
+  - Backend implementation and scheduled briefing integration are verified; human scheduler activation remains open.
 
-## Milestone 4: Evidence and Preparation Contract (Completed)
-- [x] Implement candidate fit scoring engine evaluating JDs against verified facts #task[id:tsk_01M1YQ310K11D5ETP7DKPSGVDK status:done priority:high created:2026-09-07]
-- [x] Build requirement gap analysis explicitly flagging unsupported skills #task[id:tsk_01M1YQ310K7E5TN3VJ9HA9Z4X4 status:done priority:high created:2026-09-07]
-- [x] Create interview preparation briefing generator with company research #task[id:tsk_01M219FR0KSVJ8WQMK6ZKGG060 status:done priority:medium created:2026-09-07]
+## Milestone 6: Current Work
 
-## Milestone 5: Local Control Service and Bridge (Completed)
-- [x] Build local control service web server with FastAPI and secure token authentication #task[id:tsk_01M219FR0K9TH0P8AW85XJBSVE status:done priority:high created:2026-09-08]
-- [x] Implement background worker session management and status endpoints #task[id:tsk_01M219FR0KM126EP0CXQDKR930 status:done priority:medium created:2026-09-08]
-- [x] Build same-conversation agent bridge for Antigravity integration #task[id:tsk_01M22JP3GKAXZKSZK87WSA7FKG status:done priority:high created:2026-09-08]
+- [ ] Activate the 07:30 America/Toronto workflow in the human-selected scheduler and verify one real run #project-work[id:wrk_01K4Q8ABCDEF1234567890GHJ2 status:blocked kind:task milestone:m6 priority:medium created:2026-09-09]
+  - Human choice required. Configuration expresses the intended schedule but is not proof of activation.
 
-## Milestone 6: Morning Job Radar & Daily Briefing (In Development)
-- [/] Design job briefings database schema and migration 012_job_briefings.sql #task[id:tsk_01M237998KNQFB3DW0Y1V5319H status:in-progress priority:high created:2026-09-09]
-- [/] Implement briefing generation service (services/briefing/service.py) #task[id:tsk_01M23AQ4WKNPPJMYZFJRQPYSN2 status:in-progress priority:high created:2026-09-09]
-- [/] Build rich morning dashboard view with job cards and actions (services/ui/briefing_view.py) #task[id:tsk_01M23E50GKZF520STA7CQMQRER status:in-progress priority:high created:2026-09-09]
-- [ ] Add automated morning radar scheduled trigger in schedule.yaml #task[id:tsk_01M23N0QRKKC6Z51R8BAEEPSMD status:to-do priority:medium created:2026-09-09]
-- [ ] Write end-to-end integration tests for morning dashboard (test_milestone6_morning_dashboard.py) #task[id:tsk_01M23REKCKR42SNDX0PV3Q9TAT status:to-do priority:high created:2026-09-09]
+## Future Backlog
 
-## Backlog / Future Enhancements
-- [ ] Implement audio briefing podcast synthesis via text-to-speech #task[id:tsk_01M23VWF0KASZJ5D3S9JGDXW61 status:to-do priority:low created:2026-09-09]
-- [ ] Add Greenhouse and Lever specific auto-fill parsers for copilot #task[id:tsk_01M23VWFZVJE4DPJN8ZCPN26VW status:to-do priority:medium created:2026-09-09]
-- [ ] Add email notification digests for urgent high-match opportunities #task[id:tsk_01M23VWGZ3STG7499KHM834SY0 status:to-do priority:low created:2026-09-09]
+- [ ] Implement audio briefing podcast synthesis via text-to-speech #project-work[id:wrk_01M23VWF0KASZJ5D3S9JGDXW61 status:backlog kind:task milestone:future priority:low created:2026-09-09]
+- [ ] Add Greenhouse and Lever specific auto-fill parsers for the copilot #project-work[id:wrk_01M23VWFZVJE4DPJN8ZCPN26VW status:backlog kind:task milestone:future priority:medium created:2026-09-09]
+- [ ] Add email notification digests for urgent high-match opportunities #project-work[id:wrk_01M23VWGZ3STG7499KHM834SY0 status:backlog kind:task milestone:future priority:low created:2026-09-09]
+
+## Archived Completion Evidence
+
+### Milestone 1
+
+- [x] Set up PostgreSQL 16 schema and initial migrations #project-work[id:wrk_01M1F8PQ0K442GJFCD87CGM0N2 status:done kind:task milestone:m1 priority:critical created:2026-09-08 archived:true]
+- [x] Implement JobSpy multi-board scraper wrapper with rate-limit backoff #project-work[id:wrk_01M1HV3E0KF9H58F3WNBSEX9SF status:done kind:task milestone:m1 priority:high created:2026-09-08 archived:true]
+- [x] Build 5-signal job deduplicator preserving multi-source provenance #project-work[id:wrk_01M1HV3E0K5S3EQ1QTS7XZV2TK status:done kind:task milestone:m1 priority:high created:2026-09-08 archived:true]
+- [x] Implement posting age calculation with HOT, FRESH, RECENT, and STALE buckets #project-work[id:wrk_01M1MDG50K3NSS8WBRMRXA0NBB status:done kind:task milestone:m1 priority:medium created:2026-09-08 archived:true]
+- [x] Implement FastMCP career-memory server with stdio transport #project-work[id:wrk_01M1MDG50KJDS1E950GA5X0F20 status:done kind:task milestone:m1 priority:critical created:2026-09-08 archived:true]
+
+### Milestone 2
+
+- [x] Build candidate memory with canonical fact-ID verification #project-work[id:wrk_01M1PZWW0KNRM6PG736HSV9QJ4 status:done kind:task milestone:m2 priority:critical created:2026-09-08 archived:true]
+- [x] Create strict fact-integrity enforcement #project-work[id:wrk_01M1PZWW0KKKXY35BZ14RK60PW status:done kind:task milestone:m2 priority:critical created:2026-09-08 archived:true]
+- [x] Implement ATS-friendly PDF resume rendering #project-work[id:wrk_01M1SJ9K0KQJSEPTKE6K4R3W72 status:done kind:task milestone:m2 priority:high created:2026-09-08 archived:true]
+- [x] Build immutable resume versions with SHA256 integrity metadata #project-work[id:wrk_01M1SJ9K0KR4P4GD720HJBMQVZ status:done kind:task milestone:m2 priority:high created:2026-09-08 archived:true]
+- [x] Add the interactive human-only resume review command #project-work[id:wrk_01M1SJ9K0KF99ZR1V5MW4VPJ65 status:done kind:task milestone:m2 priority:critical created:2026-09-08 archived:true]
+
+### Milestone 3
+
+- [x] Implement Playwright browser integration for guarded navigation #project-work[id:wrk_01M1W4PA0KWVWG0D9138J75V08 status:done kind:task milestone:m3 priority:high created:2026-09-09 archived:true]
+- [x] Define deterministic SAFE, HUMAN_REVIEW, and PROHIBITED field policy #project-work[id:wrk_01M1W4PA0KKG6G2HVMFQ9HKJEJ status:done kind:task milestone:m3 priority:critical created:2026-09-09 archived:true]
+- [x] Enforce the WAITING_FOR_HUMAN checkpoint #project-work[id:wrk_01M1W4PA0KQBAVTWZZKKNWW1VT status:done kind:task milestone:m3 priority:critical created:2026-09-09 archived:true]
+- [x] Validate approved resume digests and reject symlinks or traversal #project-work[id:wrk_01M1YQ310KCNNJVZW2SQC27A7J status:done kind:task milestone:m3 priority:high created:2026-09-09 archived:true]
+- [x] Build the interactive human-only outcome recorder #project-work[id:wrk_01M1YQ310KXP9X59XMKA7EFP49 status:done kind:task milestone:m3 priority:high created:2026-09-09 archived:true]
+
+### Milestone 4
+
+- [x] Implement evidence-based candidate fit scoring #project-work[id:wrk_01M1YQ310K11D5ETP7DKPSGVDK status:done kind:task milestone:m4 priority:high created:2026-09-09 archived:true]
+- [x] Build explicit supported and unsupported requirement analysis #project-work[id:wrk_01M1YQ310K7E5TN3VJ9HA9Z4X4 status:done kind:task milestone:m4 priority:high created:2026-09-09 archived:true]
+- [x] Create auditable, idempotent preparation requests #project-work[id:wrk_01M219FR0KSVJ8WQMK6ZKGG060 status:done kind:task milestone:m4 priority:medium created:2026-09-09 archived:true]
+
+### Milestone 5
+
+- [x] Build the loopback-only control service with secure tokens #project-work[id:wrk_01M219FR0K9TH0P8AW85XJBSVE status:done kind:task milestone:m5 priority:high created:2026-09-09 archived:true]
+- [x] Implement scoped UI sessions and status endpoints #project-work[id:wrk_01M219FR0KM126EP0CXQDKR930 status:done kind:task milestone:m5 priority:medium created:2026-09-09 archived:true]
+- [x] Build the same-conversation Antigravity bridge adapter #project-work[id:wrk_01M22JP3GKAXZKSZK87WSA7FKG status:done kind:task milestone:m5 priority:high created:2026-09-09 archived:true]
+
+### Milestone 6 Delivered
+
+- [x] Integrate persisted briefing creation with the successful morning scheduled runner #project-work[id:wrk_01M23N0QRKKC6Z51R8BAEEPSMD status:done kind:task milestone:m6 priority:high created:2026-09-09 archived:true]
+  - Migration 013 binds one immutable briefing to each discovery run; scheduled-run and dry-run behavior are covered by the 165-test suite.
+- [x] Add immutable job briefing persistence in migration 012 #project-work[id:wrk_01M237998KNQFB3DW0Y1V5319H status:done kind:task milestone:m6 priority:high created:2026-09-09 archived:true]
+- [x] Implement the briefing generation service #project-work[id:wrk_01M23AQ4WKNPPJMYZFJRQPYSN2 status:done kind:task milestone:m6 priority:high created:2026-09-09 archived:true]
+- [x] Build the accessible morning dashboard and safe batch preparation #project-work[id:wrk_01M23E50GKZF520STA7CQMQRER status:done kind:task milestone:m6 priority:high created:2026-09-09 archived:true]
+- [x] Expose briefing creation and retrieval through MCP and the local API #project-work[id:wrk_01K4Q8ABCDEF1234567890GHJ1 status:done kind:task milestone:m6 priority:high created:2026-09-09 archived:true]
+- [x] Add end-to-end morning dashboard contract tests #project-work[id:wrk_01M23REKCKR42SNDX0PV3Q9TAT status:done kind:task milestone:m6 priority:high created:2026-09-09 archived:true]
+
+### Workspace Migration
+
+- [x] Normalize Nimbalyst project tracking onto one workflow #project-work[id:wrk_01K4Q8ABCDEF1234567890GHJ3 status:done kind:task milestone:workspace priority:high created:2026-09-09 archived:true]
+- [x] Add evidence-backed project documents and the shared agent handoff #project-work[id:wrk_01K4Q8ABCDEF1234567890GHJ4 status:done kind:task milestone:workspace priority:high created:2026-09-09 archived:true]
+- [x] Add a non-destructive workspace consistency checker #project-work[id:wrk_01K4Q8ABCDEF1234567890GHJ5 status:done kind:task milestone:workspace priority:medium created:2026-09-09 archived:true]

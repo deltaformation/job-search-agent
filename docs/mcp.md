@@ -1,6 +1,6 @@
 # MCP Integration & Server Registry
 
-This document details the Model Context Protocol (MCP) servers integrated with Antigravity, their transport protocols, configurations, and available tools.
+This document details the Model Context Protocol (MCP) servers used by the project, their transport protocols, configurations, and available tools. The checked-in `career-memory` server is agent-neutral; the listed Gemini configuration is one client installation.
 
 ## Repository Server and Integration Options
 
@@ -10,6 +10,7 @@ This document details the Model Context Protocol (MCP) servers integrated with A
 - **Transport**: `stdio`
 - **Entrypoint**: `/Users/mouadatfi/Antigravity/job/.venv/bin/python /Users/mouadatfi/Antigravity/job/services/mcp/server.py`
 - **Environment**: Configured in `/Users/mouadatfi/.gemini/config/mcp_config.json`
+- **Other clients**: Nimbalyst-launched Codex or Gemini sessions may register the same stdio entrypoint in their own MCP settings. Keep secrets and machine-local configuration out of the repository.
 - **Exposed Tools (23 tools)**:
   - **Discovery & Jobs**: `search_and_ingest_jobs`, `get_jobs_feed`, `get_job_details`, `update_job_status`, `get_agent_runs`
   - **Memory & Intelligence**: `get_candidate_profile`, `score_job_fit`, `get_pending_analysis`, `submit_analysis_version`

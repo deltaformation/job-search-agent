@@ -1,10 +1,11 @@
 # CLAUDE.md - Job Search Operating System
 
 ## Project Overview
-This repository is a **local-first, MCP-native job-search and application automation system** designed to run under **Antigravity** as the primary agent harness.
+This repository is a **local-first, MCP-native job-search and application automation system** managed as a multi-agent project in **Nimbalyst**.
 - **Persistence**: Local PostgreSQL 16 database (`job_system`).
 - **MCP Layer**: FastMCP server (`career-memory`) exposing discovery, candidate profile, fit scoring, and application tracking tools.
-- **AI Reasoning**: Antigravity itself is the primary LLM reasoning layer. No local Ollama, vLLM, or separate LLMs are used.
+- **AI Reasoning**: Codex and Gemini/Antigravity can reason over the same deterministic services. Provider-specific integrations are adapters, not sources of truth.
+- **Shared Workflow**: Read `AGENTS.md`, `nimbalyst-local/project-summary.md`, and `nimbalyst-local/agent-handoff.md` before beginning milestone work.
 
 ## Architecture & Monorepo Structure
 - `config/`: Configuration files for search criteria (`jobs.yaml`), scoring weights (`scoring.yaml`), and schedule (`schedule.yaml`).
@@ -13,7 +14,7 @@ This repository is a **local-first, MCP-native job-search and application automa
 - `services/discovery/`: Scraper (JobSpy wrapper), normalizer, deduplicator (5-signal), and freshness bucketer.
 - `services/intelligence/`: Fit scorer evaluating JD against verified candidate profile.
 - `services/memory/`: PostgreSQL repository and data access layer.
-- `services/mcp/`: FastMCP server (`career-memory`) for Antigravity integration.
+- `services/mcp/`: FastMCP server (`career-memory`) for compatible agent clients.
 - `scripts/`: Operational entrypoints (`init_db.py`, `run_discovery.py`, `review_code.py`).
 - `tests/`: Pytest test suite (`pytest tests/`).
 

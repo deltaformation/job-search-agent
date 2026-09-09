@@ -2230,7 +2230,8 @@ class JobRepository:
         window_ended_at: datetime,
         source_run_ids: List[str],
         metrics: Dict[str, Any],
-        items: List[Dict[str, Any]]
+        items: List[Dict[str, Any]],
+        trigger_run_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create an immutable job briefing header and freeze its items.
@@ -2238,14 +2239,26 @@ class JobRepository:
         """
         with self.get_connection() as conn:
             with conn.cursor() as cur:
+                if trigger_run_id:
+                    cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0));", (trigger_run_id,))
+                    cur.execute(
+                        "SELECT * FROM job_briefings WHERE trigger_run_id = %s;",
+                        (trigger_run_id,),
+                    )
+                    existing = cur.fetchone()
+                    if existing:
+                        existing_dict = dict(existing)
+                        existing_dict["items"] = self.get_briefing_items(str(existing["id"]))
+                        return existing_dict
                 cur.execute("""
                     INSERT INTO job_briefings (
-                        schedule_name, window_started_at, window_ended_at,
+                        schedule_name, trigger_run_id, window_started_at, window_ended_at,
                         source_run_ids, status, metrics
-                    ) VALUES (%s, %s, %s, %s, 'ACTIVE', %s)
+                    ) VALUES (%s, %s, %s, %s, %s, 'ACTIVE', %s)
                     RETURNING *;
                 """, (
                     schedule_name,
+                    trigger_run_id,
                     window_started_at,
                     window_ended_at,
                     json.dumps(source_run_ids),
@@ -2366,8 +2379,8 @@ class JobRepository:
         """
         if not job_ids:
             raise ValueError("job_ids cannot be empty.")
-        if not idempotency_key or not idempotency_key.strip():
-            raise ValueError("idempotency_key is required.")
+        if not isinstance(idempotency_key, str) or not idempotency_key.strip() or len(idempotency_key) > 63:
+            raise ValueError("idempotency_key must contain 1 to 63 non-whitespace characters.")
 
         with self.get_connection() as conn:
             with conn.cursor() as cur:
@@ -2446,18 +2459,30 @@ class JobRepository:
                 # 4. If ui_session_id is provided, create ui_action
                 action_record = None
                 if ui_session_id:
-                    action_record, _ = self.create_ui_action(
-                        ui_session_id=ui_session_id,
-                        action_type="prepare_selected",
-                        entity_type="job_briefing",
-                        entity_id=briefing_id,
-                        payload={
+                    cur.execute("""
+                        INSERT INTO ui_actions (
+                            ui_session_id, action_type, entity_type, entity_id,
+                            payload, idempotency_key, status
+                        ) VALUES (%s, 'prepare_selected', 'job_briefing', %s, %s, %s, 'PENDING')
+                        ON CONFLICT (ui_session_id, idempotency_key) DO NOTHING
+                        RETURNING *;
+                    """, (
+                        ui_session_id,
+                        briefing_id,
+                        json.dumps({
                             "briefing_id": briefing_id,
                             "job_ids": job_ids,
-                            "results": results
-                        },
-                        idempotency_key=idempotency_key
-                    )
+                            "results": results,
+                        }, default=str),
+                        idempotency_key,
+                    ))
+                    action_record = cur.fetchone()
+                    if action_record is None:
+                        cur.execute("""
+                            SELECT * FROM ui_actions
+                            WHERE ui_session_id = %s AND idempotency_key = %s;
+                        """, (ui_session_id, idempotency_key))
+                        action_record = cur.fetchone()
 
                 conn.commit()
                 return {

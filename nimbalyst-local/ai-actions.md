@@ -1,15 +1,27 @@
 # Nimbalyst AI Actions
 
-Quick 1-click prompts accessible directly from Nimbalyst's AI prompt composer dropdown:
+Reusable prompts for Codex or Gemini/Antigravity sessions. Each prompt begins from shared files and preserves the human-review boundaries in `AGENTS.md`.
 
-### Run Daily Job Discovery & Radar
-Run discovery across configured boards (Indeed, LinkedIn, Glassdoor) via `python scripts/run_discovery.py`. Summarize new HOT postings (0-24h) with fit score >= 80, showing company, title, location, and key match highlights.
+## Continue the active milestone
 
-### Truthful Resume Integrity Check
-Inspect the latest generated resume against candidate memory fact-ids. Verify that 100% of bullet points map to verified fact_ids and confirm that zero unsupported requirements are present.
+Read `AGENTS.md`, `nimbalyst-local/project-summary.md`, `nimbalyst-local/agent-handoff.md`, `nimbalyst-local/milestones/milestone-6-morning-job-radar.md`, and its matching plan. Inspect the open Milestone 6 tracker items and repository state. Claim one bounded backend task, implement it, run the relevant tests and full suite, then update the task, plan, milestone, and dashboard with concrete evidence. Do not install or claim activation of an external scheduler without my explicit choice.
 
-### Generate Morning Radar Briefing
-Trigger the morning briefing generation via `services/briefing/service.py`. Produce the categorized digest of high-priority jobs ready for human review today.
+## Review another agent's handoff
 
-### Check Database Health & System Status
-Check PostgreSQL database connection, recent migrations, and job count by status (DISCOVERED, SCORED, READY, WAITING_FOR_HUMAN, APPLIED).
+Read the linked task and session handoff, inspect its changed files, and verify the stated tests and safety invariants independently. Report concrete findings first. If the implementation is sound, move the task to `in-review`; do not mark it `done` when human or external integration verification is still outstanding.
+
+## Run daily discovery and show the review queue
+
+Run `.venv/bin/python scripts/run_discovery.py --schedule morning_scan`. Continue even if one board fails, then summarize source health, new HOT jobs, pending structured analyses, and final-score candidates. Do not fabricate analysis and do not advance application state without the required evidence and human action.
+
+## Generate the morning briefing
+
+Use the `career-memory` morning briefing tools when available. Otherwise call the checked-in backend entrypoint that actually exists; do not pretend importing `services/briefing/service.py` is an operational command. Return the persisted briefing identifier, source health, top jobs, explicit gaps, and the scoped local dashboard handoff.
+
+## Verify resume integrity
+
+Inspect the latest generated resume version and its stored provenance. Verify every claim against canonical candidate `fact_id` records, confirm unsupported requirements remain gaps, recompute the stored content and PDF digests, and report any discrepancy. Never run the human approval command or assert human confirmation.
+
+## Check project and database health
+
+Run `.venv/bin/python scripts/check_environment.py`, `.venv/bin/python scripts/migrate.py --status`, `.venv/bin/python scripts/populate_nimbalyst.py --check`, and `.venv/bin/pytest tests/ -q`. Report migration state, test totals, warnings, and any drift between implementation evidence and Nimbalyst status. Do not apply migrations unless the task explicitly includes that change.

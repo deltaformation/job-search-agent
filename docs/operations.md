@@ -97,7 +97,7 @@ Discovery supports isolated multi-board scraping, row-level fault tolerance, 5-s
 
 ## 4. End-to-End Scheduled Pipeline
 
-The scheduled runner executes discovery and reports jobs awaiting Antigravity analysis. It cannot perform Antigravity reasoning inside a Python process. Only jobs with a validated analysis and final score are shortlisted and acknowledged:
+The scheduled runner executes discovery, persists an immutable run-bound briefing, and reports jobs awaiting Antigravity analysis. It cannot perform Antigravity reasoning inside a Python process. Only jobs with a validated analysis and final score are shortlisted and acknowledged:
 
 ```bash
 # Run scheduled morning scan
@@ -107,13 +107,14 @@ The scheduled runner executes discovery and reports jobs awaiting Antigravity an
 .venv/bin/python scripts/run_scheduled_scan.py --schedule evening_scan --limit 3 --dry-run
 ```
 
-### 6-Stage Pipeline Sequence
+### 7-Stage Pipeline Sequence
 1. **Audited Run Initialization**: Obtains schedule lock (`schedule_locks`) to prevent overlapping runs.
 2. **Isolated Multi-Board Discovery**: Ingests fresh postings; records observations per board and query in `discovery_observations`.
-3. **Pending Analysis Reporting**: Reports jobs that Antigravity must retrieve and analyze through MCP.
-4. **Final-score Filtering**: Excludes provisional and analysis-pending jobs from the shortlist.
-5. **Shortlist Queue & Reservation**: Selects eligible candidates and reserves a delivery batch.
-6. **Delivery Acknowledgement**: Acknowledges only the successfully reserved jobs after printing the report.
+3. **Briefing Persistence**: Creates one immutable briefing bound to the successful discovery run; retries reuse it.
+4. **Scoped Dashboard Handoff**: Emits a one-time dashboard URL when the scheduler provides an active conversation ID.
+5. **Pending Analysis Reporting**: Reports jobs that Antigravity must retrieve and analyze through MCP.
+6. **Final-score Filtering and Reservation**: Excludes provisional jobs, then reserves eligible candidates.
+7. **Delivery Acknowledgement**: Acknowledges only the successfully reserved jobs after printing the report.
 
 `--dry-run` performs queries and normalization without writing runs, observations, jobs, scores, reservations, or delivery acknowledgements.
 

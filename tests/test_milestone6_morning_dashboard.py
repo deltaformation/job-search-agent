@@ -6,6 +6,7 @@ outbox notification, and strict human safety boundaries.
 """
 from datetime import datetime, timedelta, timezone
 import json
+from types import SimpleNamespace
 from uuid import uuid4
 import psycopg
 import pytest
@@ -117,6 +118,30 @@ def test_new_since_last_briefing_window(clean_db: JobRepository) -> None:
     assert end2 > start2
 
 
+def test_triggering_run_makes_briefing_creation_idempotent(clean_db: JobRepository) -> None:
+    service = BriefingService(repo=clean_db)
+    create_test_job(clean_db, title="Idempotent Briefing Role")
+    run_id = clean_db.start_agent_run("morning_scan", "idempotent_briefing_test")
+    clean_db.finalize_agent_run(run_id, "COMPLETED")
+
+    first = service.create_briefing(
+        schedule_name="idempotent_briefing_test",
+        trigger_run_id=run_id,
+    )
+    second = service.create_briefing(
+        schedule_name="idempotent_briefing_test",
+        trigger_run_id=run_id,
+    )
+
+    assert first["id"] == second["id"]
+    with clean_db.get_connection() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) AS count FROM job_briefings WHERE trigger_run_id = %s;",
+            (run_id,),
+        ).fetchone()["count"]
+    assert count == 1
+
+
 # -------------------------------------------------------------
 # 2. Stable Briefing Snapshots (Immutable Audit Protection)
 # -------------------------------------------------------------
@@ -168,6 +193,14 @@ def test_stable_briefing_snapshots(clean_db: JobRepository) -> None:
                     WHERE id = %s;
                 """, (item_for_job["id"],))
 
+    with pytest.raises(psycopg.errors.RaiseException, match="audit content is immutable"):
+        with clean_db.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE job_briefings SET metrics = '{}'::jsonb WHERE id = %s;",
+                    (briefing_id,),
+                )
+
 
 # -------------------------------------------------------------
 # 3. Salary & Compensation Normalization
@@ -208,26 +241,15 @@ def test_remote_work_arrangement_normalization() -> None:
 # 5. Partial Discovery Failure Visibility
 # -------------------------------------------------------------
 def test_partial_discovery_failure_visibility(clean_db: JobRepository) -> None:
-    now = datetime.now(timezone.utc)
-    # Record an agent run with board-level metrics showing indeed failed and linkedin succeeded
-    with clean_db.get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO agent_runs (
-                    id, run_type, start_time, status, metrics, created_at
-                ) VALUES (%s, 'morning_scan', %s, 'PARTIAL_SUCCESS', %s, %s);
-            """, (
-                str(uuid4()),
-                now,
-                json.dumps({
-                    "boards": {
-                        "linkedin": {"status": "SUCCESS", "jobs_found": 12},
-                        "indeed": {"status": "FAILED", "error": "HTTP 403 Forbidden"}
-                    }
-                }),
-                now
-            ))
-        conn.commit()
+    run_id = clean_db.start_agent_run("morning_scan", "test_discovery_vis")
+    clean_db.save_discovery_observation(run_id, {
+        "source": "linkedin", "query": {}, "status": "success", "records_received": 12,
+    })
+    clean_db.save_discovery_observation(run_id, {
+        "source": "indeed", "query": {}, "status": "failed",
+        "errors": [{"message": "HTTP 403 Forbidden"}],
+    })
+    clean_db.finalize_agent_run(run_id, "PARTIAL_FAILURE")
 
     service = BriefingService(repo=clean_db)
     briefing = service.create_briefing(schedule_name="test_discovery_vis", window_hours=1.0)
@@ -242,6 +264,123 @@ def test_partial_discovery_failure_visibility(clean_db: JobRepository) -> None:
     md = service.format_chat_markdown(briefing, "http://127.0.0.1:8765/redeem?token=xyz")
     assert "`indeed: FAILED`" in md
     assert "`linkedin: SUCCESS`" in md
+
+
+def test_dashboard_escapes_untrusted_job_content() -> None:
+    now = datetime.now(timezone.utc)
+    hostile = "</SCRIPT><img src=x onerror=alert(1)>|line\nnext"
+    briefing = {
+        "id": uuid4(),
+        "schedule_name": "<unsafe>",
+        "window_started_at": now - timedelta(hours=1),
+        "window_ended_at": now,
+        "metrics": {},
+    }
+    items = [{
+        "job_id": uuid4(),
+        "rank": 1,
+        "snapshot": {
+            "title": hostile,
+            "company": hostile,
+            "source_url": "javascript:alert(1)",
+        },
+    }]
+
+    rendered = render_briefing_dashboard_html(briefing, items, csrf_token="safe-token")
+
+    assert hostile not in rendered
+    assert "\\u003c/SCRIPT\\u003e" in rendered
+    assert "escapeHtml(j.title)" in rendered
+    assert "safeSourceUrl(j.source_url)" in rendered
+    assert "Morning Job Briefing - &lt;unsafe&gt;" in rendered
+
+
+def test_scheduled_runner_persists_briefing_after_success(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import scripts.run_scheduled_scan as scheduled_scan
+
+    fake_repo = SimpleNamespace(
+        get_pending_analysis_jobs=lambda limit: [],
+        get_shortlist=lambda **kwargs: [],
+    )
+    create_calls = []
+
+    class FakeConfig:
+        def resolve_discovery_params(self, **kwargs):
+            return {"hours_old": 24, "pipeline": {"min_score_to_shortlist": 80}}
+
+    class FakeBriefingService:
+        def __init__(self, **kwargs):
+            pass
+
+        def create_briefing(self, **kwargs):
+            create_calls.append(kwargs)
+            return {"id": "00000000-0000-0000-0000-000000000123"}
+
+    monkeypatch.setattr(scheduled_scan, "JobRepository", lambda: fake_repo)
+    monkeypatch.setattr(scheduled_scan, "FitScorer", lambda: object())
+    monkeypatch.setattr(scheduled_scan, "AppConfig", FakeConfig)
+    monkeypatch.setattr(
+        scheduled_scan,
+        "DiscoveryService",
+        lambda **kwargs: SimpleNamespace(run_discovery=lambda **run_kwargs: {
+            "run_id": "00000000-0000-0000-0000-000000000456",
+            "status": "COMPLETED",
+            "duration_seconds": 1,
+            "metrics": {},
+            "observations": [],
+        }),
+    )
+    monkeypatch.setattr(scheduled_scan, "BriefingService", FakeBriefingService)
+    monkeypatch.delenv("ANTIGRAVITY_CONVERSATION_ID", raising=False)
+    monkeypatch.delenv("CONVERSATION_ID", raising=False)
+    monkeypatch.delenv("AGY_CONVERSATION_ID", raising=False)
+
+    assert scheduled_scan.run_scheduled_pipeline(limit=5) == 0
+    assert create_calls == [{
+        "schedule_name": "morning_scan",
+        "window_hours": 24.0,
+        "limit": 20,
+        "trigger_run_id": "00000000-0000-0000-0000-000000000456",
+    }]
+    assert "Morning Briefing ID: 00000000-0000-0000-0000-000000000123" in capsys.readouterr().out
+
+
+def test_scheduled_runner_dry_run_does_not_persist_briefing(monkeypatch: pytest.MonkeyPatch) -> None:
+    import scripts.run_scheduled_scan as scheduled_scan
+
+    fake_repo = SimpleNamespace(
+        get_pending_analysis_jobs=lambda limit: [],
+        get_shortlist=lambda **kwargs: [],
+    )
+
+    class FakeConfig:
+        def resolve_discovery_params(self, **kwargs):
+            return {"hours_old": 24, "pipeline": {"min_score_to_shortlist": 80}}
+
+    monkeypatch.setattr(scheduled_scan, "JobRepository", lambda: fake_repo)
+    monkeypatch.setattr(scheduled_scan, "FitScorer", lambda: object())
+    monkeypatch.setattr(scheduled_scan, "AppConfig", FakeConfig)
+    monkeypatch.setattr(
+        scheduled_scan,
+        "DiscoveryService",
+        lambda **kwargs: SimpleNamespace(run_discovery=lambda **run_kwargs: {
+            "run_id": None,
+            "status": "COMPLETED",
+            "duration_seconds": 1,
+            "metrics": {},
+            "observations": [],
+        }),
+    )
+    monkeypatch.setattr(
+        scheduled_scan,
+        "BriefingService",
+        lambda **kwargs: pytest.fail("dry runs must not create a briefing"),
+    )
+
+    assert scheduled_scan.run_scheduled_pipeline(limit=5, dry_run=True) == 0
 
 
 # -------------------------------------------------------------

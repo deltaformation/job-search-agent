@@ -7,6 +7,7 @@ import logging
 from uuid import uuid4
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -15,14 +16,19 @@ from services.discovery.service import DiscoveryService
 from services.memory.repository import JobRepository
 from services.intelligence.scorer import FitScorer
 from services.discovery.config import AppConfig
+from services.briefing.service import BriefingService
+from services.ui.server import read_state_file
+from services.ui.sessions import SessionManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("scheduled_scan")
 
 def format_review_report(
-    run_result: dict,
-    shortlist: list,
-    batch_id: str
+    run_result: Dict[str, Any],
+    shortlist: List[Dict[str, Any]],
+    batch_id: str,
+    briefing_id: Optional[str] = None,
+    dashboard_url: Optional[str] = None,
 ) -> str:
     metrics = run_result.get("metrics", {})
     obs = run_result.get("observations", [])
@@ -33,6 +39,9 @@ def format_review_report(
     lines.append("=" * 70)
     lines.append(f"Run Status: {run_result.get('status')} (Run ID: {run_result.get('run_id')})")
     lines.append(f"Delivery Batch ID: {batch_id}")
+    if briefing_id:
+        lines.append(f"Morning Briefing ID: {briefing_id}")
+        lines.append(f"Dashboard: {dashboard_url or 'session link unavailable (no conversation ID in scheduler environment)'}")
     lines.append(f"Duration: {run_result.get('duration_seconds', 0)}s")
     lines.append("-" * 70)
     lines.append("DISCOVERY OBSERVATIONS:")
@@ -94,6 +103,41 @@ def run_scheduled_pipeline(
         print(f"Workflow skipped: {run_res.get('message')}")
         return 0
 
+    briefing = None
+    dashboard_url = None
+    if not dry_run and run_res.get("status") in {"COMPLETED", "PARTIAL_FAILURE"}:
+        briefing = BriefingService(repo=repo, scorer=scorer).create_briefing(
+            schedule_name=schedule_name,
+            window_hours=float(resolved["hours_old"]),
+            limit=min(max(limit, 20), 100),
+            trigger_run_id=str(run_res["run_id"]),
+        )
+        conversation_id = (
+            os.environ.get("ANTIGRAVITY_CONVERSATION_ID")
+            or os.environ.get("CONVERSATION_ID")
+            or os.environ.get("AGY_CONVERSATION_ID")
+        )
+        if conversation_id:
+            try:
+                raw_token, _ = SessionManager(repo).create_session(
+                    conversation_id=conversation_id,
+                    workspace_path=str(BASE_DIR),
+                    purpose="morning_briefing",
+                    allowed_actions=["prepare_selected"],
+                    allowed_entity_ids=[str(briefing["id"])],
+                )
+                state = read_state_file()
+                base_url = state.get("url") if state else "http://127.0.0.1:8000"
+                dashboard_url = f"{base_url}/redeem?token={raw_token}"
+            except Exception as exc:
+                logger.warning("Could not create the optional dashboard session: %s", exc)
+        else:
+            logger.warning(
+                "Persisted briefing %s without a dashboard session because the scheduler "
+                "did not provide a conversation ID.",
+                briefing["id"],
+            )
+
     # This local runner cannot perform Antigravity's reasoning step. Pending
     # analyses are reported for the agent to process through MCP; only fully
     # analyzed scores are eligible for the delivered shortlist.
@@ -115,7 +159,13 @@ def run_scheduled_pipeline(
 
     # Step 4: Present review report
     run_res.setdefault("metrics", {})["pending_analysis"] = len(pending_analysis)
-    report_text = format_review_report(run_res, shortlist, batch_id)
+    report_text = format_review_report(
+        run_res,
+        shortlist,
+        batch_id,
+        briefing_id=str(briefing["id"]) if briefing else None,
+        dashboard_url=dashboard_url,
+    )
     print("\n" + report_text + "\n")
 
     # Step 5: Acknowledge delivery after presentation
@@ -123,7 +173,7 @@ def run_scheduled_pipeline(
         ack_count = repo.acknowledge_shortlist_delivery(batch_id, job_ids)
         logger.info(f"Acknowledged delivery of {ack_count} shortlisted jobs (Batch ID: {batch_id})")
 
-    return 0
+    return 1 if run_res.get("status") == "FAILED" else 0
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Scheduled Scan Pipeline")

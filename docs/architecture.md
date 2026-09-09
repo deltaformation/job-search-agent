@@ -1,10 +1,12 @@
 # System Architecture
 
-The Job Search Operating System is a local-first, MCP-native autonomous workflow running under Antigravity as the primary agent/harness.
+The Job Search Operating System is a local-first, MCP-native guarded workflow managed through Nimbalyst. Codex and Gemini/Antigravity can operate the same deterministic services; PostgreSQL and verified artifacts remain authoritative.
 
 ```mermaid
 flowchart TD
-    AGY[Antigravity Agent Harness]
+    NIM[Nimbalyst Project Control]
+    AGY[Gemini / Antigravity]
+    COD[Codex]
     
     subgraph MCP["Model Context Protocol Layer"]
         DISC_MCP[Job Discovery MCP]
@@ -29,10 +31,16 @@ flowchart TD
         AUDIT[job_events & agent_runs]
     end
 
+    NIM --> AGY
+    NIM --> COD
     AGY <--> DISC_MCP
     AGY <--> MEM_MCP
     AGY <--> RES_MCP
     AGY <--> PLAY_MCP
+    COD <--> DISC_MCP
+    COD <--> MEM_MCP
+    COD <--> RES_MCP
+    COD <--> PLAY_MCP
 
     DISC_MCP --> SCRAPER
     SCRAPER --> DEDUPE
@@ -52,7 +60,7 @@ flowchart TD
 
 ## Architectural Tenets
 
-1. **Antigravity is the AI Brain**: No local Ollama, vLLM, or secondary LLM server is used. Antigravity performs all reasoning, decision-making, and user interaction.
+1. **Agents Are Clients, Not Sources of Truth**: Codex and Gemini/Antigravity may reason, plan, and operate the workflow. Deterministic services validate their proposals, and PostgreSQL plus verified artifacts remain authoritative. Provider-specific adapters stay at the edges.
 2. **Canonical Candidate Facts as the Single Source of Truth (SSOT)**: Every career claim, metric, and achievement is stored as an immutable verified fact with a unique `fact_id` (`fact_001`, `fact_002`, ...). The system forbids inventing facts. Unsupported JD requirements are flagged as gaps.
 3. **5-Signal Deduplication**:
    - Signal 1: Normalized canonical URL (query parameters stripped, job keys extracted)

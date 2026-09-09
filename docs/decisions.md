@@ -63,6 +63,8 @@ External local LLMs (e.g. Ollama, vLLM) or external API keys (OpenAI, Anthropic)
 ### Decision
 **Use Antigravity itself as the sole reasoning, planning, and evaluation layer**. All underlying services are exposed via MCP tools (or direct CLI execution), returning structured facts, scores, and context for Antigravity to act upon.
 
+**Status update (2026-09-09): Superseded by ADR 006 for orchestration ownership.** Antigravity remains a supported reasoning client and retains its provider-specific bridge, but it is no longer the sole project harness.
+
 ---
 
 ## ADR 004: Browser Automation Layer (Milestone 3)
@@ -88,3 +90,15 @@ External local LLMs (e.g. Ollama, vLLM) or external API keys (OpenAI, Anthropic)
 
 ### Decision
 **Own the document generation and provenance verification pipeline**. Verified candidate facts are stored in PostgreSQL with unique IDs (`fact_001`, `fact_002`, etc.). The tailoring engine requires that every generated bullet explicitly links to a valid `fact_id`. Any requirement not grounded in a verified fact is classified as an explicit gap.
+
+---
+
+## ADR 006: Nimbalyst Multi-Agent Project Control
+
+### Context
+The project is now operated through both Codex and Gemini/Antigravity sessions. Milestone state, handoffs, and implementation evidence must be visible to either agent without treating conversation history or a particular model as authoritative.
+
+### Decision
+Use Nimbalyst as the file-backed project control plane for milestones, plans, tracker items, sessions, and optional worktrees. Codex and Gemini/Antigravity are interchangeable reasoning clients over the same deterministic Python services and PostgreSQL state. Provider-specific behavior stays in integration adapters such as `integrations/antigravity/`.
+
+Runtime truth remains in PostgreSQL and immutable artifacts. Nimbalyst files are the evidence-backed project-status projection, and configuration alone is not proof that an external integration or scheduler is active.
