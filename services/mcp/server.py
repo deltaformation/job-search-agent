@@ -596,5 +596,89 @@ def get_application_status(application_id: str) -> str:
     result = app_service.get_application_status(application_id)
     return json.dumps(result, indent=2, default=str)
 
+# -------------------------------------------------------------
+# MORNING JOB BRIEFING TOOLS (MILESTONE 6)
+# -------------------------------------------------------------
+from services.briefing.service import BriefingService
+from services.ui.sessions import SessionManager
+briefing_service = BriefingService(repo=repo, scorer=scorer)
+session_manager = SessionManager(repo=repo)
+
+@mcp.tool()
+def create_morning_briefing(
+    schedule_name: str = "morning_scan",
+    window_hours: float = 24.0,
+    limit: int = 20
+) -> str:
+    """
+    Generate an immutable morning job search briefing snapshot, rank jobs,
+    compute window boundaries since the last acknowledged briefing, and
+    create a scoped local UI session for the interactive dashboard.
+    Returns the markdown chat summary table, raw items, and one-time dashboard URL.
+    """
+    try:
+        briefing = briefing_service.create_briefing(
+            schedule_name=schedule_name,
+            window_hours=window_hours,
+            limit=limit
+        )
+        briefing_id = str(briefing["id"])
+
+        # Create scoped UI session
+        conv_id = os.environ.get("ANTIGRAVITY_CONVERSATION_ID", "default_conversation")
+        raw_token, _ = session_manager.create_session(
+            conversation_id=conv_id,
+            workspace_path=str(BASE_DIR),
+            purpose="morning_briefing",
+            allowed_actions=["prepare_selected"],
+            allowed_entity_ids=[briefing_id]
+        )
+
+        state_file = BASE_DIR / ".control_center.json"
+        port = 8765
+        host = "127.0.0.1"
+        if state_file.exists():
+            try:
+                data = json.loads(state_file.read_text())
+                port = data.get("port", port)
+                host = data.get("host", host)
+            except Exception:
+                pass
+
+        dashboard_url = f"http://{host}:{port}/redeem?token={raw_token}"
+        markdown_summary = briefing_service.format_chat_markdown(briefing, dashboard_url)
+
+        return json.dumps({
+            "status": "success",
+            "briefing_id": briefing_id,
+            "metrics": briefing.get("metrics"),
+            "items_count": len(briefing.get("items") or []),
+            "dashboard_url": dashboard_url,
+            "markdown_summary": markdown_summary,
+            "briefing": briefing
+        }, indent=2, default=str)
+    except Exception as exc:
+        return json.dumps({"status": "error", "message": str(exc)})
+
+@mcp.tool()
+def get_latest_briefing(schedule_name: Optional[str] = "morning_scan") -> str:
+    """
+    Retrieve the most recent job briefing header and summary metrics.
+    """
+    briefing = repo.get_latest_job_briefing(schedule_name=schedule_name)
+    if not briefing:
+        return json.dumps({"status": "not_found", "message": "No briefing found."})
+    return json.dumps({"status": "success", "briefing": briefing}, indent=2, default=str)
+
+@mcp.tool()
+def get_briefing_details(briefing_id: str) -> str:
+    """
+    Retrieve full details for a specific briefing, including all frozen item snapshots.
+    """
+    briefing = repo.get_job_briefing(briefing_id)
+    if not briefing:
+        return json.dumps({"status": "error", "message": f"Briefing '{briefing_id}' not found."})
+    return json.dumps({"status": "success", "briefing": briefing}, indent=2, default=str)
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

@@ -2,7 +2,7 @@ import os
 import json
 import hashlib
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from uuid import uuid4
 import psycopg
@@ -2219,3 +2219,249 @@ class JobRepository:
                     ORDER BY attempt_number ASC;
                 """, (action_id,))
                 return cur.fetchall()
+
+    # -------------------------------------------------------------
+    # JOB BRIEFING METHODS (MILESTONE 6)
+    # -------------------------------------------------------------
+    def create_job_briefing(
+        self,
+        schedule_name: str,
+        window_started_at: datetime,
+        window_ended_at: datetime,
+        source_run_ids: List[str],
+        metrics: Dict[str, Any],
+        items: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Create an immutable job briefing header and freeze its items.
+        Returns the created briefing record with items.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO job_briefings (
+                        schedule_name, window_started_at, window_ended_at,
+                        source_run_ids, status, metrics
+                    ) VALUES (%s, %s, %s, %s, 'ACTIVE', %s)
+                    RETURNING *;
+                """, (
+                    schedule_name,
+                    window_started_at,
+                    window_ended_at,
+                    json.dumps(source_run_ids),
+                    json.dumps(metrics, default=str)
+                ))
+                briefing = cur.fetchone()
+                briefing_id = str(briefing["id"])
+
+                persisted_items = []
+                for rank, item in enumerate(items, start=1):
+                    job_id = str(item["job_id"])
+                    snapshot = item.get("snapshot", item)
+                    cur.execute("""
+                        INSERT INTO job_briefing_items (
+                            briefing_id, job_id, rank, snapshot
+                        ) VALUES (%s, %s, %s, %s)
+                        RETURNING *;
+                    """, (
+                        briefing_id,
+                        job_id,
+                        rank,
+                        json.dumps(snapshot, default=str)
+                    ))
+                    persisted_items.append(cur.fetchone())
+
+                conn.commit()
+                briefing_dict = dict(briefing)
+                briefing_dict["items"] = persisted_items
+                return briefing_dict
+
+    def get_latest_job_briefing(self, schedule_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                if schedule_name:
+                    cur.execute("""
+                        SELECT * FROM job_briefings
+                        WHERE schedule_name = %s
+                        ORDER BY created_at DESC
+                        LIMIT 1;
+                    """, (schedule_name,))
+                else:
+                    cur.execute("""
+                        SELECT * FROM job_briefings
+                        ORDER BY created_at DESC
+                        LIMIT 1;
+                    """)
+                briefing = cur.fetchone()
+                if not briefing:
+                    return None
+                briefing_dict = dict(briefing)
+                briefing_dict["items"] = self.get_briefing_items(str(briefing["id"]))
+                return briefing_dict
+
+    def get_job_briefing(self, briefing_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM job_briefings WHERE id = %s;", (briefing_id,))
+                briefing = cur.fetchone()
+                if not briefing:
+                    return None
+                briefing_dict = dict(briefing)
+                briefing_dict["items"] = self.get_briefing_items(briefing_id)
+                return briefing_dict
+
+    def get_briefing_items(self, briefing_id: str) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT * FROM job_briefing_items
+                    WHERE briefing_id = %s
+                    ORDER BY rank ASC;
+                """, (briefing_id,))
+                return cur.fetchall()
+
+    def acknowledge_briefing(self, briefing_id: str) -> bool:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE job_briefings
+                    SET status = 'ACKNOWLEDGED'
+                    WHERE id = %s AND status = 'ACTIVE'
+                    RETURNING id;
+                """, (briefing_id,))
+                row = cur.fetchone()
+                conn.commit()
+                return row is not None
+
+    def compute_new_jobs_window(
+        self,
+        schedule_name: str = "morning_scan",
+        default_window_hours: float = 24.0
+    ) -> Tuple[datetime, datetime]:
+        """
+        Compute the discovery window (window_started_at, window_ended_at).
+        Uses the latest acknowledged briefing's window_ended_at as start;
+        otherwise defaults to now - default_window_hours.
+        """
+        now = datetime.now(timezone.utc)
+        latest = self.get_latest_job_briefing(schedule_name=schedule_name)
+        if latest and latest.get("window_ended_at"):
+            start = latest["window_ended_at"]
+        else:
+            start = now - timedelta(hours=default_window_hours)
+        return start, now
+
+    def prepare_briefing_jobs(
+        self,
+        briefing_id: str,
+        job_ids: List[str],
+        idempotency_key: str,
+        requested_by: str = "antigravity",
+        ui_session_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Idempotently prepare a batch of jobs selected from a briefing.
+        Verifies briefing item membership, checks job status, creates/reuses
+        preparation_requests, and records the UI action if ui_session_id is given.
+        """
+        if not job_ids:
+            raise ValueError("job_ids cannot be empty.")
+        if not idempotency_key or not idempotency_key.strip():
+            raise ValueError("idempotency_key is required.")
+
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                # 1. Verify briefing exists
+                cur.execute("SELECT id FROM job_briefings WHERE id = %s;", (briefing_id,))
+                if not cur.fetchone():
+                    raise ValueError(f"Briefing '{briefing_id}' not found.")
+
+                # 2. Verify all job_ids belong to the briefing
+                cur.execute("""
+                    SELECT job_id FROM job_briefing_items
+                    WHERE briefing_id = %s;
+                """, (briefing_id,))
+                valid_briefing_job_ids = {str(r["job_id"]) for r in cur.fetchall()}
+
+                for jid in job_ids:
+                    if str(jid) not in valid_briefing_job_ids:
+                        raise ValueError(f"Job '{jid}' does not belong to briefing '{briefing_id}'.")
+
+                # 3. Check statuses and create/reuse preparation_requests
+                results: Dict[str, Dict[str, Any]] = {}
+                for jid in job_ids:
+                    cur.execute("SELECT status FROM jobs WHERE job_id = %s;", (jid,))
+                    job_row = cur.fetchone()
+                    current_job_status = job_row["status"] if job_row else "UNKNOWN"
+
+                    if current_job_status in ("WITHDRAWN", "EXPIRED", "REJECTED"):
+                        results[jid] = {
+                            "status": "BLOCKED",
+                            "reason": f"Job is in '{current_job_status}' status.",
+                            "is_new": False
+                        }
+                        continue
+
+                    # Check if already submitted
+                    cur.execute("""
+                        SELECT status FROM applications
+                        WHERE job_id = %s AND status IN ('SUBMITTED', 'ACCEPTED', 'OFFERED', 'HIRED');
+                    """, (jid,))
+                    app_row = cur.fetchone()
+                    if app_row:
+                        results[jid] = {
+                            "status": "BLOCKED",
+                            "reason": f"Job already has application in '{app_row['status']}' status.",
+                            "is_new": False
+                        }
+                        continue
+
+                    # Idempotent preparation request lookup or insertion
+                    job_idemp_key = f"{idempotency_key}_{jid}"
+                    cur.execute("""
+                        SELECT * FROM preparation_requests
+                        WHERE job_id = %s AND idempotency_key = %s;
+                    """, (jid, job_idemp_key))
+                    existing = cur.fetchone()
+                    if existing:
+                        results[jid] = {
+                            "status": "ALREADY_PREPARED" if existing["status"] in ("READY_FOR_REVIEW", "TAILORING") else existing["status"],
+                            "request_id": str(existing["id"]),
+                            "is_new": False
+                        }
+                    else:
+                        cur.execute("""
+                            INSERT INTO preparation_requests (
+                                job_id, briefing_id, requested_by, idempotency_key, status
+                            ) VALUES (%s, %s, %s, %s, 'QUEUED')
+                            RETURNING *;
+                        """, (jid, briefing_id, requested_by, job_idemp_key))
+                        new_req = cur.fetchone()
+                        results[jid] = {
+                            "status": "QUEUED",
+                            "request_id": str(new_req["id"]),
+                            "is_new": True
+                        }
+
+                # 4. If ui_session_id is provided, create ui_action
+                action_record = None
+                if ui_session_id:
+                    action_record, _ = self.create_ui_action(
+                        ui_session_id=ui_session_id,
+                        action_type="prepare_selected",
+                        entity_type="job_briefing",
+                        entity_id=briefing_id,
+                        payload={
+                            "briefing_id": briefing_id,
+                            "job_ids": job_ids,
+                            "results": results
+                        },
+                        idempotency_key=idempotency_key
+                    )
+
+                conn.commit()
+                return {
+                    "briefing_id": briefing_id,
+                    "results": results,
+                    "action_id": str(action_record["id"]) if action_record else None
+                }

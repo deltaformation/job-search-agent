@@ -22,3 +22,6 @@ Thumbs.db
 # Database & Runtime
 data/
 *.log
+
+# Nimbalyst Local Attachments
+nimbalyst-local/attachments/
