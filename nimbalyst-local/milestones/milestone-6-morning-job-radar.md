@@ -22,10 +22,12 @@ Core implementation landed in commit `e1bcb7b`; review hardening completed the s
 - `tests/test_milestone6_morning_dashboard.py` covering the implemented contract.
 - Migration 013 run binding, real partial-source visibility, atomic batch outbox writes, and dashboard stored-XSS protection.
 - Successful non-dry scheduled runs persist one idempotent briefing and emit a scoped dashboard URL when a conversation ID is available.
+- Operational UX hardening adds one attached rehearsal command, synchronized checked-in MCP schemas, a bounded read-only job-context diagnostic, owned-process cleanup, nonce-authorized dashboard scripting, and CLI analysis safety checks.
 - Full-suite evidence: 165 tests passed on 2026-09-09.
 
 ## Remaining
 
 - Human selects and activates the scheduler, then records one observed 07:30 America/Toronto run.
+- Human runs the separately authorized headless-browser PDF test and accepts one interactive rehearsal. The PostgreSQL-backed regression run passed 175 tests with that one browser test deselected.
 
 Detailed delivery record: [Milestone 6 plan](../plans/milestone-6-morning-job-radar.md).

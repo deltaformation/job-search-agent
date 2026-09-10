@@ -1,0 +1,51 @@
+{
+  "name": "get_shortlist",
+  "description": "\n    Retrieve ranked shortlist for human review.\n    Sorted deterministically: tier rank, score DESC, freshness, stable ID.\n    Excludes skipped and deferred jobs.\n    ",
+  "parameters": {
+    "properties": {
+      "first_seen_since": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "First Seen Since"
+      },
+      "max_age_hours": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Max Age Hours"
+      },
+      "min_score": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": 75.0,
+        "title": "Min Score"
+      },
+      "limit": {
+        "default": 10,
+        "title": "Limit",
+        "type": "integer"
+      }
+    },
+    "title": "get_shortlistArguments",
+    "type": "object"
+  }
+}

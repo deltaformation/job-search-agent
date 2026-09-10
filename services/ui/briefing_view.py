@@ -11,7 +11,8 @@ from typing import Any, Dict, List
 def render_briefing_dashboard_html(
     briefing: Dict[str, Any],
     items: List[Dict[str, Any]],
-    csrf_token: str
+    csrf_token: str,
+    script_nonce: str,
 ) -> str:
     briefing_id = str(briefing["id"])
     schedule_name = html.escape(str(briefing.get("schedule_name", "morning_scan")))
@@ -505,11 +506,11 @@ def render_briefing_dashboard_html(
             <!-- Results injected here -->
         </div>
         <div style="text-align: right;">
-            <button type="button" class="btn btn-primary" onclick="document.getElementById('outcome-dialog').close()">Done</button>
+            <button type="button" id="btn-dialog-done" class="btn btn-primary">Done</button>
         </div>
     </dialog>
 
-    <script>
+    <script nonce="{html.escape(script_nonce, quote=True)}">
         const briefingId = "{briefing_id}";
         const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
         const rawJobs = {items_json};
@@ -549,9 +550,12 @@ def render_briefing_dashboard_html(
                     const matchComp = (j.company || '').toLowerCase().includes(searchVal);
                     if (!matchTitle && !matchComp) return false;
                 }}
+                const normRec = (j.recommendation || '').toUpperCase();
+                const isRec = normRec === 'RECOMMENDED' || normRec === 'APPLY';
+                const isConsider = isRec || normRec === 'CONSIDER' || normRec === 'REVIEW';
                 if (recVal !== 'all') {{
-                    if (recVal === 'RECOMMENDED' && j.recommendation !== 'RECOMMENDED') return false;
-                    if (recVal === 'CONSIDER' && !['RECOMMENDED', 'CONSIDER'].includes(j.recommendation)) return false;
+                    if (recVal === 'RECOMMENDED' && !isRec) return false;
+                    if (recVal === 'CONSIDER' && !isConsider) return false;
                 }}
                 if (remoteVal !== 'all' && j.remote_type !== remoteVal) return false;
                 if (freshVal !== 'all' && j.freshness !== freshVal) return false;
@@ -577,7 +581,8 @@ def render_briefing_dashboard_html(
 
             filtered.forEach(j => {{
                 const isSelected = selectedJobIds.has(j.job_id);
-                const recClass = j.recommendation === 'RECOMMENDED' ? 'badge-rec' : 'badge-consider';
+                const normRec = (j.recommendation || '').toUpperCase();
+                const recClass = (normRec === 'RECOMMENDED' || normRec === 'APPLY') ? 'badge-rec' : 'badge-consider';
                 const freshClass = 'badge-' + (j.freshness || 'recent').toLowerCase();
                 const scoreText = j.overall_score !== null ? Math.round(j.overall_score) + '%' : 'Pending';
                 const kwText = j.keyword_coverage !== null && j.keyword_coverage !== undefined ? Math.round(j.keyword_coverage) + '%' : '-';
@@ -666,7 +671,7 @@ def render_briefing_dashboard_html(
         }}
 
         // Event Listeners
-        document.addEventListener('DOMContentLoaded', () => {{
+        function initDashboard() {{
             renderTable();
 
             // Table checkbox delegates
@@ -779,7 +784,20 @@ def render_briefing_dashboard_html(
             document.getElementById('btn-close-dialog').addEventListener('click', () => {{
                 document.getElementById('outcome-dialog').close();
             }});
-        }});
+
+            const btnDone = document.getElementById('btn-dialog-done');
+            if (btnDone) {{
+                btnDone.addEventListener('click', () => {{
+                    document.getElementById('outcome-dialog').close();
+                }});
+            }}
+        }}
+
+        if (document.readyState === 'loading') {{
+            document.addEventListener('DOMContentLoaded', initDashboard);
+        }} else {{
+            initDashboard();
+        }}
     </script>
 </body>
 </html>

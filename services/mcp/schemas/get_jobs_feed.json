@@ -1,0 +1,92 @@
+{
+  "name": "get_jobs_feed",
+  "description": "\n    Query the jobs pipeline with filters.\n    \n    Args:\n        freshness: Filter by freshness bucket ('HOT', 'FRESH', 'RECENT', 'STALE').\n        min_score: Minimum overall fit score (0-100).\n        status: Job workflow status ('NEW', 'SHORTLISTED', 'REVIEWED', 'TAILORING', 'READY', 'APPLICATION_STARTED', 'WAITING_FOR_HUMAN', 'SUBMITTED', 'SKIPPED').\n        max_age_hours: Maximum posting age in hours (e.g., 24 for last 24h).\n        first_seen_since: ISO datetime string for jobs first seen since a specific time (e.g. morning scan).\n        exclude_stale: If True, exclude postings older than 72 hours.\n        assessment_status: Filter by assessment state ('ANALYSIS_PENDING', 'PROVISIONALLY_SCORED', 'ANALYZED', 'SCORED').\n        limit: Maximum number of jobs to return.\n    ",
+  "parameters": {
+    "properties": {
+      "freshness": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Freshness"
+      },
+      "min_score": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Min Score"
+      },
+      "status": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Status"
+      },
+      "max_age_hours": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Max Age Hours"
+      },
+      "first_seen_since": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "First Seen Since"
+      },
+      "exclude_stale": {
+        "default": false,
+        "title": "Exclude Stale",
+        "type": "boolean"
+      },
+      "assessment_status": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Assessment Status"
+      },
+      "limit": {
+        "default": 20,
+        "title": "Limit",
+        "type": "integer"
+      }
+    },
+    "title": "get_jobs_feedArguments",
+    "type": "object"
+  }
+}

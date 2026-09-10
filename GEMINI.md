@@ -10,3 +10,5 @@ Before changing code or project status, read:
 4. `nimbalyst-local/tracker/tasks.md` for the current work queue.
 
 Do not treat older Gemini-specific implementation plans as current status. PostgreSQL, repository artifacts, tests, and the current Nimbalyst project files are authoritative in that order.
+
+Follow the **Operational Rehearsal UX** rules in `AGENTS.md`: never narrate internal repository exploration, schema inspections, port scans, or debugging steps in user-visible output; never modify `~/.gemini` or external directories during workflows; always emit one concise progress message, followed by the outcome or a single actionable blocker.

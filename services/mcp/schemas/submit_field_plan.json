@@ -1,0 +1,36 @@
+{
+  "name": "submit_field_plan",
+  "description": "\n    Deterministically validate proposed field fill actions against candidate memory and policy.\n    AI proposals cannot downgrade risk class (e.g. human-review/prohibited cannot be marked safe).\n    Returns list of allowed safe fields to fill versus blocked fields requiring human input.\n    ",
+  "parameters": {
+    "properties": {
+      "application_id": {
+        "title": "Application Id",
+        "type": "string"
+      },
+      "attempt_id": {
+        "title": "Attempt Id",
+        "type": "string"
+      },
+      "form_snapshot_id": {
+        "title": "Form Snapshot Id",
+        "type": "string"
+      },
+      "fields": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "title": "Fields",
+        "type": "array"
+      }
+    },
+    "required": [
+      "application_id",
+      "attempt_id",
+      "form_snapshot_id",
+      "fields"
+    ],
+    "title": "submit_field_planArguments",
+    "type": "object"
+  }
+}

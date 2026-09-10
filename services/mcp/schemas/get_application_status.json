@@ -1,0 +1,17 @@
+{
+  "name": "get_application_status",
+  "description": "\n    Retrieve application status, latest attempt, pre-submit checkpoints,\n    and outstanding human checklist items.\n    ",
+  "parameters": {
+    "properties": {
+      "application_id": {
+        "title": "Application Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "application_id"
+    ],
+    "title": "get_application_statusArguments",
+    "type": "object"
+  }
+}

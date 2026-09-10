@@ -11,11 +11,11 @@ This document details the Model Context Protocol (MCP) servers used by the proje
 - **Entrypoint**: `/Users/mouadatfi/Antigravity/job/.venv/bin/python /Users/mouadatfi/Antigravity/job/services/mcp/server.py`
 - **Environment**: Configured in `/Users/mouadatfi/.gemini/config/mcp_config.json`
 - **Other clients**: Nimbalyst-launched Codex or Gemini sessions may register the same stdio entrypoint in their own MCP settings. Keep secrets and machine-local configuration out of the repository.
-- **Exposed Tools (23 tools)**:
+- **Exposed Tools (28 tools)**:
   - **Discovery & Jobs**: `search_and_ingest_jobs`, `get_jobs_feed`, `get_job_details`, `update_job_status`, `get_agent_runs`
   - **Memory & Intelligence**: `get_candidate_profile`, `score_job_fit`, `get_pending_analysis`, `submit_analysis_version`
   - **Review Queue**: `get_shortlist`, `record_review_decision`, `reserve_shortlist`, `acknowledge_shortlist_delivery`
-  - **Documents & Tailoring**: `get_tailoring_context`, `submit_resume_draft`, `get_tailoring_audit`
+  - **Documents & Tailoring**: `get_tailoring_context`, `submit_resume_draft`, `get_tailoring_audit`, `create_preparation_request`, `get_preparation_status`
   - **Application Copilot**:
     - `prepare_application`: Validates job readiness (`READY` status, HTTPS URL, approved resume plain text and compiled PDF artifact digest) and initializes application attempt.
     - `get_application_context`: Provides scoped candidate facts, approved resume version, and target ATS information.
@@ -24,6 +24,15 @@ This document details the Model Context Protocol (MCP) servers used by the proje
     - `record_application_actions`: Records executed browser actions with status and selector audit logs.
     - `checkpoint_application`: Freezes automation, marks job as `WAITING_FOR_HUMAN`, and prepares human takeover summary.
     - `get_application_status`: Queries current application state, the latest attempt, and latest checkpoint.
+  - **Morning Job Radar & Briefing**:
+    - `create_morning_briefing`: Evaluates new/updated jobs within window, freezes snapshot, persists briefing, creates single-use UI session, and outputs markdown summary + one-time URL.
+    - `get_latest_briefing`: Retrieves latest briefing header and metrics.
+    - `get_briefing_details`: Retrieves full briefing snapshot including frozen item state.
+
+- **Schema Packaging & Offline Registration**:
+  - Run `python scripts/export_mcp_schemas.py` to generate checked-in JSON schemas into `services/mcp/schemas/`.
+  - Client configurations (e.g. `~/.gemini/config/mcp_config.json` or client-specific tool caches) are configured once offline by human operators.
+  - **Strict Agent Boundary**: Autonomous agent workflows must never attempt to modify or patch files in `~/.gemini` or external client caches.
 
 ### 2. `jobspy` (Discovery Feed)
 - **Purpose**: Low-level board scraper for Indeed, LinkedIn, ZipRecruiter, and Glassdoor.

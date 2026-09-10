@@ -1,0 +1,9 @@
+{
+  "name": "get_candidate_profile",
+  "description": "\n    Retrieve the canonical candidate profile, including verified career facts (fact_ids),\n    work experience, verified skills, and preferences.\n    ",
+  "parameters": {
+    "properties": {},
+    "title": "get_candidate_profileArguments",
+    "type": "object"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "get_job_details",
+  "description": "\n    Retrieve full details for a job including complete description, ATS detection,\n    provenance sources, score breakdown, strengths, gaps, risks, and evidence facts.\n    ",
+  "parameters": {
+    "properties": {
+      "job_id": {
+        "title": "Job Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "job_id"
+    ],
+    "title": "get_job_detailsArguments",
+    "type": "object"
+  }
+}

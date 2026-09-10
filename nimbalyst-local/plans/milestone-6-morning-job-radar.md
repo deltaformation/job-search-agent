@@ -31,12 +31,15 @@ A morning command-center dashboard and daily briefing generator that presents fr
 - Commit `e1bcb7b` adds migration `012_job_briefings.sql`, `services/briefing/service.py`, `services/ui/briefing_view.py`, MCP/API integration, and `test_milestone6_morning_dashboard.py`.
 - Tests cover discovery windows, immutable snapshots, compensation and work-arrangement normalization, partial-source failures, dashboard accessibility, membership validation, mixed batch behavior, notifications, safety endpoints, and MCP tools.
 - Review hardening adds migration `013_scheduled_briefing_integrity.sql`, idempotent scheduled-run persistence, real discovery-observation status reporting, atomic batch outbox writes, and stored-XSS protection.
+- Rehearsal UX hardening adds `scripts/run_rehearsal.py`, `scripts/show_job_context.py`, synchronized MCP schemas, explicit command-budget rules, cleanup ownership that preserves an existing supervised sidecar, nonce-authorized dashboard scripting, and safe CLI analysis submission.
+- Verification passed: 8 focused no-database checks, then 175 PostgreSQL-backed regression tests. One headless-browser PDF compilation test was explicitly deselected because authorization was limited to local PostgreSQL access.
 - Current full-suite verification: 165 tests passed on 2026-09-09.
 
 ## Remaining work
 
 - Keep `config/schedule.yaml` at the intended 07:30 America/Toronto schedule; do not describe it as active until a real scheduler is registered and observed.
 - Human chooses the scheduler/harness and verifies one real run. Do not install cron, a Codex automation, or another scheduler without that choice.
+- Run the separately authorized headless-browser PDF compilation test and perform one human acceptance pass through the attached rehearsal command.
 
 ## Completion criteria
 

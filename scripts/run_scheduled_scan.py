@@ -127,7 +127,7 @@ def run_scheduled_pipeline(
                     allowed_entity_ids=[str(briefing["id"])],
                 )
                 state = read_state_file()
-                base_url = state.get("url") if state else "http://127.0.0.1:8000"
+                base_url = state.get("url") if state else "http://127.0.0.1:8765"
                 dashboard_url = f"{base_url}/redeem?token={raw_token}"
             except Exception as exc:
                 logger.warning("Could not create the optional dashboard session: %s", exc)
@@ -179,10 +179,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Scheduled Scan Pipeline")
     parser.add_argument("--schedule", type=str, default="morning_scan", choices=["morning_scan", "evening_scan"])
     parser.add_argument("--limit", type=int, default=5, help="Number of shortlisted candidates to deliver")
-    parser.add_argument("--dry-run", action="store_true", help="Run discovery without database writes")
+    parser.add_argument("--dry-run", action="store_true", help="Run discovery-only without database writes or briefing creation")
 
     args = parser.parse_args()
-    return run_scheduled_pipeline(schedule_name=args.schedule, limit=args.limit, dry_run=args.dry_run)
+    return run_scheduled_pipeline(
+        schedule_name=args.schedule,
+        limit=args.limit,
+        dry_run=args.dry_run,
+    )
 
 if __name__ == "__main__":
     sys.exit(main())

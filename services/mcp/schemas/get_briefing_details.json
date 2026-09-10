@@ -1,0 +1,17 @@
+{
+  "name": "get_briefing_details",
+  "description": "\n    Retrieve full details for a specific briefing, including all frozen item snapshots.\n    ",
+  "parameters": {
+    "properties": {
+      "briefing_id": {
+        "title": "Briefing Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "briefing_id"
+    ],
+    "title": "get_briefing_detailsArguments",
+    "type": "object"
+  }
+}

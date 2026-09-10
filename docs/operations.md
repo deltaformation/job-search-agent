@@ -55,6 +55,17 @@ shell quoting:
 .venv/bin/python scripts/show_candidate_profile.py
 ```
 
+To inspect one job's workflow state, latest analysis, resume provenance, readiness,
+and application attempt without ad-hoc SQL or schema assumptions:
+
+```bash
+.venv/bin/python scripts/show_job_context.py --job-id <job-uuid>
+```
+
+This command is read-only and emits a bounded JSON document. It intentionally maps
+analysis notes from `job_analyses.notes` and resume revision notes from
+`resume_versions.diff_summary`; there is no `resume_versions.notes` field.
+
 Use `scripts/init_db.py --with-example-data` only for a disposable development
 database. The example seed contains synthetic test facts.
 
@@ -117,6 +128,21 @@ The scheduled runner executes discovery, persists an immutable run-bound briefin
 7. **Delivery Acknowledgement**: Acknowledges only the successfully reserved jobs after printing the report.
 
 `--dry-run` performs queries and normalization without writing runs, observations, jobs, scores, reservations, or delivery acknowledgements.
+
+### Interactive UX rehearsal
+
+Use the checked-in rehearsal orchestrator to exercise the briefing and dashboard
+with one command and one attached lifecycle:
+
+```bash
+.venv/bin/python scripts/run_rehearsal.py
+```
+
+It performs one preflight, prints the briefing and one-time dashboard URL, waits
+while the human completes the displayed checklist, and then removes its rehearsal
+briefings, UI sessions, and any control-center process that it started. It reuses
+an existing supervised sidecar without stopping it or removing its state file.
+This is distinct from `--dry-run`, which remains discovery-only.
 
 The YAML cron expressions define intended run times; they do not register an operating-system scheduler. Invoke the runner from Antigravity or install it in your preferred scheduler when you are ready to automate it.
 

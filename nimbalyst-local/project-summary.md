@@ -15,6 +15,8 @@ This is the shared project dashboard for Codex and Gemini/Antigravity sessions r
 
 Last verified on 2026-09-09: `.venv/bin/pytest tests/ -q` completed with **165 passed** and 7 deprecation warnings.
 
+Current rehearsal UX hardening has passing coverage for the attached rehearsal lifecycle, cleanup ownership, bounded job diagnostics, MCP schema synchronization, and CLI analysis safety. The latest regression run completed with **175 passed and 1 headless-browser PDF test deselected** because test authorization was limited to local PostgreSQL access.
+
 ## Core architecture
 
 - **Workspace and coordination**: One Nimbalyst `project-work` Kanban, readable plan/milestone documents, sessions, and optional worktrees.

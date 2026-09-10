@@ -172,7 +172,12 @@ def create_app(repo: Optional[JobRepository] = None) -> Starlette:
 
         items = repository.get_briefing_items(briefing_id)
         csrf_token = generate_csrf_token(cookie)
-        html = render_briefing_dashboard_html(briefing, items, csrf_token)
+        html = render_briefing_dashboard_html(
+            briefing,
+            items,
+            csrf_token,
+            script_nonce=request.state.script_nonce,
+        )
         return HTMLResponse(content=html)
 
     async def prepare_briefing_action(request: Request) -> Response:

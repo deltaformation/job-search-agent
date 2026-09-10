@@ -1,0 +1,23 @@
+{
+  "name": "submit_resume_draft",
+  "description": "\n    Deterministically validate a structured resume draft against verified facts,\n    generate plain text, compute content hash and diff against baseline,\n    render ATS-friendly HTML and compile PDF (<= 2 pages).\n    Sets status to 'AWAITING_HUMAN_REVIEW'.\n    ",
+  "parameters": {
+    "properties": {
+      "job_id": {
+        "title": "Job Id",
+        "type": "string"
+      },
+      "structured_resume": {
+        "additionalProperties": true,
+        "title": "Structured Resume",
+        "type": "object"
+      }
+    },
+    "required": [
+      "job_id",
+      "structured_resume"
+    ],
+    "title": "submit_resume_draftArguments",
+    "type": "object"
+  }
+}

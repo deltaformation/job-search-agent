@@ -1,0 +1,31 @@
+{
+  "name": "record_application_actions",
+  "description": "\n    Audit executed fill and upload actions into the immutable application log.\n    Does not execute browser actions or accept final submissions.\n    ",
+  "parameters": {
+    "properties": {
+      "attempt_id": {
+        "title": "Attempt Id",
+        "type": "string"
+      },
+      "form_snapshot_id": {
+        "title": "Form Snapshot Id",
+        "type": "string"
+      },
+      "actions": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "title": "Actions",
+        "type": "array"
+      }
+    },
+    "required": [
+      "attempt_id",
+      "form_snapshot_id",
+      "actions"
+    ],
+    "title": "record_application_actionsArguments",
+    "type": "object"
+  }
+}

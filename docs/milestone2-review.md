@@ -28,7 +28,7 @@ Human-operated review (agents must not run this autonomously):
 .venv/bin/python scripts/review_resume.py --resume-id RESUME_UUID --reviewer YOUR_NAME
 ```
 
-Restart the MCP server to load its updated tool list. Previously exported tool-schema files are not authoritative; remove the obsolete `confirm_human_approval` export if the harness uses cached JSON schemas.
+Restart the MCP server to load its updated tool list. Refresh the checked-in schema mirror with `python scripts/export_mcp_schemas.py`; the exporter removes obsolete schema files, and regression coverage verifies that the mirror matches the server's registered tools. Human operators must still refresh any client-specific cache outside the repository.
 
 ## Existing artifacts and limits
 

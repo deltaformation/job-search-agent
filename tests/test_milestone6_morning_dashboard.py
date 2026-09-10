@@ -286,7 +286,12 @@ def test_dashboard_escapes_untrusted_job_content() -> None:
         },
     }]
 
-    rendered = render_briefing_dashboard_html(briefing, items, csrf_token="safe-token")
+    rendered = render_briefing_dashboard_html(
+        briefing,
+        items,
+        csrf_token="safe-token",
+        script_nonce="safe-nonce",
+    )
 
     assert hostile not in rendered
     assert "\\u003c/SCRIPT\\u003e" in rendered
@@ -392,7 +397,12 @@ def test_dashboard_html_rendering_and_controls(clean_db: JobRepository) -> None:
     briefing = service.create_briefing(schedule_name="html_test", window_hours=24.0)
     items = clean_db.get_briefing_items(str(briefing["id"]))
 
-    html = render_briefing_dashboard_html(briefing, items, csrf_token="test_csrf_token")
+    html = render_briefing_dashboard_html(
+        briefing,
+        items,
+        csrf_token="test_csrf_token",
+        script_nonce="test-script-nonce",
+    )
 
     # 1. Semantic HTML elements
     assert "<table" in html
@@ -422,6 +432,7 @@ def test_dashboard_html_rendering_and_controls(clean_db: JobRepository) -> None:
     assert "prefers-reduced-motion" in html
     assert "aria-live=\"polite\"" in html
     assert "meta name=\"csrf-token\"" in html
+    assert '<script nonce="test-script-nonce">' in html
 
 
 # -------------------------------------------------------------

@@ -1,0 +1,34 @@
+{
+  "name": "update_job_status",
+  "description": "\n    Safely transition a job's workflow status in the application pipeline.\n    Enforces allowed state machine transitions and guards preconditions.\n    ",
+  "parameters": {
+    "properties": {
+      "job_id": {
+        "title": "Job Id",
+        "type": "string"
+      },
+      "new_status": {
+        "title": "New Status",
+        "type": "string"
+      },
+      "notes": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Notes"
+      }
+    },
+    "required": [
+      "job_id",
+      "new_status"
+    ],
+    "title": "update_job_statusArguments",
+    "type": "object"
+  }
+}

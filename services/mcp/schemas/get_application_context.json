@@ -1,0 +1,22 @@
+{
+  "name": "get_application_context",
+  "description": "\n    Retrieve scoped, safe application context for Antigravity:\n    - Job metadata and application URL.\n    - Approved resume artifact info (path and digest).\n    - Safe candidate profile fields (redacted of internal IDs).\n    - Policy summary.\n    ",
+  "parameters": {
+    "properties": {
+      "application_id": {
+        "title": "Application Id",
+        "type": "string"
+      },
+      "attempt_id": {
+        "title": "Attempt Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "application_id",
+      "attempt_id"
+    ],
+    "title": "get_application_contextArguments",
+    "type": "object"
+  }
+}

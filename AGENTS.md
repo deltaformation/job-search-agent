@@ -47,6 +47,17 @@ This repository is a **local-first, MCP-native job-search and application automa
   - Always run `pytest tests/` after modifying services or logic. All tests must pass with zero errors.
 - **Operational Commands**:
   - Prefer checked-in scripts for multiline diagnostics. Do not embed escaped Python f-strings in `python -c` shell commands. Use `scripts/show_candidate_profile.py` for candidate-memory inspection.
+  - Use `scripts/show_job_context.py --job-id <uuid>` for job, analysis, resume, readiness, and application inspection. Do not reconstruct these joins with direct SQL or guess column names.
+
+## Operational Rehearsal UX
+- Treat a user-requested dry run, rehearsal, morning briefing, or application walkthrough as an operational workflow, not as authorization to debug or modify the repository, database schema, MCP installation, generated tool registry, or client cache.
+- Use available MCP tools first. Use one documented, checked-in command when an MCP capability is unavailable. Never use inline `python -c`, direct SQL, `information_schema` discovery, recursive searches, or multi-command shell pipelines during an operational run.
+- Do not ask the user to approve a sequence of diagnostic commands. If the documented path cannot run after one bounded read-only preflight, stop and report one concise blocker with the supported recovery action. Do not improvise a repair.
+- Never create or edit files under `~/.gemini`, `~/.codex`, or another client's generated MCP registry during a workflow. Tool registration is installation work and requires a separate explicit user request.
+- Do not start a persistent daemon merely to probe the workflow. Reuse an already supervised sidecar; if it is unavailable, report that prerequisite instead of leaving a background process behind.
+- The scheduled runner's `--dry-run` is discovery-only and intentionally creates no briefing or dashboard session. For a complete interactive product rehearsal, use exactly `.venv/bin/python scripts/run_rehearsal.py`; do not reconstruct its steps manually.
+- Keep user-visible updates outcome-oriented: at most one short preflight update, then the briefing/dashboard, a human checkpoint, or a concise blocker. Do not expose command-by-command logs or internal troubleshooting notes unless the user explicitly asks for debugging detail.
+- Command permission and human consent are different. These UX rules reduce shell permission prompts; they never bypass resume approval, legal disclosure, work-authorization, salary, voluntary self-ID, or final-submission checkpoints.
 
 ## Code Review Checklist (for All Agents & Reviewers)
 1. **Fact Integrity**: Does the code respect candidate memory and `fact_id` provenance?

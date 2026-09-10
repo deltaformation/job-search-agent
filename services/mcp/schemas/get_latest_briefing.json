@@ -1,0 +1,22 @@
+{
+  "name": "get_latest_briefing",
+  "description": "\n    Retrieve the most recent job briefing header and summary metrics.\n    ",
+  "parameters": {
+    "properties": {
+      "schedule_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": "morning_scan",
+        "title": "Schedule Name"
+      }
+    },
+    "title": "get_latest_briefingArguments",
+    "type": "object"
+  }
+}

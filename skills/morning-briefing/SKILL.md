@@ -10,6 +10,16 @@ description: |
 
 This skill guides Antigravity to generate a morning job briefing, produce an accessible chat summary and interactive web dashboard from a frozen snapshot, and process human batch preparation decisions.
 
+## Operational UX Contract
+
+- This is a user workflow, not a repository-debugging session. Do not narrate file searches, schema inspection, ports, commands, or internal reasoning.
+- Use the already-discovered `career-memory` tools directly. Do not inspect server source or generated tool-schema folders to rediscover a missing tool.
+- If `create_morning_briefing` is unavailable, perform at most one documented read-only preflight. Then report that the `career-memory` client registration must be refreshed or restarted. Never create or edit cached schemas under `~/.gemini` or another client directory.
+- Do not run inline Python, direct SQL, `information_schema` queries, or shell pipelines. For a specific job's state, use `scripts/show_job_context.py --job-id <uuid>` as the single read-only fallback.
+- Reuse the Antigravity-managed sidecar. Do not launch `scripts/run_control_center.py` as an unmanaged background process during a briefing request.
+- `scripts/run_scheduled_scan.py --dry-run` validates discovery only; it does not create a briefing or dashboard. For a complete interactive rehearsal, run exactly `.venv/bin/python scripts/run_rehearsal.py` and keep that one process attached until the human finishes the checklist; do not reconstruct its steps with separate commands.
+- Give one short progress update, followed by the Markdown briefing and dashboard link or one concise blocker. Never return a troubleshooting transcript as the result.
+
 ## Workflow
 
 ### 1. Discovery & Analysis Window Check

@@ -14,6 +14,8 @@ This is the single Kanban source for milestones and executable work. Completed i
 
 ## Milestone 6: Current Work
 
+- [ ] Make operational rehearsals command-bounded and approval-light #project-work[id:wrk_01M23REKCKR42SNDX0PV3Q9TAV status:in-review kind:task milestone:m6 priority:high created:2026-09-09 updated:2026-09-09]
+  - Added one attached rehearsal entrypoint, one bounded read-only job-context command, synchronized MCP schemas, cleanup ownership, nonce-authorized dashboard scripting, CLI analysis safety checks, and explicit no-ad-hoc-diagnostics guidance. Verification passed: 8 focused checks and 175 PostgreSQL-backed tests; one headless-browser PDF test was deselected under the user's database-only authorization.
 - [ ] Activate the 07:30 America/Toronto workflow in the human-selected scheduler and verify one real run #project-work[id:wrk_01K4Q8ABCDEF1234567890GHJ2 status:blocked kind:task milestone:m6 priority:medium created:2026-09-09]
   - Human choice required. Configuration expresses the intended schedule but is not proof of activation.
 

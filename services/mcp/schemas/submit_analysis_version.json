@@ -1,0 +1,18 @@
+{
+  "name": "submit_analysis_version",
+  "description": "\n    Submit structured Antigravity requirement analysis for a job.\n    Validates exact JD quotes, enum values, approved candidate evidence, and snapshot identity.\n    Persists an append-only analysis version, executes evidence-based scoring, and marks job ANALYZED/SCORED.\n    ",
+  "parameters": {
+    "properties": {
+      "analysis_data": {
+        "additionalProperties": true,
+        "title": "Analysis Data",
+        "type": "object"
+      }
+    },
+    "required": [
+      "analysis_data"
+    ],
+    "title": "submit_analysis_versionArguments",
+    "type": "object"
+  }
+}

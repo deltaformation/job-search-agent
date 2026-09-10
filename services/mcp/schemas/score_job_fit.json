@@ -1,0 +1,17 @@
+{
+  "name": "score_job_fit",
+  "description": "\n    Evaluates or re-scores a job against the canonical candidate profile and verified facts.\n    Uses structured analysis if available; otherwise computes provisional score.\n    Preserves active application workflow state (TAILORING, READY, SUBMITTED, etc.).\n    ",
+  "parameters": {
+    "properties": {
+      "job_id": {
+        "title": "Job Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "job_id"
+    ],
+    "title": "score_job_fitArguments",
+    "type": "object"
+  }
+}

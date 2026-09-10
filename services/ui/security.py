@@ -50,9 +50,12 @@ class RateLimiter:
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Enforces strict security headers: CSP, anti-framing, no-referrer, no-store."""
     async def dispatch(self, request: Request, call_next) -> Response:
+        script_nonce = secrets.token_urlsafe(18)
+        request.state.script_nonce = script_nonce
         response = await call_next(request)
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            f"default-src 'self'; script-src 'self' 'nonce-{script_nonce}'; "
+            "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data:; frame-ancestors 'none';"
         )
         response.headers["X-Frame-Options"] = "DENY"

@@ -1,0 +1,25 @@
+{
+  "name": "acknowledge_shortlist_delivery",
+  "description": "\n    Idempotently acknowledge that shortlisted jobs were successfully delivered/presented in the review report.\n    ",
+  "parameters": {
+    "properties": {
+      "batch_id": {
+        "title": "Batch Id",
+        "type": "string"
+      },
+      "job_ids": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Job Ids",
+        "type": "array"
+      }
+    },
+    "required": [
+      "batch_id",
+      "job_ids"
+    ],
+    "title": "acknowledge_shortlist_deliveryArguments",
+    "type": "object"
+  }
+}

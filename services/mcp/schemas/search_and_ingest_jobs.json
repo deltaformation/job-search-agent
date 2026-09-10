@@ -1,0 +1,50 @@
+{
+  "name": "search_and_ingest_jobs",
+  "description": "\n    Execute live multi-board job search with per-board failure isolation,\n    row-level fault tolerance, audit observations, and deduplication.\n    ",
+  "parameters": {
+    "properties": {
+      "role": {
+        "default": "Senior Product Manager",
+        "title": "Role",
+        "type": "string"
+      },
+      "location": {
+        "default": "Toronto, ON",
+        "title": "Location",
+        "type": "string"
+      },
+      "country": {
+        "default": "Canada",
+        "title": "Country",
+        "type": "string"
+      },
+      "hours_old": {
+        "default": 72,
+        "title": "Hours Old",
+        "type": "number"
+      },
+      "results_wanted": {
+        "default": 10,
+        "title": "Results Wanted",
+        "type": "integer"
+      },
+      "sources": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Sources"
+      }
+    },
+    "title": "search_and_ingest_jobsArguments",
+    "type": "object"
+  }
+}

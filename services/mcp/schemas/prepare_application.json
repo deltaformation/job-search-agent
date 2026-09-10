@@ -1,0 +1,29 @@
+{
+  "name": "prepare_application",
+  "description": "\n    Validate that a job is in READY status with an approved resume artifact,\n    bind the application session to the exact approved version and digests,\n    and create an append-only application attempt.\n    ",
+  "parameters": {
+    "properties": {
+      "job_id": {
+        "title": "Job Id",
+        "type": "string"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "job_id"
+    ],
+    "title": "prepare_applicationArguments",
+    "type": "object"
+  }
+}

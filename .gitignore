@@ -22,6 +22,7 @@ Thumbs.db
 # Database & Runtime
 data/
 *.log
+.control_center.json
 
 # Nimbalyst Local Attachments
 nimbalyst-local/attachments/

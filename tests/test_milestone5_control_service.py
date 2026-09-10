@@ -64,7 +64,10 @@ def test_security_headers_enforced(clean_db: JobRepository) -> None:
 
     res = client.get("/health", headers={"Host": "127.0.0.1"})
     assert res.status_code == 200
-    assert "frame-ancestors 'none'" in res.headers["Content-Security-Policy"]
+    content_security_policy = res.headers["Content-Security-Policy"]
+    assert "frame-ancestors 'none'" in content_security_policy
+    assert "script-src 'self' 'nonce-" in content_security_policy
+    assert "script-src 'self' 'unsafe-inline'" not in content_security_policy
     assert res.headers["X-Frame-Options"] == "DENY"
     assert res.headers["X-Content-Type-Options"] == "nosniff"
     assert res.headers["Referrer-Policy"] == "no-referrer"
