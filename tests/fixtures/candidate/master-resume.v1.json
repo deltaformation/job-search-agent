@@ -1,0 +1,179 @@
+{
+  "schemaVersion": "candidate-import/v1",
+  "identity": {
+    "fullName": "Mouad Atfi",
+    "headline": "Senior / Technical Product Manager | Cloud, Platform & Data Systems",
+    "email": "mouad.atfi@example.com",
+    "phone": "+1-647-000-0000",
+    "location": "Toronto, ON, Canada"
+  },
+  "targetTitles": [
+    "Senior Product Manager",
+    "Technical Product Manager",
+    "Product Manager, Technical",
+    "Lead Product Manager"
+  ],
+  "targetLocations": ["Toronto, ON", "Ontario", "Remote Canada"],
+  "summary": "Experienced Technical Product Manager with 8+ years leading cross-functional engineering, data, and design teams to build scalable cloud architectures, developer platforms, and enterprise data solutions.",
+  "employment": [
+    {
+      "id": "emp-fintech-cloud",
+      "company": "FinTech Cloud Solutions",
+      "role": "Senior Technical Product Manager",
+      "location": "Toronto, ON",
+      "startDate": "2021-03-01",
+      "isCurrent": true,
+      "description": "Leading core platform infrastructure and developer experience APIs serving Tier-1 financial institutions."
+    },
+    {
+      "id": "emp-enterprise-saas",
+      "company": "Enterprise SaaS Inc.",
+      "role": "Product Manager, Technical",
+      "location": "Toronto, ON",
+      "startDate": "2018-06-01",
+      "endDate": "2021-02-28",
+      "isCurrent": false,
+      "description": "Managed high-throughput distributed event streaming and analytics pipelines."
+    },
+    {
+      "id": "emp-omnitech",
+      "company": "OmniTech Digital",
+      "role": "Software Engineer & Technical Lead",
+      "location": "Toronto, ON",
+      "startDate": "2016-01-01",
+      "endDate": "2018-05-31",
+      "isCurrent": false,
+      "description": "Built backend microservices and modernized legacy monolithic systems to AWS cloud."
+    }
+  ],
+  "achievements": [
+    {
+      "factId": "fact_001",
+      "employmentId": "emp-fintech-cloud",
+      "category": "platform_scale",
+      "text": "Architected and launched a distributed multi-region API platform reducing p99 latency by 42% while scaling to 50M+ daily requests.",
+      "technologies": ["AWS", "PostgreSQL", "Kafka", "REST APIs", "Kubernetes"],
+      "metrics": ["42% latency reduction", "50M daily requests"],
+      "source": "performance_review_2023",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_002",
+      "employmentId": "emp-fintech-cloud",
+      "category": "revenue_growth",
+      "text": "Spearheaded enterprise developer portal monetization strategy, driving $3.2M ARR in new customer contract value within 14 months of release.",
+      "technologies": ["Stripe API", "GraphQL", "OAuth2", "Data Analytics"],
+      "metrics": ["$3.2M ARR", "14 months"],
+      "source": "annual_report_2023",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_003",
+      "employmentId": "emp-fintech-cloud",
+      "category": "team_leadership",
+      "text": "Led cross-functional agile squad of 14 senior software engineers, QA leads, and product designers with consistent 95%+ sprint commitment reliability.",
+      "technologies": ["Jira", "Scrum", "Roadmapping", "OKRs"],
+      "metrics": ["14 engineers/designers", "95% sprint reliability"],
+      "source": "engineering_review",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_004",
+      "employmentId": "emp-enterprise-saas",
+      "category": "data_infrastructure",
+      "text": "Designed self-serve data ingestion engine migrating 120TB+ legacy SQL data to event-driven pipeline, cutting ingestion pipeline failures by 80%.",
+      "technologies": ["PostgreSQL", "Apache Kafka", "Docker", "Python", "Airflow"],
+      "metrics": ["120TB data migrated", "80% failure reduction"],
+      "source": "platform_architecture_review",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_005",
+      "employmentId": "emp-enterprise-saas",
+      "category": "customer_adoption",
+      "text": "Delivered enterprise RBAC and SOC2 compliance automation, unblocking sales cycles for 28 Fortune 500 accounts.",
+      "technologies": ["SOC2", "RBAC", "Security Audits", "SAML"],
+      "metrics": ["28 Fortune 500 accounts unblocked"],
+      "source": "sales_enablement_audit",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_006",
+      "employmentId": "emp-omnitech",
+      "category": "engineering_modernization",
+      "text": "Migrated core billing monolith into 6 decoupled microservices deployed via automated CI/CD pipelines, lowering deployment lead time from 14 days to 2 hours.",
+      "technologies": ["Node.js", "Docker", "GitHub Actions", "Terraform", "PostgreSQL"],
+      "metrics": ["14 days to 2 hours deployment time"],
+      "source": "cto_quarterly_review",
+      "verification": "APPROVED"
+    }
+  ],
+  "skills": [
+    {
+      "name": "Technical Product Management",
+      "category": "product",
+      "proficiency": "expert",
+      "yearsExperience": 6,
+      "verified": true
+    },
+    {
+      "name": "Product Roadmapping & Strategy",
+      "category": "product",
+      "proficiency": "expert",
+      "yearsExperience": 7,
+      "verified": true
+    },
+    {
+      "name": "Cross-functional Agile / Scrum",
+      "category": "product",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": true
+    },
+    {
+      "name": "Cloud Architecture (AWS / GCP)",
+      "category": "technical",
+      "proficiency": "expert",
+      "yearsExperience": 7,
+      "verified": true
+    },
+    {
+      "name": "PostgreSQL & Relational Data Modeling",
+      "category": "technical",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": true
+    },
+    {
+      "name": "System Architecture & REST / GraphQL APIs",
+      "category": "technical",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": true
+    },
+    {
+      "name": "Distributed Systems & Event-Driven Pipelines (Kafka)",
+      "category": "technical",
+      "proficiency": "proficient",
+      "yearsExperience": 5,
+      "verified": true
+    },
+    {
+      "name": "Team Mentorship & Stakeholder Management",
+      "category": "leadership",
+      "proficiency": "expert",
+      "yearsExperience": 6,
+      "verified": true
+    }
+  ],
+  "education": [
+    {
+      "degree": "Bachelor of Science",
+      "fieldOfStudy": "Computer Science & Software Engineering",
+      "institution": "University of Toronto",
+      "startDate": "2011-09-01",
+      "endDate": "2015-06-30"
+    }
+  ],
+  "credentials": []
+}

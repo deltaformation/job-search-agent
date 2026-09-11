@@ -17,6 +17,7 @@ describe("migration runner", () => {
     expect(files.map((f) => f.filename)).toEqual([
       "0000_freezing_wild_pack.sql",
       "0001_trigger_guards.sql",
+      "0002_candidate_snapshot_dedupe.sql",
     ]);
     for (const file of files) {
       expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
@@ -30,12 +31,12 @@ describe("migration runner", () => {
         migrationsDir: resolveMigrationsDir(),
       });
       expect(rerun.applied).toEqual([]);
-      expect(rerun.alreadyApplied).toHaveLength(2);
+      expect(rerun.alreadyApplied).toHaveLength(3);
 
       const recorded = t.handle.sqlite
         .prepare("SELECT version, sha256 FROM _schema_migrations ORDER BY version")
         .all() as Array<{ version: string; sha256: string }>;
-      expect(recorded).toHaveLength(2);
+      expect(recorded).toHaveLength(3);
 
       const tables = t.handle.sqlite
         .prepare(
@@ -51,6 +52,11 @@ describe("migration runner", () => {
       expect(triggers.map((row) => row.name)).toContain(
         "trg_workflow_events_no_update",
       );
+
+      const indexes = t.handle.sqlite
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index'")
+        .all() as Array<{ name: string }>;
+      expect(indexes.map((row) => row.name)).toContain("candidate_snapshots_version_hash");
     });
   });
 
@@ -63,7 +69,7 @@ describe("migration runner", () => {
       }
       const handle = openDatabase({ path: join(dir, "scratch.sqlite") });
       try {
-        expect(migrate(handle.sqlite, { migrationsDir: dir }).applied).toHaveLength(2);
+        expect(migrate(handle.sqlite, { migrationsDir: dir }).applied).toHaveLength(3);
         writeFileSync(join(dir, "0001_trigger_guards.sql"), "-- tampered\n");
         expect(() => migrate(handle.sqlite, { migrationsDir: dir })).toThrow(
           /drift detected/,

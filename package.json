@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "db:generate": "drizzle-kit generate",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "candidate:import": "node ./scripts/import-candidate.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

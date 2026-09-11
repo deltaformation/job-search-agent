@@ -7,8 +7,8 @@ Last updated: 2026-09-11
 - Current milestone: **R4 — Truthful tailoring and resume artifacts** (R1, R2, and R3 completed and accepted)
 - Product runtime: **legacy Python/PostgreSQL remains operational source code**
 - Target runtime: **Milestones 1, 2, & 3 complete on `rebuild/r1-platform` (supervisor, Next.js, worker, SQLite, security layer, URL intake, Playwright fetcher, extraction adapters, queue dispatcher, attempt visibility UI, workflow state machine, board projections, and Kanban UI)**
-- Next implementation work: **R4-A — Candidate profile import and snapshot service**
-  (R3-C accepted).
+- Next implementation work: **R4-B — Shared parity fixtures**
+  (R4-A accepted).
 
 Do not report target commands, Kanban, or DOCX generation as
 available yet. SQLite migrations exist and execute automatically on startup.
@@ -32,7 +32,8 @@ available yet. SQLite migrations exist and execute automatically on startup.
 | R3-A Workflow command service | accepted | `r3a-handoff.md`; move/correct/reorder/Applied/Tailored-gate/notes commands, CAS + audit events, 20 new tests green on Node 24 |
 | R3-B Board queries & card detail API | accepted | `r3b-handoff.md`; board projection with search/sort/pagination, safe card detail, 14 new tests green on Node 24; webpack build green |
 | R3-C Kanban & card detail UI | accepted | `r3c-handoff.md`; /board DnD, drawer, Applied/correct/reject dialogs, mutation routes, 7/7 E2E green on user machine, 381 vitest tests green, Ashby CAPTCHA fix |
-| R4-A through R5-D | ready / blocked by dependency | R4-A is ready to start; R4-B through R5-D follow in sequence |
+| R4-A Candidate import and snapshots | accepted | `r4a-handoff.md`; import schema/command, repository, activation, snapshot service, CLI, 37 new tests green, 0002 dedupe |
+| R4-B through R5-D | ready / blocked by dependency | R4-B is ready to start; R4-C follows R4-B; R4-D/E/F and R5 follow in sequence |
 
 Allowed status values are `ready`, `in progress`, `needs review`, `blocked by
 dependency`, and `accepted`. Avoid percentages: evidence and remaining gates are

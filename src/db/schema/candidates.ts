@@ -93,6 +93,7 @@ export const candidateSnapshots = sqliteTable(
     createdAt: createdAt(),
   },
   (t) => [
+    unique("candidate_snapshots_version_hash").on(t.profileVersionId, t.sha256),
     index("candidate_snapshots_profile_version_id").on(t.profileVersionId),
     index("candidate_snapshots_sha256").on(t.sha256),
   ],

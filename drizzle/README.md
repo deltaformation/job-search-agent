@@ -13,6 +13,10 @@ changed on disk.
 - `0001_trigger_guards.sql` — hand-reviewed companion with trigger guards and
   one partial unique index that Drizzle cannot express. Edit only with a new
   reviewed migration file, never by rewriting history.
+- `0002_candidate_snapshot_dedupe.sql` — hand-reviewed unique index that IS
+  expressed in `src/db/schema/candidates.ts` (`candidate_snapshots_version_hash`).
+  The next `db:generate` diff will re-emit it (the kit journal predates it);
+  drop that statement from the generated file when merging.
 
 ## Ordering rule
 

@@ -1,0 +1,126 @@
+#!/usr/bin/env node
+/**
+ * `npm run candidate:import -- <file> [--activate] [--json]` — import a
+ * reviewed `candidate-import/v1` master-resume JSON file as a new immutable
+ * profile version. The human authors the file at an ignored local path
+ * (conventionally `data/candidate/master-resume.json`); this command only
+ * validates and stores exactly what the file declares, never inventing or
+ * rewording facts. `--activate` also selects the new version as active.
+ * Exit 0 on success, 1 on failure, 2 on usage errors.
+ */
+import { readFileSync } from "node:fs";
+import { flushStdio } from "./flush.mjs";
+import { runSetup } from "./setup-data.mjs";
+
+const MAX_FILE_BYTES = 1_000_000;
+
+function usage() {
+  return [
+    "usage: npm run candidate:import -- <file> [--activate] [--json]",
+    "",
+    "  <file>       reviewed candidate-import/v1 JSON (e.g. data/candidate/master-resume.json)",
+    "  --activate   select the imported version as the active profile version",
+    "  --json       print the machine-readable result instead of human lines",
+  ].join("\n");
+}
+
+function fail(message, exitCode = 1) {
+  process.stderr.write(`${message}\n`);
+  process.exitCode = exitCode;
+}
+
+try {
+  const argv = process.argv.slice(2);
+  const file = argv.find((arg) => !arg.startsWith("--"));
+  const activate = argv.includes("--activate");
+  const asJson = argv.includes("--json");
+  const unknown = argv.find(
+    (arg) => arg.startsWith("--") && arg !== "--activate" && arg !== "--json",
+  );
+  if (unknown !== undefined) {
+    process.stderr.write(`${usage()}\nunknown flag: ${unknown}\n`);
+    process.exitCode = 2;
+  } else if (file === undefined) {
+    process.stderr.write(`${usage()}\n`);
+    process.exitCode = 2;
+  } else {
+    let raw;
+    try {
+      raw = readFileSync(file, "utf8");
+    } catch {
+      fail(`cannot read import file: ${file}`);
+      raw = null;
+    }
+    if (raw !== null) {
+      if (Buffer.byteLength(raw, "utf8") > MAX_FILE_BYTES) {
+        fail(`import file exceeds ${MAX_FILE_BYTES} bytes: ${file}`);
+      } else {
+        let document;
+        try {
+          document = JSON.parse(raw);
+        } catch {
+          fail(`import file is not valid JSON: ${file}`);
+          document = undefined;
+        }
+        if (document !== undefined) {
+          const config = await runSetup(process.env);
+          const db = await import("../src/db/index.ts");
+          const service = await import("../src/server/candidates.ts");
+          const handle = db.openDatabase({ path: config.databasePath });
+          try {
+            const imported = service.importCandidate(handle, {
+              document,
+              actor: "human",
+            });
+            if (!imported.ok) {
+              const detail =
+                imported.error === "fact-id-conflict"
+                  ? ` (${imported.factId}: ${imported.detail})`
+                  : ` (${imported.detail})`;
+              fail(`import rejected: ${imported.error}${detail}`);
+            } else {
+              let activation = null;
+              if (activate) {
+                activation = service.activateProfileVersion(handle, {
+                  versionId: imported.versionId,
+                  actor: "human",
+                });
+                if (!activation.ok) {
+                  fail("imported but activation failed: version-not-found");
+                }
+              }
+              if (process.exitCode === undefined || process.exitCode === 0) {
+                if (asJson) {
+                  process.stdout.write(
+                    `${JSON.stringify({ imported, activation })}\n`,
+                  );
+                } else {
+                  process.stdout.write(
+                    `imported profile version ${imported.version} (${imported.versionId})\n` +
+                      `facts: ${imported.insertedFacts.length} inserted, ${imported.reusedFacts.length} reused\n`,
+                  );
+                  if (activation !== null) {
+                    process.stdout.write(
+                      `activated version ${activation.version}\n`,
+                    );
+                  }
+                }
+              }
+            }
+          } finally {
+            handle.close();
+          }
+        }
+      }
+    }
+  }
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof Error && error.name === "ZodError") {
+    fail(`import file failed schema validation:\n${message}`);
+  } else {
+    fail(`import failed: ${message}`);
+  }
+} finally {
+  await flushStdio();
+}
