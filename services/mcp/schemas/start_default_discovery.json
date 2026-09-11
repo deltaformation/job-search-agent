@@ -1,0 +1,15 @@
+{
+  "name": "start_default_discovery",
+  "description": "\n    Kickstart canonical live job discovery with a single call.\n    Executes discovery against configured sources using canonical parameters from jobs.yaml.\n    Returns the structured AgentDiscoveryContextV1 envelope containing preflight verification,\n    configuration hash, deterministic pending analysis queue, embedded first-job analysis context,\n    and explicit next action guidance.\n    ",
+  "parameters": {
+    "properties": {
+      "dry_run": {
+        "default": false,
+        "title": "Dry Run",
+        "type": "boolean"
+      }
+    },
+    "title": "start_default_discoveryArguments",
+    "type": "object"
+  }
+}

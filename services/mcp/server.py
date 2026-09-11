@@ -18,11 +18,20 @@ from services.discovery.service import DiscoveryService
 from services.documents.validator import ClaimValidator
 from services.documents.tailor import ResumeTailor
 from services.documents.renderer import DocumentRenderer
+from services.discovery.agent_workflow import AgentDiscoveryWorkflow
+from services.intelligence.context import AnalysisContextBuilder
 
 mcp = MCPServer("career-memory")
 repo = JobRepository()
 scorer = FitScorer()
 discovery_service = DiscoveryService(repo=repo, scorer=scorer)
+context_builder = AnalysisContextBuilder(repo=repo, scorer=scorer)
+agent_workflow = AgentDiscoveryWorkflow(
+    repo=repo,
+    scorer=scorer,
+    discovery_service=discovery_service,
+    context_builder=context_builder,
+)
 
 @mcp.tool()
 def get_candidate_profile() -> str:
@@ -197,10 +206,43 @@ def get_pending_analysis(limit: int = 10, min_score: Optional[float] = None) -> 
             "provisional_score": float(j["overall_score"]) if j.get("overall_score") is not None else None,
             "jd_snapshot_id": str(jd_snap["id"]),
             "candidate_snapshot_id": cand_snap_id,
-            "description": j.get("description")
+            "description": raw_text
         })
 
     return json.dumps({"count": len(results), "jobs": results}, indent=2, default=str)
+
+@mcp.tool()
+def start_default_discovery(dry_run: bool = False) -> str:
+    """
+    Kickstart canonical live job discovery with a single call.
+    Executes discovery against configured sources using canonical parameters from jobs.yaml.
+    Returns the structured AgentDiscoveryContextV1 envelope containing preflight verification,
+    configuration hash, deterministic pending analysis queue, embedded first-job analysis context,
+    and explicit next action guidance.
+    """
+    context = agent_workflow.start_default_discovery(dry_run=dry_run)
+    return json.dumps(context, indent=2, default=str)
+
+@mcp.tool()
+def get_job_analysis_context(job_id: str) -> str:
+    """
+    Retrieve self-contained, lossless requirement analysis context for a single job opportunity.
+    Includes exact JD text, current snapshot IDs, verified candidate facts inventory,
+    fact-grounded keyword coverage, allowed enums, submission template, and truthfulness rules.
+    """
+    ctx = context_builder.build_for_job(job_id)
+    if not ctx:
+        return json.dumps({"status": "error", "message": f"Job '{job_id}' not found."})
+    return json.dumps(ctx, indent=2, default=str)
+
+@mcp.tool()
+def get_next_analysis_context(min_score: Optional[float] = None) -> str:
+    """
+    Retrieve complete analysis context for the next pending analysis job in the queue.
+    Enables sequential processing of queued opportunities without separate list or query steps.
+    """
+    res = agent_workflow.get_next_analysis_context(min_score=min_score)
+    return json.dumps(res, indent=2, default=str)
 
 @mcp.tool()
 def submit_analysis_version(analysis_data: Dict[str, Any]) -> str:
@@ -262,6 +304,20 @@ def submit_analysis_version(analysis_data: Dict[str, Any]) -> str:
     score_res = scorer.score_job(job, profile, analysis=saved_analysis)
     saved_score = repo.save_job_score(job_id, score_res, analysis_id=str(saved_analysis["id"]))
 
+    pending_left = repo.get_pending_analysis_jobs(limit=1)
+    if pending_left:
+        next_action = {
+            "action": "get_next_analysis_context",
+            "tool": "get_next_analysis_context",
+            "instruction": "More jobs require structured analysis. Call get_next_analysis_context to proceed with the next job.",
+        }
+    else:
+        next_action = {
+            "action": "create_morning_briefing",
+            "tool": "create_morning_briefing",
+            "instruction": "All queued jobs have been analyzed. Call create_morning_briefing to generate the daily briefing.",
+        }
+
     return json.dumps({
         "status": "success",
         "job_id": job_id,
@@ -270,7 +326,8 @@ def submit_analysis_version(analysis_data: Dict[str, Any]) -> str:
         "score_band": saved_score["score_band"],
         "recommendation": saved_score["recommendation"],
         "evidence_coverage": float(saved_score["evidence_coverage"]),
-        "is_provisional": False
+        "is_provisional": False,
+        "next_action": next_action
     }, indent=2, default=str)
 
 @mcp.tool()

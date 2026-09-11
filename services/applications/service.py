@@ -161,6 +161,23 @@ class ApplicationCopilotService:
         full_name = str(package.candidate_profile.get("full_name") or "").strip()
         parts = full_name.split()
 
+        profile_links = package.candidate_profile.get("links", {})
+        if isinstance(profile_links, list):
+            merged_links: Dict[str, Any] = {}
+            for item in profile_links:
+                if isinstance(item, dict):
+                    merged_links[str(item.get("name", "")).lower()] = item.get("url", "")
+            profile_links = merged_links
+        elif isinstance(profile_links, dict):
+            profile_links = dict(profile_links)
+        else:
+            profile_links = {}
+        prefs = package.candidate_profile.get("preferences") or {}
+        if isinstance(prefs, dict):
+            pref_linkedin = str(prefs.get("linkedin_url") or "").strip()
+            if pref_linkedin and not str(profile_links.get("linkedin") or "").strip():
+                profile_links["linkedin"] = pref_linkedin
+
         return {
             "status": "success",
             "application_id": application_id,
@@ -185,7 +202,7 @@ class ApplicationCopilotService:
                 "email": package.candidate_profile.get("email"),
                 "phone": package.candidate_profile.get("phone"),
                 "location": package.candidate_profile.get("location"),
-                "links": package.candidate_profile.get("links", {})
+                "links": profile_links
             },
             "policy_summary": {
                 "safe_fields": ["full_name", "first_name", "last_name", "email", "phone", "location", "linkedin", "github", "portfolio", "resume_upload"],

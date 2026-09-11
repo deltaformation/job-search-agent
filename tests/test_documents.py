@@ -23,8 +23,8 @@ def test_tailor_draft_generation(candidate_data):
         assert ec["generation_strategy"] == "verbatim"
 
     plain = tailor.generate_plain_text(draft)
-    assert "Senior Technical Product Manager" in plain
     assert "FinTech Cloud Solutions" in plain
+    assert "PROFESSIONAL EXPERIENCE" in plain
 
 def test_document_rendering_and_pdf_compilation(candidate_data, tmp_path):
     tailor = ResumeTailor(candidate_data)
@@ -41,7 +41,8 @@ def test_document_rendering_and_pdf_compilation(candidate_data, tmp_path):
     renderer = DocumentRenderer(artifacts_dir=tmp_path)
     html = renderer.render_resume_to_html(candidate_data, draft)
     assert "Mouad Atfi" in html
-    assert "Professional Summary" in html
+    assert "Summary" in html
+    assert "Professional Experience" in html
 
     # Compile PDF via the resolved dedicated headless browser.
     html_path, pdf_path, page_count = renderer.compile_html_to_pdf(
@@ -57,7 +58,7 @@ def test_document_rendering_and_pdf_compilation(candidate_data, tmp_path):
     reader = pypdf.PdfReader(pdf_path)
     full_text = "".join(p.extract_text() for p in reader.pages)
     assert "MOUAD ATFI" in full_text
-    assert "WORK EXPERIENCE" in full_text
+    assert "PROFESSIONAL EXPERIENCE" in full_text
     assert "42%" in full_text
 
 def test_reproducible_diff():

@@ -28,7 +28,8 @@ class FieldPlanValidator:
         first_name = parts[0] if parts else ""
         last_name = parts[-1] if len(parts) > 1 else ""
 
-        # Extract links from links/social list
+        # Extract links from links/social list, falling back to
+        # canonical preferences.linkedin_url (loader/seed source of truth).
         links = self.profile.get("links", {})
         if isinstance(links, list):
             links_dict = {}
@@ -36,6 +37,15 @@ class FieldPlanValidator:
                 if isinstance(item, dict):
                     links_dict[item.get("name", "").lower()] = item.get("url", "")
             links = links_dict
+        if isinstance(links, dict):
+            links = dict(links)
+        else:
+            links = {}
+        prefs = self.profile.get("preferences") or {}
+        if isinstance(prefs, dict):
+            pref_linkedin = str(prefs.get("linkedin_url") or "").strip()
+            if pref_linkedin and not str(links.get("linkedin") or "").strip():
+                links["linkedin"] = pref_linkedin
 
         return {
             "first_name": first_name.lower(),

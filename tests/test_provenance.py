@@ -31,7 +31,7 @@ def test_metric_tampering_detected(candidate_data):
         "text": "Architected distributed API platform reducing p99 latency by 50%.",
         "claimed_technologies": ["AWS"],
         "claimed_metrics": ["50% latency reduction"],
-        "generation_strategy": "constrained_template"
+        "generation_strategy": "verbatim"
     }
     is_valid, errors = validator.validate_claim(claim)
     assert is_valid is False

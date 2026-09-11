@@ -838,7 +838,7 @@ class JobRepository:
                     FROM jobs j
                     {FRESHNESS_JOIN}
                     LEFT JOIN job_scores s ON j.job_id = s.job_id
-                    WHERE j.assessment_status = 'ANALYSIS_PENDING'
+                    WHERE j.assessment_status IN ('ANALYSIS_PENDING', 'PROVISIONALLY_SCORED')
                       AND j.status NOT IN ('SKIPPED', 'REJECTED', 'EXPIRED', 'WITHDRAWN')
                 """
                 params = []
@@ -1133,13 +1133,17 @@ class JobRepository:
                         fact_ids_used, diff_summary, validation_status, validation_report,
                         html_path, pdf_path, approved_by_human,
                         profile_snapshot_id, jd_snapshot_id, baseline_text,
-                        requirements_snapshot, analysis_id
+                        requirements_snapshot, analysis_id,
+                        template_id, template_version, template_hash,
+                        render_schema_version, ranking_policy_version,
+                        keyword_plan, keyword_coverage_report, summary_derivation
                     ) VALUES (
                         %s, %s, %s, %s, %s,
                         %s, %s, %s, %s,
                         %s, %s, %s, %s,
                         %s, %s, %s,
-                        %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s
                     ) RETURNING *;
                 """, (
                     data["job_id"],
@@ -1160,7 +1164,13 @@ class JobRepository:
                     False,
                     data.get("profile_snapshot_id"), data.get("jd_snapshot_id"),
                     data.get("baseline_text"), json.dumps(data.get("requirements_snapshot", []), default=str),
-                    data.get("analysis_id")
+                    data.get("analysis_id"),
+                    data.get("template_id"), data.get("template_version"),
+                    data.get("template_hash"), data.get("render_schema_version", "v1"),
+                    data.get("ranking_policy_version"),
+                    json.dumps(data.get("keyword_plan", {}), default=str),
+                    json.dumps(data.get("keyword_coverage_report", {}), default=str),
+                    json.dumps(data.get("summary_derivation", {}), default=str),
                 ))
                 saved = cur.fetchone()
 
@@ -1284,6 +1294,95 @@ class JobRepository:
             with conn.cursor() as cur:
                 cur.execute("SELECT * FROM resume_versions WHERE job_id = %s AND version_number = %s", (job_id, version_number))
                 return cur.fetchone()
+
+    # -------------------------------------------------------------
+    # WORDING VARIANTS (MILESTONE 8)
+    # -------------------------------------------------------------
+    def propose_wording_variant(
+        self,
+        candidate_id: str,
+        fact_ids: List[str],
+        variant_text: str,
+        normalized_keywords: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Record an agent/human-proposed reusable wording. Never approved here."""
+        if not fact_ids or not str(variant_text or "").strip():
+            raise ValueError("Variant requires fact_ids and nonempty text.")
+        content_hash = hashlib.sha256(variant_text.strip().encode("utf-8")).hexdigest()
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO candidate_wording_variants (
+                        candidate_id, fact_ids, variant_text,
+                        normalized_keywords, content_hash, review_status
+                    ) VALUES (%s, %s, %s, %s, %s, 'proposed')
+                    RETURNING *;
+                """, (
+                    candidate_id,
+                    json.dumps(list(fact_ids)),
+                    variant_text.strip(),
+                    json.dumps(list(normalized_keywords or [])),
+                    content_hash,
+                ))
+                saved = cur.fetchone()
+                conn.commit()
+                return saved
+
+    def list_wording_variants(
+        self, candidate_id: str, status: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                if status:
+                    cur.execute("""
+                        SELECT * FROM candidate_wording_variants
+                        WHERE candidate_id = %s AND review_status = %s
+                        ORDER BY created_at DESC;
+                    """, (candidate_id, status))
+                else:
+                    cur.execute("""
+                        SELECT * FROM candidate_wording_variants
+                        WHERE candidate_id = %s ORDER BY created_at DESC;
+                    """, (candidate_id,))
+                return list(cur.fetchall())
+
+    def get_wording_variant(self, variant_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM candidate_wording_variants WHERE id = %s;", (variant_id,))
+                return cur.fetchone()
+
+    def get_approved_variants(self, candidate_id: str) -> List[Dict[str, Any]]:
+        return self.list_wording_variants(candidate_id, status="approved")
+
+    def approve_wording_variant(
+        self, variant_id: str, reviewer: str = "human", *, human_confirmed: bool = False
+    ) -> Tuple[bool, str]:
+        """Human-only approval of reusable wording. Requires explicit local consent."""
+        if not human_confirmed:
+            return False, "Explicit human confirmation through the local review CLI is required."
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM candidate_wording_variants WHERE id = %s FOR UPDATE;", (variant_id,))
+                record = cur.fetchone()
+                if not record:
+                    return False, f"Wording variant {variant_id} not found."
+                if record["review_status"] == "approved":
+                    return False, "Variant is already approved."
+                actual = hashlib.sha256(str(record["variant_text"]).strip().encode("utf-8")).hexdigest()
+                if actual != record["content_hash"]:
+                    return False, "Stored variant text was modified."
+                cur.execute("""
+                    UPDATE candidate_wording_variants
+                    SET review_status = 'approved', reviewer = %s, reviewed_at = NOW()
+                    WHERE id = %s AND review_status = 'proposed'
+                    RETURNING *;
+                """, (reviewer, variant_id))
+                updated = cur.fetchone()
+                if not updated:
+                    return False, "Variant status changed during review."
+                conn.commit()
+                return True, str(updated["id"])
 
     # -------------------------------------------------------------
     # APPLICATION COPILOT & SESSION MANAGEMENT (MILESTONE 3)

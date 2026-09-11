@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from services.documents.browser import resolve_headless_browser
 from services.documents.validator import ClaimValidator, ProvenanceValidationError
+from services.documents.template_registry import TemplateRegistry, load_resume_config
+from services.documents.view_model import build_view_model
 from jinja2 import Environment, select_autoescape
 import pypdf
 
@@ -49,7 +51,9 @@ def terminate_browser_process(process: subprocess.Popen[bytes]) -> None:
         process.kill()
     process.wait()
 
-HTML_TEMPLATE = """<!DOCTYPE html>
+# LEGACY generic template retained only for historical reference. Production
+# rendering uses the allow-listed template from TemplateRegistry.
+LEGACY_HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -217,65 +221,45 @@ class DocumentRenderer:
         self,
         artifacts_dir: Optional[Path] = None,
         browser_path: Optional[str] = None,
+        template_id: Optional[str] = None,
     ) -> None:
         self.artifacts_dir = artifacts_dir or ARTIFACTS_DIR
         self.browser_path = browser_path
         self.jinja_env = Environment(autoescape=select_autoescape(["html", "xml"]))
+        self.resume_config = load_resume_config()
+        self.registry = TemplateRegistry()
+        self.template_id = template_id or str(self.resume_config["default_template"])
+        source, digest = self.registry.get_template(self.template_id)
+        self.template_source = source
+        self.template_hash = digest
+        self.template_version = str(self.resume_config.get("template_version", "v1"))
+
+    def template_info(self) -> Dict[str, str]:
+        return {
+            "template_id": self.template_id,
+            "template_version": self.template_version,
+            "template_hash": self.template_hash,
+            "render_schema_version": str(self.resume_config.get("render_schema_version", "v1")),
+        }
 
     def render_resume_to_html(
         self,
         profile: Dict[str, Any],
-        structured_resume: Dict[str, Any]
+        structured_resume: Dict[str, Any],
+        variants: Optional[list] = None,
     ) -> str:
         """
-        Renders structured claims and canonical profile into ATS-friendly HTML.
-        Canonical identity fields are injected directly from profile and autoescaped.
+        Renders structured claims and canonical profile into ATS-friendly HTML
+        using the trusted allow-listed template. The JD can never select the
+        template. Canonical identity fields come from the profile snapshot.
         """
-        valid, report = ClaimValidator(profile).validate_draft(structured_resume)
+        valid, report = ClaimValidator(profile, variants=variants).validate_draft(structured_resume)
         if not valid:
             raise ProvenanceValidationError("invalid_draft", str(report["errors"]))
-        template = self.jinja_env.from_string(HTML_TEMPLATE)
-
-        claims = structured_resume.get("claims", [])
-        summary_claims = [c for c in claims if c.get("section") == "summary"]
-        exp_claims = [c for c in claims if c.get("section") == "experience"]
-
-        # Group experience claims by company & role
-        grouped_exp = []
-        company_seen = {}
-        for ec in exp_claims:
-            comp = ec["entity_id"]
-            if comp not in company_seen:
-                dates = ec.get("dates", {})
-                date_str = f"{dates.get('start', '')} - {dates.get('end', 'Present')}"
-                # Find matching work experience record for location
-                loc = ""
-                for we in profile.get("work_experience", []):
-                    if str(we["id"]) == comp:
-                        loc = we.get("location", loc)
-                        break
-
-                group = {
-                    "company": ec["company"],
-                    "role": ec.get("role", "Role"),
-                    "dates": date_str,
-                    "location": loc,
-                    "claims": []
-                }
-                company_seen[comp] = group
-                grouped_exp.append(group)
-            company_seen[comp]["claims"].append(ec)
-
-        skill_names = [s["name"] for s in profile.get("skills", []) if s.get("verified") is True]
-
-        rendered_html = template.render(
-            profile=profile,
-            summary_claims=summary_claims,
-            experience_groups=grouped_exp,
-            verified_skills=skill_names,
-            education=profile.get("education", [])
-        )
-        return rendered_html
+        max_roles = int(self.resume_config.get("max_detailed_roles", 3))
+        view_model = build_view_model(profile, structured_resume, max_detailed_roles=max_roles)
+        template = self.jinja_env.from_string(self.template_source)
+        return template.render(**view_model)
 
     def compile_html_to_pdf(
         self,

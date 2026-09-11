@@ -8,6 +8,12 @@ __pycache__/
 # Node
 node_modules/
 npm-debug.log*
+.next/
+out/
+coverage/
+playwright-report/
+test-results/
+.worktrees/
 
 # Environment & Secrets
 .env
@@ -23,6 +29,3 @@ Thumbs.db
 data/
 *.log
 .control_center.json
-
-# Nimbalyst Local Attachments
-nimbalyst-local/attachments/

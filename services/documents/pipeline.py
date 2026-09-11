@@ -151,19 +151,117 @@ def generate_documents(repo: JobRepository, job_id: str, draft: Optional[Dict[st
         }
 
     tailor = ResumeTailor(profile)
-    if draft is None:
-        draft = tailor.generate_tailored_draft(job, evidence_fact_ids=cited_fact_ids)
+    server_generated = draft is None
+    if server_generated:
+        draft = tailor.generate_tailored_draft(
+            job, evidence_fact_ids=cited_fact_ids, requirements=canonical_requirements
+        )
     if draft.get("job_id") != str(job["job_id"]):
         raise ValueError("Draft job_id does not match the requested job.")
 
-    valid, report = ClaimValidator(profile).validate_draft(draft)
+    # M8 lineage inputs. All derived server-side from bound snapshots; an
+    # agent-submitted draft can never inject template identity, keyword
+    # coverage, variant approval, or summary derivation.
+    from datetime import date as _date
+    from services.documents.keywords import (
+        RANKING_POLICY_VERSION,
+        CoverageFirstFactRanker,
+        KeywordPlanner,
+        evidence_qualified_skills,
+    )
+    from services.documents.summary import compose_summary
+    from services.documents.template_registry import load_resume_config
+    resume_config = load_resume_config()
+    ranker = CoverageFirstFactRanker(
+        max_per_role=int(resume_config.get("max_experience_bullets", 5)),
+        max_prior_role=int(resume_config.get("max_prior_role_bullets", 3)),
+        max_total=int(resume_config.get("max_total_bullets", 14)),
+    )
+    ranked_ids = ranker.rank(canonical_requirements, profile)
+    skill_terms = evidence_qualified_skills(profile, ranked_ids)
+    keyword_plan = KeywordPlanner().plan(
+        canonical_requirements, ranked_ids, profile, skill_terms
+    )
+
+    as_of_raw = str(analysis.get("created_at", "") or "")[:10]
+    try:
+        calculation_as_of = _date.fromisoformat(as_of_raw)
+    except ValueError:
+        jd_as_of = str((jd_snapshot.get("created_at", "") or ""))[:10]
+        try:
+            calculation_as_of = _date.fromisoformat(jd_as_of)
+        except ValueError:
+            calculation_as_of = _date.today()
+
+    summary_derivation: Dict[str, Any] = {}
+    summary_strategy = "agent_submitted"
+    if server_generated:
+        summary_result = compose_summary(
+            profile, ranked_ids, str(job.get("title") or ""), calculation_as_of
+        )
+        summary_strategy = summary_result.strategy
+        if summary_result.strategy == "derived_template":
+            summary_derivation = summary_result.derivation or {}
+        else:
+            summary_derivation = {
+                "strategy": summary_result.strategy,
+                "fallback_reason": summary_result.fallback_reason,
+                "formula_version": "summary/v1",
+                "calculation_as_of": calculation_as_of.isoformat(),
+            }
+        # Replace the heuristic summary claim with the constrained composition.
+        kept = [c for c in draft.get("claims", []) if c.get("section") != "summary"]
+        if summary_result.strategy != "none":
+            summary_claim: Dict[str, Any] = {
+                "claim_id": "claim_000",
+                "section": "summary",
+                "text": summary_result.text,
+                "fact_ids": summary_result.fact_ids,
+                "generation_strategy": (
+                    "derived_template" if summary_result.strategy == "derived_template"
+                    else "verbatim"
+                ),
+            }
+            if summary_result.derivation:
+                summary_claim["derivation"] = summary_result.derivation
+            kept.insert(0, summary_claim)
+        for index, claim in enumerate(kept, start=1):
+            claim["claim_id"] = f"claim_{index:03d}"
+        draft["claims"] = kept
+    else:
+        existing_summary = next(
+            (c for c in draft.get("claims", []) if c.get("section") == "summary"), None
+        )
+        if isinstance(existing_summary, dict) and isinstance(existing_summary.get("derivation"), dict):
+            summary_derivation = existing_summary["derivation"]
+            summary_strategy = str(existing_summary.get("generation_strategy", "agent_submitted"))
+
+    try:
+        approved_variants = repo.get_approved_variants(str(profile.get("id")))
+    except Exception:
+        approved_variants = []
+    valid, report = ClaimValidator(profile, variants=approved_variants).validate_draft(draft)
     if not valid:
         return {"status": "validation_failed", "report": report}
 
     plain = tailor.generate_plain_text(draft)
     digest = tailor.compute_content_hash(plain)
-    baseline = tailor.generate_plain_text(tailor.generate_tailored_draft({"job_id": job_id}))
+    # Template-aware baseline: canonical untailored content through the same
+    # view model and template, so diffs measure tailoring, not layout churn.
+    from services.documents.view_model import (
+        build_canonical_baseline_draft,
+        build_view_model,
+        render_plain_text,
+    )
+    baseline_vm = build_view_model(
+        profile,
+        build_canonical_baseline_draft(profile),
+        max_detailed_roles=int(resume_config.get("max_detailed_roles", 3)),
+    )
+    baseline = render_plain_text(baseline_vm)
 
+    renderer = renderer or DocumentRenderer()
+    template_info = renderer.template_info()
     record = repo.save_resume_version({
         "job_id": job_id, "content_hash": digest, "tailored_text": plain,
         "structured_content": draft, "claim_evidence_map": draft["claims"],
@@ -173,18 +271,30 @@ def generate_documents(repo: JobRepository, job_id: str, draft: Optional[Dict[st
         "profile_snapshot_id": cand_snap_id, "jd_snapshot_id": str(jd_snapshot["id"]),
         "analysis_id": str(analysis["id"]),
         "baseline_text": baseline, "requirements_snapshot": canonical_requirements,
+        "template_id": template_info["template_id"],
+        "template_version": template_info["template_version"],
+        "template_hash": template_info["template_hash"],
+        "render_schema_version": template_info["render_schema_version"],
+        "ranking_policy_version": RANKING_POLICY_VERSION,
+        "keyword_plan": keyword_plan,
+        "keyword_coverage_report": keyword_plan["coverage_report"],
+        "summary_derivation": summary_derivation,
     })
     resume_id = str(record["id"])
     try:
-        renderer = renderer or DocumentRenderer()
-        html = renderer.render_resume_to_html(profile, draft)
+        html = renderer.render_resume_to_html(profile, draft, variants=approved_variants)
         html_path, pdf_path, pages = renderer.compile_html_to_pdf(html, job_id, record["version_number"], digest)
         updated = repo.update_resume_validation(resume_id, "AWAITING_HUMAN_REVIEW", report, html_path, pdf_path)
         if not updated:
             raise ValueError("Resume state changed during rendering.")
         return {"status": "success", "resume_version_id": resume_id, "version_number": record["version_number"],
                 "content_hash": digest, "html_path": html_path, "pdf_path": pdf_path, "page_count": pages,
-                "validation_status": "AWAITING_HUMAN_REVIEW", "diff_summary": record["diff_summary"]}
+                "validation_status": "AWAITING_HUMAN_REVIEW", "diff_summary": record["diff_summary"],
+                "template": template_info,
+                "ranking_policy_version": RANKING_POLICY_VERSION,
+                "summary_strategy": summary_strategy,
+                "keyword_coverage": keyword_plan["coverage_report"],
+                "omitted_unsupported": keyword_plan["omitted_unsupported"]}
     except Exception as exc:
         repo.update_resume_validation(resume_id, "FAILED", {"is_valid": False, "error": str(exc)})
         return {"status": "error", "resume_version_id": resume_id, "message": str(exc)}

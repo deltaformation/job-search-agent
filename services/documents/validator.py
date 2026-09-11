@@ -10,13 +10,21 @@ class ProvenanceValidationError(ValueError):
 
 
 class ClaimValidator:
-    def __init__(self, candidate_profile: Dict[str, Any]) -> None:
+    def __init__(
+        self,
+        candidate_profile: Dict[str, Any],
+        variants: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
         self.profile = candidate_profile
         self.verified_facts_by_id = {
             f["fact_id"]: f for f in candidate_profile.get("verified_facts", [])
             if f.get("verification_status") == "approved"
         }
         self.work_exp_by_id = {str(e["id"]): e for e in candidate_profile.get("work_experience", [])}
+        self.variants_by_id = {
+            str(v.get("id")): v for v in (variants or [])
+            if isinstance(v, dict) and v.get("id")
+        }
 
     VALID_CATEGORIES = {
         "experience", "skill", "responsibility", "domain",
@@ -131,6 +139,53 @@ class ClaimValidator:
 
         return not errors, errors
 
+    def _validate_approved_variant(
+        self, claim: Dict[str, Any], text: str, ids: List[str]
+    ) -> List[str]:
+        """Fail-closed checks for human-approved reusable wording."""
+        errors: List[str] = []
+        variant_id = claim.get("variant_id")
+        variant = self.variants_by_id.get(str(variant_id)) if variant_id else None
+        if variant is None:
+            return [f"Unknown wording variant '{variant_id}'."]
+        if variant.get("review_status") != "approved":
+            errors.append(f"Wording variant '{variant_id}' is not human-approved.")
+        if text != variant.get("variant_text"):
+            errors.append(f"Claim text does not match approved variant '{variant_id}'.")
+        import hashlib as _hashlib
+        actual = _hashlib.sha256(str(variant.get("variant_text", "")).encode("utf-8")).hexdigest()
+        if actual != variant.get("content_hash"):
+            errors.append(f"Wording variant '{variant_id}' hash mismatch.")
+        if str(variant.get("candidate_id")) != str(self.profile.get("id")):
+            errors.append(f"Wording variant '{variant_id}' belongs to another candidate.")
+        variant_fact_ids = variant.get("fact_ids", [])
+        if (
+            not isinstance(variant_fact_ids, list)
+            or not variant_fact_ids
+            or sorted(variant_fact_ids) != sorted(ids)
+        ):
+            errors.append(f"Wording variant '{variant_id}' fact binding must equal claim fact_ids.")
+        for fid in variant_fact_ids:
+            if fid not in self.verified_facts_by_id:
+                errors.append(f"Wording variant '{variant_id}' cites unapproved fact_id '{fid}'.")
+        return errors
+
+    def _validate_experience_binding(
+        self, claim: Dict[str, Any], fact: Dict[str, Any], errors: List[str]
+    ) -> Tuple[bool, List[str]]:
+        exp = self.work_exp_by_id.get(str(fact.get("work_experience_id")))
+        if not exp:
+            errors.append("Experience fact has no candidate-owned employment record.")
+        else:
+            if claim.get("company") != exp["company"]:
+                errors.append("Misattributed employer.")
+            if claim.get("role") != exp["role"] or claim.get("entity_id") != str(exp["id"]):
+                errors.append("Role or employment identity does not match the cited fact.")
+            dates = {"start": str(exp["start_date"]), "end": str(exp["end_date"]) if exp.get("end_date") else ("Present" if exp.get("is_current") else "")}
+            if claim.get("dates") != dates:
+                errors.append("Employment dates do not match canonical evidence.")
+        return (not errors), errors
+
     def validate_claim(self, claim: Dict[str, Any]) -> Tuple[bool, List[str]]:
         if not isinstance(claim, dict):
             return False, ["Claim must be an object."]
@@ -142,9 +197,37 @@ class ClaimValidator:
         text = claim.get("text")
         if not isinstance(text, str) or not text.strip():
             errors.append("Claim text must be nonempty.")
-        if claim.get("generation_strategy", "verbatim") != "verbatim":
-            errors.append("Only the verbatim generation strategy is supported.")
+        strategy = claim.get("generation_strategy", "verbatim")
+        if strategy not in {"verbatim", "derived_template", "approved_variant"}:
+            errors.append("Only verbatim, derived_template, and approved_variant strategies are supported.")
+            return False, errors
         if section in ("experience", "summary"):
+            ids = claim.get("fact_ids", [])
+            if not isinstance(ids, list) or not ids or any(not isinstance(fid, str) for fid in ids):
+                return False, errors + ["Claim must cite at least one approved fact_id."]
+            if strategy == "derived_template":
+                if section != "summary":
+                    return False, errors + ["derived_template is allowed only for the summary."]
+                from services.documents.summary import verify_derivation
+                manifest = claim.get("derivation")
+                valid_manifest, manifest_errors = verify_derivation(
+                    manifest if isinstance(manifest, dict) else {}, self.profile
+                )
+                errors.extend(manifest_errors)
+                if text != (manifest.get("final_text") if isinstance(manifest, dict) else None):
+                    errors.append("Summary text must equal its derivation final_text.")
+                if sorted(ids) != sorted(manifest.get("fact_ids", []) if isinstance(manifest, dict) else []):
+                    errors.append("Summary fact_ids must equal its derivation fact_ids.")
+                return (not errors), errors
+            if strategy == "approved_variant":
+                errors.extend(self._validate_approved_variant(claim, text, ids))
+                if section == "experience":
+                    first_fact = self.verified_facts_by_id.get(ids[0])
+                    if first_fact is None:
+                        return False, errors + ["Variant cites an unapproved fact_id."]
+                    return self._validate_experience_binding(claim, first_fact, errors)
+                return (not errors), errors
+            # Verbatim path below (exactly one fact, exact text).
             ids = claim.get("fact_ids", [])
             if not isinstance(ids, list) or len(ids) != 1 or not isinstance(ids[0], str):
                 return False, errors + ["Each verbatim claim must cite exactly one approved fact_id."]
@@ -163,17 +246,7 @@ class ClaimValidator:
                         if value not in fact.get(evidence_key, []):
                             errors.append(f"{label} '{value}' is not present in the cited fact.")
             if section == "experience":
-                exp = self.work_exp_by_id.get(str(fact.get("work_experience_id")))
-                if not exp:
-                    errors.append("Experience fact has no candidate-owned employment record.")
-                else:
-                    if claim.get("company") != exp["company"]:
-                        errors.append("Misattributed employer.")
-                    if claim.get("role") != exp["role"] or claim.get("entity_id") != str(exp["id"]):
-                        errors.append("Role or employment identity does not match the cited fact.")
-                    dates = {"start": str(exp["start_date"]), "end": str(exp["end_date"]) if exp.get("end_date") else ("Present" if exp.get("is_current") else "")}
-                    if claim.get("dates") != dates:
-                        errors.append("Employment dates do not match canonical evidence.")
+                return self._validate_experience_binding(claim, fact, errors)
         elif section == "education":
             fields = ("degree", "institution", "field_of_study")
             matching = [e for e in self.profile.get("education", []) if all(

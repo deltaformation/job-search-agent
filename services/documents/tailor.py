@@ -70,42 +70,58 @@ class ResumeTailor:
         self,
         job: Dict[str, Any],
         matched_fact_ids: Optional[List[str]] = None,
-        evidence_fact_ids: Optional[List[str]] = None
+        evidence_fact_ids: Optional[List[str]] = None,
+        requirements: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Synthesizes a structured tailored resume following Option A (Verbatim Selection).
         Every bullet is anchored to an approved fact_id with verbatim text and verified metrics.
+
+        When validated ``requirements`` are supplied, fact ordering uses the
+        deterministic coverage-first ranker (no heuristic weights). Otherwise
+        the legacy relevance heuristic applies.
         """
         desc = (job.get("description") or "").lower()
         title = (job.get("title") or "").lower()
 
-        priority_fact_ids = set(evidence_fact_ids if evidence_fact_ids is not None else (matched_fact_ids or []))
+        if requirements is not None:
+            from services.documents.keywords import CoverageFirstFactRanker
+            from services.documents.template_registry import load_resume_config
+            resume_config = load_resume_config()
+            ranker = CoverageFirstFactRanker(
+                max_per_role=int(resume_config.get("max_experience_bullets", 5)),
+                max_prior_role=int(resume_config.get("max_prior_role_bullets", 3)),
+                max_total=int(resume_config.get("max_total_bullets", 14)),
+            )
+            top_fact_ids = ranker.rank(requirements, self.profile)
+        else:
+            priority_fact_ids = set(evidence_fact_ids if evidence_fact_ids is not None else (matched_fact_ids or []))
 
-        # Score relevance of each verified fact against the JD
-        fact_scores: List[Tuple[str, float]] = []
-        for fid, fact in self.verified_facts.items():
-            score = 0.0
-            fact_text = fact.get("text", "").lower()
-            techs = [t.lower() for t in fact.get("technologies", [])]
+            # Score relevance of each verified fact against the JD
+            fact_scores: List[Tuple[str, float]] = []
+            for fid, fact in self.verified_facts.items():
+                score = 0.0
+                fact_text = fact.get("text", "").lower()
+                techs = [t.lower() for t in fact.get("technologies", [])]
 
-            # Direct tech match
-            for t in techs:
-                if t in desc:
-                    score += 2.0
-            # Keyword match
-            tokens = ["platform", "api", "cloud", "scale", "latency", "revenue", "enterprise", "cross-functional"]
-            for tok in tokens:
-                if tok in desc and tok in fact_text:
-                    score += 1.0
+                # Direct tech match
+                for t in techs:
+                    if t in desc:
+                        score += 2.0
+                # Keyword match
+                tokens = ["platform", "api", "cloud", "scale", "latency", "revenue", "enterprise", "cross-functional"]
+                for tok in tokens:
+                    if tok in desc and tok in fact_text:
+                        score += 1.0
 
-            if fid in priority_fact_ids:
-                score += 5.0
+                if fid in priority_fact_ids:
+                    score += 5.0
 
-            fact_scores.append((fid, score))
+                fact_scores.append((fid, score))
 
-        # Sort facts by relevance
-        fact_scores.sort(key=lambda x: x[1], reverse=True)
-        top_fact_ids = [fid for fid, _ in fact_scores]
+            # Sort facts by relevance
+            fact_scores.sort(key=lambda x: x[1], reverse=True)
+            top_fact_ids = [fid for fid, _ in fact_scores]
 
         # Assemble structured claims grouped by work experience
         claims: List[Dict[str, Any]] = []
@@ -191,59 +207,12 @@ class ResumeTailor:
 
     def generate_plain_text(self, structured_resume: Dict[str, Any]) -> str:
         """
-        Converts structured claims into plain readable text representation.
+        Plain-text projection of the canonical view model. HTML rendering
+        consumes the same model, so the two projections cannot drift.
         """
-        lines = []
-        name = self.profile.get("full_name", "Candidate")
-        headline = self.profile.get("headline", "")
-        contact = f"{self.profile.get('email', '')} | {self.profile.get('phone', '')} | {self.profile.get('location', '')}"
-        
-        lines.append(name.upper())
-        lines.append(headline)
-        lines.append(contact)
-        lines.append("-" * 60)
-
-        # Summary
-        summary_claims = [c for c in structured_resume.get("claims", []) if c.get("section") == "summary"]
-        if summary_claims:
-            lines.append("PROFESSIONAL SUMMARY")
-            for sc in summary_claims:
-                lines.append(sc["text"])
-            lines.append("")
-
-        # Experience
-        lines.append("WORK EXPERIENCE")
-        exp_claims = [c for c in structured_resume.get("claims", []) if c.get("section") == "experience"]
-        # Group by company
-        grouped = {}
-        for ec in exp_claims:
-            comp = ec["entity_id"]
-            if comp not in grouped:
-                grouped[comp] = []
-            grouped[comp].append(ec)
-
-        for comp, c_list in grouped.items():
-            first = c_list[0]
-            dates = first.get("dates", {})
-            date_str = f"{dates.get('start', '')} - {dates.get('end', 'Present')}"
-            lines.append(f"{first.get('role', 'Role')} | {first['company']} | {date_str}")
-            for c in c_list:
-                lines.append(f"  • {c['text']}")
-            lines.append("")
-
-        # Skills
-        lines.append("TECHNICAL & PRODUCT SKILLS")
-        skill_names = [s["name"] for s in self.skills if s.get("verified") is True]
-        lines.append(", ".join(skill_names))
-        lines.append("")
-
-        # Education
-        lines.append("EDUCATION")
-        for edu in self.education:
-            lines.append(f"{edu['degree']} in {edu['field_of_study']} - {edu['institution']}")
-        lines.append("")
-
-        return "\n".join(lines)
+        from services.documents.view_model import build_view_model, render_plain_text
+        view_model = build_view_model(self.profile, structured_resume)
+        return render_plain_text(view_model)
 
     def compute_content_hash(self, text_content: str) -> str:
         return hashlib.sha256(text_content.strip().encode("utf-8")).hexdigest()

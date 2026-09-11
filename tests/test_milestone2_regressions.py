@@ -55,8 +55,10 @@ def test_two_roles_same_company_are_not_merged(candidate_data: dict) -> None:
     draft = draft_for(profile)
     plain = ResumeTailor(profile).generate_plain_text(draft)
     html = DocumentRenderer().render_resume_to_html(profile, draft)
-    assert "2018-06-01" in plain and "2018-06-01" in html
-    assert "2021-03-01" in plain and "2021-03-01" in html
+    # Standard layout renders "Mon YYYY" dates; both same-company roles stay split.
+    assert "Jun 2018 - Feb 2021" in plain and "Jun 2018 - Feb 2021" in html
+    assert "Mar 2021 - Present" in plain and "Mar 2021 - Present" in html
+    assert plain.count("FinTech Cloud Solutions") == 2
     assert "Toronto, ON</span>" not in html  # no invented employment location
 
 
@@ -79,10 +81,18 @@ class FakeRenderer:
         self.directory = directory
         self.fail = fail
 
-    def render_resume_to_html(self, profile: dict, draft: dict) -> str:
+    def render_resume_to_html(self, profile: dict, draft: dict, variants: object = None) -> str:
         if self.fail:
             raise RuntimeError("Template failed")
         return "<p>Test document</p>"
+
+    def template_info(self) -> dict:
+        return {
+            "template_id": "test_template",
+            "template_version": "v0",
+            "template_hash": "0" * 64,
+            "render_schema_version": "v1",
+        }
 
     def compile_html_to_pdf(self, html: str, job: str, version: int, digest: str) -> tuple[str, str, int]:
         pdf = self.directory / f"v{version}.pdf"

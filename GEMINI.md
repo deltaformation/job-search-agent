@@ -1,14 +1,21 @@
-# Gemini Project Entry Point
+# Gemini and Antigravity Project Entry Point
 
-Gemini and Antigravity sessions use the same project rules as every other agent.
+Follow `AGENTS.md` as the mandatory repository contract.
 
-Before changing code or project status, read:
+Before changing code, read the canonical rebuild context in this order:
 
-1. `AGENTS.md` for mandatory engineering and human-safety rules.
-2. `nimbalyst-local/project-summary.md` for the verified milestone dashboard.
-3. `nimbalyst-local/agent-handoff.md` for task claiming, handoff, and evidence rules.
-4. `nimbalyst-local/tracker/tasks.md` for the current work queue.
+1. `docs/product-rebuild/README.md`
+2. `docs/product-rebuild/architecture.md`
+3. `docs/product-rebuild/reuse-map.md`
+4. `docs/product-rebuild/milestones.md`
+5. The single assigned work order in
+   `docs/product-rebuild/agent-work-orders.md`
 
-Do not treat older Gemini-specific implementation plans as current status. PostgreSQL, repository artifacts, tests, and the current Nimbalyst project files are authoritative in that order.
+Nimbalyst is retired. Do not create or update Nimbalyst project-control files.
+The Nimbalyst directories were removed by work order R0-B; recovery context is
+in `docs/product-rebuild/legacy-baseline.md` and Git history.
 
-Follow the **Operational Rehearsal UX** rules in `AGENTS.md`: never narrate internal repository exploration, schema inspections, port scans, or debugging steps in user-visible output; never modify `~/.gemini` or external directories during workflows; always emit one concise progress message, followed by the outcome or a single actionable blocker.
+Inspect the actual repository and tests before trusting any completion claim.
+The target runtime is Node/TypeScript/Next.js/SQLite; the existing
+Python/PostgreSQL system remains a temporary executable oracle and import source
+until parity and cutover gates pass.

@@ -29,8 +29,16 @@ class FakeRenderer:
         self.tmp_path = tmp_path
         self.fail = fail
 
-    def render_resume_to_html(self, profile: dict, draft: dict) -> str:
+    def render_resume_to_html(self, profile: dict, draft: dict, variants: object = None) -> str:
         return "<html><body>Fake Resume</body></html>"
+
+    def template_info(self) -> dict:
+        return {
+            "template_id": "test_template",
+            "template_version": "v0",
+            "template_hash": "0" * 64,
+            "render_schema_version": "v1",
+        }
 
     def compile_html_to_pdf(self, html: str, job_id: str, version: int, digest: str):
         if self.fail:

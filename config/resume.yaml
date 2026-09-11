@@ -1,0 +1,14 @@
+# Milestone 8 canonical resume presentation configuration.
+# Presentation limits only. No resume facts, no arbitrary template paths.
+# The JD can never select a template; the server resolves this file.
+default_template: "mouad_standard_v1"
+template_version: "v1"
+render_schema_version: "v1"
+ranking_policy_version: "coverage-first/v1"
+page_budget: 2
+max_experience_bullets: 5
+max_prior_role_bullets: 3
+max_total_bullets: 14
+max_detailed_roles: 3
+max_earlier_career_entries: 6
+variants_enabled: false
