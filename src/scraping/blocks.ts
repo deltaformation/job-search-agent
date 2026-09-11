@@ -27,14 +27,35 @@ export type BlockVerdict =
   | { blocked: true; reasonCode: BlockReason; detail: string }
   | { blocked: false };
 
-const CAPTCHA_MARKERS = [
-  "recaptcha",
-  "g-recaptcha",
-  "hcaptcha",
-  "h-captcha",
-  "turnstile",
-  "cf-chl",
-  "captcha",
+const CAPTCHA_PHRASES = [
+  "please solve the captcha",
+  "solve the captcha",
+  "solve this captcha",
+  "verify you are human",
+  "verify that you are human",
+  "confirm you are human",
+  "human verification",
+  "checking your browser",
+  "just a moment...",
+  "attention required! | cloudflare",
+  "security check",
+  "bot verification",
+  "challenge validation",
+  "are you a human",
+];
+
+const CAPTCHA_ELEMENT_MARKERS = [
+  'class="g-recaptcha"',
+  "class='g-recaptcha'",
+  'class="h-captcha"',
+  "class='h-captcha'",
+  'class="cf-turnstile"',
+  "class='cf-turnstile'",
+  "challenges.cloudflare.com/cf-chl",
+  "cf-chl-widget",
+  'id="challenge-stage"',
+  'id="challenge-running"',
+  'id="cf-please-wait"',
 ];
 
 const LOGIN_MARKERS = [
@@ -80,7 +101,15 @@ export function detectBlock(signals: BlockSignals): BlockVerdict {
   const html = signals.htmlSample.toLowerCase();
   const text = signals.textSample.toLowerCase();
   const title = signals.title.toLowerCase();
-  if (containsAny(html, CAPTCHA_MARKERS) || text.includes("captcha")) {
+
+  const isCaptchaChallenge =
+    containsAny(text, CAPTCHA_PHRASES) ||
+    containsAny(title, CAPTCHA_PHRASES) ||
+    (containsAny(html, CAPTCHA_ELEMENT_MARKERS) &&
+      (text.length < 1500 ||
+        containsAny(title, ["security check", "challenge", "verify", "captcha"])));
+
+  if (isCaptchaChallenge) {
     return {
       blocked: true,
       reasonCode: "CAPTCHA_REQUIRED",

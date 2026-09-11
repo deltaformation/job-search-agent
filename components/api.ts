@@ -3,15 +3,18 @@
 
 export class ApiError extends Error {
   readonly status: number;
+  /** Parsed error payload when the server sent JSON (e.g. conflict versions). */
+  readonly payload: unknown;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, payload: unknown = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.payload = payload;
   }
 }
 
-async function parseError(response: Response): Promise<string> {
+async function parseError(response: Response): Promise<{ message: string; payload: unknown }> {
   try {
     const body = (await response.json()) as {
       error?: unknown;
@@ -19,16 +22,17 @@ async function parseError(response: Response): Promise<string> {
     };
     const error = typeof body.error === "string" ? body.error : "request failed";
     const reason = typeof body.reason === "string" ? body.reason : null;
-    return reason === null ? error : `${error}: ${reason}`;
+    return { message: reason === null ? error : `${error}: ${reason}`, payload: body };
   } catch {
-    return `request failed (${response.status})`;
+    return { message: `request failed (${response.status})`, payload: null };
   }
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(path, { method: "GET" });
   if (!response.ok) {
-    throw new ApiError(response.status, await parseError(response));
+    const parsed = await parseError(response);
+    throw new ApiError(response.status, parsed.message, parsed.payload);
   }
   return (await response.json()) as T;
 }
@@ -40,7 +44,8 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new ApiError(response.status, await parseError(response));
+    const parsed = await parseError(response);
+    throw new ApiError(response.status, parsed.message, parsed.payload);
   }
   return (await response.json()) as T;
 }

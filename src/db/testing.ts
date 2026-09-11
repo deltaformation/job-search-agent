@@ -1,7 +1,6 @@
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { ensureDatabase, type DatabaseHandle } from "./client";
 
 export interface TestDatabase {
@@ -13,22 +12,22 @@ export interface TestDatabase {
 }
 
 /**
- * Locate the checked-in migrations. Prefers the caller's working directory
- * (the repository root under tests and scripts) and falls back to the path
- * relative to this module.
+ * Locate the checked-in migrations. Looks in process.cwd()/drizzle and
+ * walks upward if run from a subfolder.
  */
 export function resolveMigrationsDir(): string {
-  const candidates = [
-    join(process.cwd(), "drizzle"),
-    join(dirname(fileURLToPath(import.meta.url)), "..", "..", "drizzle"),
-  ];
-  for (const candidate of candidates) {
+  let current = process.cwd();
+  for (let i = 0; i < 5; i++) {
+    const candidate = join(current, "drizzle");
     if (existsSync(candidate)) {
       return candidate;
     }
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
   }
   throw new Error(
-    `SQLite migrations directory not found (tried ${candidates.join(", ")})`,
+    `SQLite migrations directory not found beneath ${process.cwd()}`,
   );
 }
 

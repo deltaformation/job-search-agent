@@ -69,4 +69,35 @@ describe("block detection", () => {
       detectBlock({ ...CLEAN, textSample: "access denied: bot suspected" }),
     ).toMatchObject({ blocked: true, reasonCode: "ACCESS_DENIED" });
   });
+
+  it("does not false-positive on passive recaptcha keys, scripts, or body mentions", () => {
+    // Ashby embeds recaptchaPublicSiteKey in page JSON and .grecaptcha-badge in CSS:
+    expect(
+      detectBlock({
+        ...CLEAN,
+        htmlSample:
+          '<script>{"recaptchaPublicSiteKey":"6LeFb_YUAAAAALUD5h"}</script><style>.grecaptcha-badge{}</style>',
+      }),
+    ).toEqual({ blocked: false });
+
+    // Descriptions mentioning captcha/bot defenses on real jobs:
+    expect(
+      detectBlock({
+        ...CLEAN,
+        textSample:
+          "You will design anti-bot defenses, rate limiters, and captcha verification flows.",
+      }),
+    ).toEqual({ blocked: false });
+
+    // Script tags for turnstile or recaptcha in <head> of a full posting:
+    expect(
+      detectBlock({
+        httpStatus: 200,
+        title: "Senior Product Manager - Voice at Jobber",
+        textSample: "a".repeat(2000),
+        htmlSample:
+          '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js"></script>',
+      }),
+    ).toEqual({ blocked: false });
+  });
 });

@@ -12,6 +12,10 @@ export default function HomePage() {
       </a>
       <PlatformStatus />
       <nav aria-label="Product" className="mt-6">
+        <Link href="/board" className="underline">
+          Job board
+        </Link>{" "}
+        ·{" "}
         <Link href="/intake" className="underline">
           Add job URLs
         </Link>
