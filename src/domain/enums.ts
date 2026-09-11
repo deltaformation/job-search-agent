@@ -1,0 +1,108 @@
+import { z } from "zod";
+
+/**
+ * Shared state enums. Each list mirrors an R1-B SQLite CHECK constraint
+ * exactly; if a value is added to one side it must be added to the other.
+ * Services validate untrusted input with these schemas before touching the
+ * database so violations fail fast with readable errors.
+ */
+
+export const BoardStatus = z.enum([
+  "NEW",
+  "TAILORED",
+  "APPLIED",
+  "INTERVIEWED",
+  "REJECTED",
+]);
+export type BoardStatus = z.infer<typeof BoardStatus>;
+
+export const ScrapeState = z.enum([
+  "QUEUED",
+  "RUNNING",
+  "SUCCEEDED",
+  "FAILED",
+  "BLOCKED",
+]);
+export type ScrapeState = z.infer<typeof ScrapeState>;
+
+export const TailoringState = z.enum([
+  "PENDING",
+  "BLOCKED",
+  "RUNNING",
+  "AWAITING_REVIEW",
+  "APPROVED",
+  "REVISION_REQUESTED",
+  "FAILED",
+]);
+export type TailoringState = z.infer<typeof TailoringState>;
+
+/** Lifecycle of one immutable resume version row. */
+export const ReviewState = z.enum([
+  "DRAFT",
+  "AWAITING_REVIEW",
+  "APPROVED",
+  "REVISION_REQUESTED",
+  "FAILED",
+]);
+export type ReviewState = z.infer<typeof ReviewState>;
+
+export const WorkKind = z.enum(["SCRAPE", "TAILOR"]);
+export type WorkKind = z.infer<typeof WorkKind>;
+
+export const WorkState = z.enum([
+  "QUEUED",
+  "RUNNING",
+  "SUCCEEDED",
+  "FAILED",
+  "CANCELLED",
+]);
+export type WorkState = z.infer<typeof WorkState>;
+
+/** Shared by `scrape_attempts.outcome` and `work_attempts.result`. */
+export const AttemptResult = z.enum(["SUCCEEDED", "FAILED", "BLOCKED"]);
+export type AttemptResult = z.infer<typeof AttemptResult>;
+
+export const IntakeOutcome = z.enum([
+  "PENDING",
+  "ENQUEUED",
+  "INVALID",
+  "DUPLICATE",
+  "BLOCKED",
+]);
+export type IntakeOutcome = z.infer<typeof IntakeOutcome>;
+
+export const SourceArtifactKind = z.enum(["HTML", "TEXT", "JSONLD"]);
+export type SourceArtifactKind = z.infer<typeof SourceArtifactKind>;
+
+export const ResumeArtifactKind = z.enum(["MARKDOWN", "DOCX", "PDF"]);
+export type ResumeArtifactKind = z.infer<typeof ResumeArtifactKind>;
+
+export const Arrangement = z.enum(["REMOTE", "HYBRID", "ONSITE", "UNKNOWN"]);
+export type Arrangement = z.infer<typeof Arrangement>;
+
+export const Verification = z.enum(["PENDING", "APPROVED", "REJECTED"]);
+export type Verification = z.infer<typeof Verification>;
+
+export const ReviewAction = z.enum(["APPROVED", "REVISION_REQUESTED"]);
+export type ReviewAction = z.infer<typeof ReviewAction>;
+
+/** `applications.recorded_by`: only humans record applications. */
+export const RecordedBy = z.literal("human");
+export type RecordedBy = z.infer<typeof RecordedBy>;
+
+/** Minimum reason-code vocabulary (architecture section 6). */
+export const ReasonCode = z.enum([
+  "INVALID_URL",
+  "DUPLICATE_URL",
+  "PRIVATE_NETWORK",
+  "LOGIN_REQUIRED",
+  "CAPTCHA_REQUIRED",
+  "ACCESS_DENIED",
+  "TIMEOUT",
+  "EXTRACTION_INCOMPLETE",
+  "UNSUPPORTED_PAGE",
+  "PROFILE_REQUIRED",
+  "PROVIDER_UNAVAILABLE",
+  "STALE_INPUT",
+]);
+export type ReasonCode = z.infer<typeof ReasonCode>;

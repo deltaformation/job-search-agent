@@ -4,14 +4,13 @@ Last updated: 2026-09-11
 
 ## Current position
 
-- Current milestone: **R0 — Preservation and Nimbalyst exit**
+- Current milestone: **R2 — URL intake and public scraping** (R1 completed and accepted)
 - Product runtime: **legacy Python/PostgreSQL remains operational source code**
-- Target runtime: **planned; Node/Next.js/SQLite implementation has not started**
-- Next implementation work: **R1-A — Node/Next application scaffold** after the
-  R0 verification below is accepted.
+- Target runtime: **local platform foundation complete on `rebuild/r1-platform` (supervisor, Next.js, worker, SQLite, domain contracts, security layer)**
+- Next implementation work: **R2-A — URL policy and intake service** and **R2-B — Queue leasing and worker dispatch**.
 
-Do not report target commands, SQLite migrations, URL intake, Kanban, or DOCX
-generation as available yet.
+Do not report target commands, URL intake, Kanban, or DOCX generation as
+available yet. SQLite migrations exist and execute automatically on startup.
 
 ## Work-order status
 
@@ -19,8 +18,13 @@ generation as available yet.
 |---|---|---|
 | R0-A Preserve current baseline | needs review | `legacy-baseline.md`; runtime files retained; full-suite rerun environment-blocked |
 | R0-B Remove Nimbalyst | needs review | Deletions verified; checker passes; agent-guide wording fixed; diff review done with one noted deviation (see R0 completion note) |
-| R1-A through R1-D | ready after R0 | See work-order dependencies |
-| R2-A through R5-D | blocked by dependency | Do not start ahead of milestone gates |
+| R1-A Node/Next scaffold | accepted | typecheck/lint/unit/webpack-build pass on Node 24; user confirmed `npm run dev` serves the page on Node 24 (covers Turbopack compile + serve smoke) |
+| R1-B SQLite schema + repositories | accepted | `r1b-handoff.md`; 24-table baseline, trigger guards, runner, 40 DB tests green on Node 24; review NULL-guard fix included |
+| R1-C Domain contracts | accepted | `r1c-handoff.md`; pure Zod machines, mirror-tested against DDL, 50 domain tests green on Node 24 |
+| R1-D Supervisor + security | accepted | `r1d-handoff.md`; dev/start supervisor, worker stub, security layer, 39 tests green; user confirmed `npm run dev` serves page + `/api/health` 200 OK |
+| R2-A URL policy & intake service | ready | Unblocked; R1 complete |
+| R2-B Queue leasing & worker dispatch | ready | Unblocked; R1 complete |
+| R2-C through R5-D | blocked by dependency | Do not start ahead of milestone gates |
 
 Allowed status values are `ready`, `in progress`, `needs review`, `blocked by
 dependency`, and `accepted`. Avoid percentages: evidence and remaining gates are
