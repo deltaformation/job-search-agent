@@ -22,8 +22,8 @@ const FORBIDDEN_IMPORTS = [
   "ollama",
 ];
 
-function domainImports(): Array<{ file: string; specifier: string }> {
-  const dir = join(process.cwd(), "src", "domain");
+function moduleImports(subdir: string): Array<{ file: string; specifier: string }> {
+  const dir = join(process.cwd(), "src", subdir);
   const found: Array<{ file: string; specifier: string }> = [];
   for (const file of readdirSync(dir).filter((f) => f.endsWith(".ts"))) {
     const text = readFileSync(join(dir, file), "utf8");
@@ -41,7 +41,7 @@ function domainImports(): Array<{ file: string; specifier: string }> {
 
 describe("domain purity", () => {
   it("imports only zod and sibling domain modules", () => {
-    const violations = domainImports().filter(
+    const violations = moduleImports("domain").filter(
       ({ specifier }) =>
         specifier !== "zod" &&
         specifier !== "zod/v4" &&
@@ -51,7 +51,7 @@ describe("domain purity", () => {
   });
 
   it("never imports frameworks, drivers, or provider SDKs", () => {
-    const hits = domainImports().filter(({ specifier }) =>
+    const hits = moduleImports("domain").filter(({ specifier }) =>
       FORBIDDEN_IMPORTS.some(
         (banned) => specifier === banned || specifier.startsWith(`${banned}/`),
       ),
@@ -60,9 +60,41 @@ describe("domain purity", () => {
   });
 
   it("never escapes its own directory", () => {
-    const escapes = domainImports().filter(({ specifier }) =>
+    const escapes = moduleImports("domain").filter(({ specifier }) =>
       specifier.includes(".."),
     );
     expect(escapes).toEqual([]);
+  });
+});
+
+describe("tailoring purity", () => {
+  it("imports only zod, siblings, shared domain primitives, and node:crypto", () => {
+    const violations = moduleImports("tailoring").filter(
+      ({ specifier }) =>
+        specifier !== "zod" &&
+        specifier !== "zod/v4" &&
+        !specifier.startsWith("./") &&
+        !specifier.startsWith("../domain/") &&
+        !specifier.startsWith("node:"),
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it("never imports frameworks, drivers, or provider SDKs", () => {
+    const hits = moduleImports("tailoring").filter(({ specifier }) =>
+      FORBIDDEN_IMPORTS.some(
+        (banned) => specifier === banned || specifier.startsWith(`${banned}/`),
+      ),
+    );
+    expect(hits).toEqual([]);
+  });
+
+  it("never touches the filesystem, network, or subprocesses", () => {
+    const hits = moduleImports("tailoring").filter(({ specifier }) =>
+      ["node:fs", "node:net", "node:http", "node:child_process", "node:worker_threads"].some(
+        (banned) => specifier === banned || specifier.startsWith(`${banned}/`),
+      ),
+    );
+    expect(hits).toEqual([]);
   });
 });
