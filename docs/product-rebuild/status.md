@@ -8,7 +8,7 @@ Last updated: 2026-09-11
 - Product runtime: **legacy Python/PostgreSQL remains operational source code**
 - Target runtime: **Milestones 1 & 2 complete on `rebuild/r1-platform` (supervisor, Next.js, worker, SQLite, security layer, URL intake, Playwright fetcher, extraction adapters, queue dispatcher, and attempt visibility UI)**
 - Next implementation work: **R3-B — Board queries and card detail API**
-  (R3-A implemented, still needs review).
+  (R2-F and R3-A accepted).
 
 Do not report target commands, Kanban, or DOCX generation as
 available yet. SQLite migrations exist and execute automatically on startup.
@@ -28,7 +28,7 @@ available yet. SQLite migrations exist and execute automatically on startup.
 | R2-C Playwright fetcher & network guard | accepted | `r2c-handoff.md`; fetch pipeline, guards, SCRAPE handler, 234/234 green incl. browser run, 5 review fixes approved |
 | R2-D Extraction adapters & normalization | accepted | `r2d-handoff.md`; adapters, JSON-LD, generic, oracle parity, handler integration, 23 new tests green on Node 24 |
 | R2-E Intake routes & attempt visibility | accepted | `r2e-handoff.md`; intake routes/pages, batch/attempt views, retry, evidence, 35 new tests green on Node 24; webpack build green |
-| R2-F 1-Click Browser Clipper | ready | extension (`extensions/clipper/`), bookmarklet, `POST /api/intake/clip`, DOM capture |
+| R2-F 1-Click Browser Clipper | accepted | `r2f-handoff.md`; bearer-authed clip route + token, MV3 extension, bookmarklet, paste fallback, 30 new tests green on Node 24; webpack build green |
 | R3-A Workflow command service | accepted | `r3a-handoff.md`; move/correct/reorder/Applied/Tailored-gate/notes commands, CAS + audit events, 20 new tests green on Node 24 |
 | R3-B through R5-D | blocked by dependency | Do not start ahead of milestone gates |
 

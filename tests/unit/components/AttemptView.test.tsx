@@ -134,4 +134,94 @@ describe("AttemptView", () => {
       "work item not found",
     );
   });
+
+  it("hides the paste drawer for non-block failures", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => viewFor("FAILED"),
+      }),
+    );
+    render(<AttemptView workItemId="work-1" />);
+    expect(await screen.findByText("Failed")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^paste content$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("ingests pasted content after a CAPTCHA block", async () => {
+    const blocked = {
+      ...viewFor("FAILED"),
+      scrapeReasonCode: "CAPTCHA_REQUIRED",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => blocked,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ outcome: "created", jobId: "job-9" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => blocked,
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AttemptView workItemId="work-1" />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^paste content$/i }),
+    );
+    const box = screen.getByLabelText("Page HTML or visible text");
+    expect(box).toBeInTheDocument();
+    fireEvent.change(box, { target: { value: "<html><p>job</p></html>" } });
+    fireEvent.click(screen.getByRole("button", { name: /ingest pasted content/i }));
+    expect(await screen.findByText(/new job created/i)).toBeInTheDocument();
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/attempts/work-1/content");
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toContain("job");
+  });
+
+  it("reports ingestion rejections from the drawer", async () => {
+    const thin = {
+      ...viewFor("FAILED"),
+      scrapeReasonCode: "EXTRACTION_INCOMPLETE",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => thin,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          outcome: "rejected",
+          reasonCode: "EXTRACTION_INCOMPLETE",
+          detail: "no usable posting found",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => thin,
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AttemptView workItemId="work-1" />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^paste content$/i }),
+    );
+    fireEvent.change(screen.getByLabelText("Page HTML or visible text"), {
+      target: { value: "<p>thin</p>" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /ingest pasted content/i }));
+    expect(await screen.findByText(/no usable posting found/i)).toBeInTheDocument();
+  });
 });

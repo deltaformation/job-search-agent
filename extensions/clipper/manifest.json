@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Job Tracker Clipper",
+  "version": "1.0.0",
+  "description": "Clip the posting you are viewing into your local job tracker. Sends only the page URL and rendered DOM to your localhost app.",
+  "action": {
+    "default_title": "Clip this posting"
+  },
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "options_page": "options.html",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"]
+}

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Job Tracker Clipper options</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 36rem; padding: 1.5rem; }
+      label { display: block; margin-top: 1rem; font-weight: 600; }
+      input { width: 100%; margin-top: 0.25rem; padding: 0.4rem; }
+      button { margin-top: 1rem; padding: 0.4rem 1rem; }
+      #status { margin-top: 1rem; font-weight: 600; }
+      .hint { font-weight: 400; font-size: 0.9rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Job Tracker Clipper</h1>
+    <p class="hint">
+      Paste the clip token shown on your tracker's intake page
+      (<code>/intake</code>). The token stays in this browser's extension
+      storage and is only ever sent to your localhost tracker.
+    </p>
+    <label for="baseUrl">Tracker base URL</label>
+    <input id="baseUrl" type="url" spellcheck="false" placeholder="http://127.0.0.1:3000" />
+    <label for="clipToken">Clip token</label>
+    <input id="clipToken" type="password" spellcheck="false" autocomplete="off" />
+    <div>
+      <button id="save" type="button">Save</button>
+      <button id="test" type="button">Test connection</button>
+    </div>
+    <p id="status" role="status"></p>
+    <script src="options.js"></script>
+  </body>
+</html>

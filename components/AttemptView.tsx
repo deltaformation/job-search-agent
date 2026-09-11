@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { WorkItemView } from "@/src/server/queries";
+import type { IngestClipResult } from "@/src/server/clip";
 import { apiGet, apiPost, errorMessage } from "./api";
 import { OutcomeLabel, WorkStateLabel } from "./outcome-label";
 
@@ -26,6 +27,10 @@ export default function AttemptView({ workItemId }: { workItemId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [content, setContent] = useState("");
+  const [pasting, setPasting] = useState(false);
+  const [pasteNotice, setPasteNotice] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -60,6 +65,29 @@ export default function AttemptView({ workItemId }: { workItemId: string }) {
       setNotice(`Retry failed: ${errorMessage(error)}`);
     } finally {
       setRetrying(false);
+    }
+  }
+
+  async function onPasteSubmit(): Promise<void> {
+    setPasting(true);
+    setPasteNotice(null);
+    try {
+      const result = await apiPost<IngestClipResult>(
+        `/api/attempts/${workItemId}/content`,
+        { html: content },
+      );
+      if (result.outcome === "created") {
+        setPasteNotice("Content ingested: NEW job created.");
+      } else if (result.outcome === "duplicate") {
+        setPasteNotice("Already tracked: no new card was created.");
+      } else {
+        setPasteNotice(`Ingestion rejected: ${result.detail}`);
+      }
+      await refresh();
+    } catch (error: unknown) {
+      setPasteNotice(`Paste failed: ${errorMessage(error)}`);
+    } finally {
+      setPasting(false);
     }
   }
 
@@ -162,6 +190,57 @@ export default function AttemptView({ workItemId }: { workItemId: string }) {
             {view.scrapeReasonCode === null ? "" : ` (${view.scrapeReasonCode})`}
           </p>
           {view.scrapeDetail !== null && <p className="mt-1">{view.scrapeDetail}</p>}
+        </section>
+      )}
+
+      {(view.scrapeReasonCode === "CAPTCHA_REQUIRED" ||
+        view.scrapeReasonCode === "EXTRACTION_INCOMPLETE") && (
+        <section aria-labelledby="paste-heading" className="mt-6">
+          <h2 id="paste-heading" className="text-xl font-semibold">
+            Paste page content
+          </h2>
+          <p className="mt-1">
+            The automated fetch was blocked. Open the posting in your own
+            browser, copy the page (View Source → Select All works best), and
+            paste it here to ingest it directly.
+          </p>
+          <button
+            type="button"
+            aria-expanded={drawerOpen}
+            aria-controls="paste-drawer"
+            onClick={() => setDrawerOpen((open) => !open)}
+            className="mt-2 border px-4 py-2 font-semibold"
+          >
+            {drawerOpen ? "Hide paste box" : "Paste content"}
+          </button>
+          {drawerOpen && (
+            <div id="paste-drawer" className="mt-2">
+              <label htmlFor="paste-content" className="font-semibold">
+                Page HTML or visible text
+              </label>
+              <textarea
+                id="paste-content"
+                rows={8}
+                value={content}
+                onChange={(event) => setContent(event.target.value)}
+                placeholder="Paste the page HTML here"
+                className="mt-1 w-full border p-2"
+              />
+              <button
+                type="button"
+                onClick={() => void onPasteSubmit()}
+                disabled={pasting || content.trim() === ""}
+                className="mt-2 border px-4 py-2 font-semibold disabled:opacity-50"
+              >
+                {pasting ? "Ingesting…" : "Ingest pasted content"}
+              </button>
+            </div>
+          )}
+          {pasteNotice !== null && (
+            <p role="status" className="mt-2 font-semibold">
+              {pasteNotice}
+            </p>
+          )}
         </section>
       )}
 
