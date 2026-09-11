@@ -1,0 +1,1693 @@
+{
+  "cases": [
+    {
+      "description": "current-first roles, bullets, contacts, skills",
+      "expected": {
+        "earlier_career": [],
+        "education_rows": [
+          {
+            "dates": "2018-05-31",
+            "detail": "B.Sc. in Computer Science, Test University",
+            "school": "Test University"
+          }
+        ],
+        "header": {
+          "contact_parts": [
+            {
+              "text": "Toronto, ON"
+            },
+            {
+              "href": "tel:+1-555-0100",
+              "text": "+1-555-0100"
+            },
+            {
+              "href": "mailto:parity@example.com",
+              "text": "parity@example.com"
+            }
+          ],
+          "full_name": "Parity Test Candidate"
+        },
+        "professional_experience": [
+          {
+            "bullets": [
+              "Built a public REST API serving 10M daily requests with 99.99% availability."
+            ],
+            "company": "Northwind Labs",
+            "dates": "Mar 2021 - Present",
+            "location": "Toronto, ON",
+            "role": "Senior Backend Engineer"
+          },
+          {
+            "bullets": [
+              "Shipped SSO/SAML login for 40 enterprise tenants."
+            ],
+            "company": "Contoso Systems",
+            "dates": "Jun 2018 - Feb 2021",
+            "location": "Remote",
+            "role": "Backend Engineer"
+          }
+        ],
+        "skill_rows": [
+          {
+            "label": "Core Competencies",
+            "terms": [
+              "Python",
+              "PostgreSQL"
+            ]
+          }
+        ],
+        "summary_copy": "Senior summary line."
+      },
+      "function": "build_view_model",
+      "id": "vm-ordering",
+      "input": {
+        "draft": {
+          "claims": [
+            {
+              "claim_id": "claim_001",
+              "fact_ids": [
+                "fact_api"
+              ],
+              "generation_strategy": "derived_template",
+              "section": "summary",
+              "text": "Senior summary line."
+            },
+            {
+              "claim_id": "claim_002",
+              "company": "Contoso Systems",
+              "dates": {
+                "end": "2021-02-28",
+                "start": "2018-06-01"
+              },
+              "entity_id": "exp-prior",
+              "fact_ids": [
+                "fact_auth"
+              ],
+              "generation_strategy": "verbatim",
+              "role": "Backend Engineer",
+              "section": "experience",
+              "text": "Shipped SSO/SAML login for 40 enterprise tenants."
+            },
+            {
+              "claim_id": "claim_003",
+              "company": "Northwind Labs",
+              "dates": {
+                "end": "Present",
+                "start": "2021-03-01"
+              },
+              "entity_id": "exp-current",
+              "fact_ids": [
+                "fact_api"
+              ],
+              "generation_strategy": "verbatim",
+              "role": "Senior Backend Engineer",
+              "section": "experience",
+              "text": "Built a public REST API serving 10M daily requests with 99.99% availability."
+            }
+          ],
+          "job_id": "job-parity-001"
+        },
+        "profile": {
+          "credentials": [],
+          "education": [
+            {
+              "degree": "B.Sc.",
+              "end_date": "2018-05-31",
+              "field_of_study": "Computer Science",
+              "institution": "Test University",
+              "start_date": "2014-09-01"
+            }
+          ],
+          "email": "parity@example.com",
+          "full_name": "Parity Test Candidate",
+          "headline": "Senior Backend Engineer",
+          "id": "cand-parity-001",
+          "location": "Toronto, ON",
+          "phone": "+1-555-0100",
+          "preferences": {},
+          "skills": [
+            {
+              "category": "technical",
+              "name": "Python",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "PostgreSQL",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "Kafka",
+              "proficiency": "proficient",
+              "verified": true,
+              "years_experience": 4
+            },
+            {
+              "category": "technical",
+              "name": "Unverified Skill",
+              "proficiency": "beginner",
+              "verified": false,
+              "years_experience": 1
+            }
+          ],
+          "target_titles": [
+            "Senior Backend Engineer",
+            "Backend Engineer"
+          ],
+          "verified_facts": [
+            {
+              "category": "platform",
+              "fact_id": "fact_api",
+              "metrics": [
+                "10M daily requests",
+                "99.99% availability"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Python",
+                "PostgreSQL",
+                "REST APIs"
+              ],
+              "text": "Built a public REST API serving 10M daily requests with 99.99% availability.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "data",
+              "fact_id": "fact_queue",
+              "metrics": [
+                "6 hours to 5 minutes"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Kafka",
+                "Python"
+              ],
+              "text": "Migrated batch jobs to an event-driven Kafka pipeline, cutting processing lag from 6 hours to 5 minutes.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "security",
+              "fact_id": "fact_auth",
+              "metrics": [
+                "40 enterprise tenants"
+              ],
+              "source": "review_2023",
+              "technologies": [
+                "SAML",
+                "OAuth2"
+              ],
+              "text": "Shipped SSO/SAML login for 40 enterprise tenants.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-prior"
+            },
+            {
+              "category": "misc",
+              "fact_id": "fact_draft",
+              "metrics": [],
+              "source": "self",
+              "technologies": [],
+              "text": "Draft claim awaiting review.",
+              "verification_status": "pending",
+              "work_experience_id": "exp-prior"
+            }
+          ],
+          "work_experience": [
+            {
+              "company": "Northwind Labs",
+              "description": "Own backend platform APIs.",
+              "end_date": null,
+              "id": "exp-current",
+              "is_current": true,
+              "location": "Toronto, ON",
+              "role": "Senior Backend Engineer",
+              "start_date": "2021-03-01"
+            },
+            {
+              "company": "Contoso Systems",
+              "description": "Built internal tooling.",
+              "end_date": "2021-02-28",
+              "id": "exp-prior",
+              "is_current": false,
+              "location": "Remote",
+              "role": "Backend Engineer",
+              "start_date": "2018-06-01"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "roles beyond the budget move to earlier",
+      "expected": {
+        "earlier_career": [
+          {
+            "bullets": [
+              "Shipped SSO/SAML login for 40 enterprise tenants."
+            ],
+            "company": "Contoso Systems",
+            "dates": "Jun 2018 - Feb 2021",
+            "location": "Remote",
+            "role": "Backend Engineer"
+          }
+        ],
+        "education_rows": [
+          {
+            "dates": "2018-05-31",
+            "detail": "B.Sc. in Computer Science, Test University",
+            "school": "Test University"
+          }
+        ],
+        "header": {
+          "contact_parts": [
+            {
+              "text": "Toronto, ON"
+            },
+            {
+              "href": "tel:+1-555-0100",
+              "text": "+1-555-0100"
+            },
+            {
+              "href": "mailto:parity@example.com",
+              "text": "parity@example.com"
+            }
+          ],
+          "full_name": "Parity Test Candidate"
+        },
+        "professional_experience": [
+          {
+            "bullets": [
+              "Built a public REST API serving 10M daily requests with 99.99% availability."
+            ],
+            "company": "Northwind Labs",
+            "dates": "Mar 2021 - Present",
+            "location": "Toronto, ON",
+            "role": "Senior Backend Engineer"
+          }
+        ],
+        "skill_rows": [
+          {
+            "label": "Core Competencies",
+            "terms": [
+              "Python",
+              "PostgreSQL"
+            ]
+          }
+        ],
+        "summary_copy": "Senior summary line."
+      },
+      "function": "build_view_model",
+      "id": "vm-earlier-split",
+      "input": {
+        "draft": {
+          "claims": [
+            {
+              "claim_id": "claim_001",
+              "fact_ids": [
+                "fact_api"
+              ],
+              "generation_strategy": "derived_template",
+              "section": "summary",
+              "text": "Senior summary line."
+            },
+            {
+              "claim_id": "claim_002",
+              "company": "Contoso Systems",
+              "dates": {
+                "end": "2021-02-28",
+                "start": "2018-06-01"
+              },
+              "entity_id": "exp-prior",
+              "fact_ids": [
+                "fact_auth"
+              ],
+              "generation_strategy": "verbatim",
+              "role": "Backend Engineer",
+              "section": "experience",
+              "text": "Shipped SSO/SAML login for 40 enterprise tenants."
+            },
+            {
+              "claim_id": "claim_003",
+              "company": "Northwind Labs",
+              "dates": {
+                "end": "Present",
+                "start": "2021-03-01"
+              },
+              "entity_id": "exp-current",
+              "fact_ids": [
+                "fact_api"
+              ],
+              "generation_strategy": "verbatim",
+              "role": "Senior Backend Engineer",
+              "section": "experience",
+              "text": "Built a public REST API serving 10M daily requests with 99.99% availability."
+            }
+          ],
+          "job_id": "job-parity-001"
+        },
+        "maxDetailedRoles": 1,
+        "profile": {
+          "credentials": [],
+          "education": [
+            {
+              "degree": "B.Sc.",
+              "end_date": "2018-05-31",
+              "field_of_study": "Computer Science",
+              "institution": "Test University",
+              "start_date": "2014-09-01"
+            }
+          ],
+          "email": "parity@example.com",
+          "full_name": "Parity Test Candidate",
+          "headline": "Senior Backend Engineer",
+          "id": "cand-parity-001",
+          "location": "Toronto, ON",
+          "phone": "+1-555-0100",
+          "preferences": {},
+          "skills": [
+            {
+              "category": "technical",
+              "name": "Python",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "PostgreSQL",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "Kafka",
+              "proficiency": "proficient",
+              "verified": true,
+              "years_experience": 4
+            },
+            {
+              "category": "technical",
+              "name": "Unverified Skill",
+              "proficiency": "beginner",
+              "verified": false,
+              "years_experience": 1
+            }
+          ],
+          "target_titles": [
+            "Senior Backend Engineer",
+            "Backend Engineer"
+          ],
+          "verified_facts": [
+            {
+              "category": "platform",
+              "fact_id": "fact_api",
+              "metrics": [
+                "10M daily requests",
+                "99.99% availability"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Python",
+                "PostgreSQL",
+                "REST APIs"
+              ],
+              "text": "Built a public REST API serving 10M daily requests with 99.99% availability.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "data",
+              "fact_id": "fact_queue",
+              "metrics": [
+                "6 hours to 5 minutes"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Kafka",
+                "Python"
+              ],
+              "text": "Migrated batch jobs to an event-driven Kafka pipeline, cutting processing lag from 6 hours to 5 minutes.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "security",
+              "fact_id": "fact_auth",
+              "metrics": [
+                "40 enterprise tenants"
+              ],
+              "source": "review_2023",
+              "technologies": [
+                "SAML",
+                "OAuth2"
+              ],
+              "text": "Shipped SSO/SAML login for 40 enterprise tenants.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-prior"
+            },
+            {
+              "category": "misc",
+              "fact_id": "fact_draft",
+              "metrics": [],
+              "source": "self",
+              "technologies": [],
+              "text": "Draft claim awaiting review.",
+              "verification_status": "pending",
+              "work_experience_id": "exp-prior"
+            }
+          ],
+          "work_experience": [
+            {
+              "company": "Northwind Labs",
+              "description": "Own backend platform APIs.",
+              "end_date": null,
+              "id": "exp-current",
+              "is_current": true,
+              "location": "Toronto, ON",
+              "role": "Senior Backend Engineer",
+              "start_date": "2021-03-01"
+            },
+            {
+              "company": "Contoso Systems",
+              "description": "Built internal tooling.",
+              "end_date": "2021-02-28",
+              "id": "exp-prior",
+              "is_current": false,
+              "location": "Remote",
+              "role": "Backend Engineer",
+              "start_date": "2018-06-01"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "roles without bullets are dropped",
+      "expected": {
+        "earlier_career": [],
+        "education_rows": [
+          {
+            "dates": "2018-05-31",
+            "detail": "B.Sc. in Computer Science, Test University",
+            "school": "Test University"
+          }
+        ],
+        "header": {
+          "contact_parts": [
+            {
+              "text": "Toronto, ON"
+            },
+            {
+              "href": "tel:+1-555-0100",
+              "text": "+1-555-0100"
+            },
+            {
+              "href": "mailto:parity@example.com",
+              "text": "parity@example.com"
+            }
+          ],
+          "full_name": "Parity Test Candidate"
+        },
+        "professional_experience": [
+          {
+            "bullets": [
+              "Built a public REST API serving 10M daily requests with 99.99% availability."
+            ],
+            "company": "Northwind Labs",
+            "dates": "Mar 2021 - Present",
+            "location": "Toronto, ON",
+            "role": "Senior Backend Engineer"
+          }
+        ],
+        "skill_rows": [
+          {
+            "label": "Core Competencies",
+            "terms": [
+              "Python",
+              "PostgreSQL"
+            ]
+          }
+        ],
+        "summary_copy": "Senior summary line."
+      },
+      "function": "build_view_model",
+      "id": "vm-drops-empty-headers",
+      "input": {
+        "draft": {
+          "claims": [
+            {
+              "claim_id": "claim_001",
+              "fact_ids": [
+                "fact_api"
+              ],
+              "generation_strategy": "derived_template",
+              "section": "summary",
+              "text": "Senior summary line."
+            },
+            {
+              "claim_id": "claim_003",
+              "company": "Northwind Labs",
+              "dates": {
+                "end": "Present",
+                "start": "2021-03-01"
+              },
+              "entity_id": "exp-current",
+              "fact_ids": [
+                "fact_api"
+              ],
+              "generation_strategy": "verbatim",
+              "role": "Senior Backend Engineer",
+              "section": "experience",
+              "text": "Built a public REST API serving 10M daily requests with 99.99% availability."
+            }
+          ],
+          "job_id": "job-parity-001"
+        },
+        "profile": {
+          "credentials": [],
+          "education": [
+            {
+              "degree": "B.Sc.",
+              "end_date": "2018-05-31",
+              "field_of_study": "Computer Science",
+              "institution": "Test University",
+              "start_date": "2014-09-01"
+            }
+          ],
+          "email": "parity@example.com",
+          "full_name": "Parity Test Candidate",
+          "headline": "Senior Backend Engineer",
+          "id": "cand-parity-001",
+          "location": "Toronto, ON",
+          "phone": "+1-555-0100",
+          "preferences": {},
+          "skills": [
+            {
+              "category": "technical",
+              "name": "Python",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "PostgreSQL",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "Kafka",
+              "proficiency": "proficient",
+              "verified": true,
+              "years_experience": 4
+            },
+            {
+              "category": "technical",
+              "name": "Unverified Skill",
+              "proficiency": "beginner",
+              "verified": false,
+              "years_experience": 1
+            }
+          ],
+          "target_titles": [
+            "Senior Backend Engineer",
+            "Backend Engineer"
+          ],
+          "verified_facts": [
+            {
+              "category": "platform",
+              "fact_id": "fact_api",
+              "metrics": [
+                "10M daily requests",
+                "99.99% availability"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Python",
+                "PostgreSQL",
+                "REST APIs"
+              ],
+              "text": "Built a public REST API serving 10M daily requests with 99.99% availability.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "data",
+              "fact_id": "fact_queue",
+              "metrics": [
+                "6 hours to 5 minutes"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Kafka",
+                "Python"
+              ],
+              "text": "Migrated batch jobs to an event-driven Kafka pipeline, cutting processing lag from 6 hours to 5 minutes.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "security",
+              "fact_id": "fact_auth",
+              "metrics": [
+                "40 enterprise tenants"
+              ],
+              "source": "review_2023",
+              "technologies": [
+                "SAML",
+                "OAuth2"
+              ],
+              "text": "Shipped SSO/SAML login for 40 enterprise tenants.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-prior"
+            },
+            {
+              "category": "misc",
+              "fact_id": "fact_draft",
+              "metrics": [],
+              "source": "self",
+              "technologies": [],
+              "text": "Draft claim awaiting review.",
+              "verification_status": "pending",
+              "work_experience_id": "exp-prior"
+            }
+          ],
+          "work_experience": [
+            {
+              "company": "Northwind Labs",
+              "description": "Own backend platform APIs.",
+              "end_date": null,
+              "id": "exp-current",
+              "is_current": true,
+              "location": "Toronto, ON",
+              "role": "Senior Backend Engineer",
+              "start_date": "2021-03-01"
+            },
+            {
+              "company": "Contoso Systems",
+              "description": "Built internal tooling.",
+              "end_date": "2021-02-28",
+              "id": "exp-prior",
+              "is_current": false,
+              "location": "Remote",
+              "role": "Backend Engineer",
+              "start_date": "2018-06-01"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "no cited facts means no skill rows",
+      "expected": {
+        "earlier_career": [],
+        "education_rows": [
+          {
+            "dates": "2018-05-31",
+            "detail": "B.Sc. in Computer Science, Test University",
+            "school": "Test University"
+          }
+        ],
+        "header": {
+          "contact_parts": [
+            {
+              "text": "Toronto, ON"
+            },
+            {
+              "href": "tel:+1-555-0100",
+              "text": "+1-555-0100"
+            },
+            {
+              "href": "mailto:parity@example.com",
+              "text": "parity@example.com"
+            }
+          ],
+          "full_name": "Parity Test Candidate"
+        },
+        "professional_experience": [],
+        "skill_rows": [],
+        "summary_copy": ""
+      },
+      "function": "build_view_model",
+      "id": "vm-no-skills",
+      "input": {
+        "draft": {
+          "claims": [],
+          "job_id": "job-parity-001"
+        },
+        "profile": {
+          "credentials": [],
+          "education": [
+            {
+              "degree": "B.Sc.",
+              "end_date": "2018-05-31",
+              "field_of_study": "Computer Science",
+              "institution": "Test University",
+              "start_date": "2014-09-01"
+            }
+          ],
+          "email": "parity@example.com",
+          "full_name": "Parity Test Candidate",
+          "headline": "Senior Backend Engineer",
+          "id": "cand-parity-001",
+          "location": "Toronto, ON",
+          "phone": "+1-555-0100",
+          "preferences": {},
+          "skills": [
+            {
+              "category": "technical",
+              "name": "Python",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "PostgreSQL",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "Kafka",
+              "proficiency": "proficient",
+              "verified": true,
+              "years_experience": 4
+            },
+            {
+              "category": "technical",
+              "name": "Unverified Skill",
+              "proficiency": "beginner",
+              "verified": false,
+              "years_experience": 1
+            }
+          ],
+          "target_titles": [
+            "Senior Backend Engineer",
+            "Backend Engineer"
+          ],
+          "verified_facts": [
+            {
+              "category": "platform",
+              "fact_id": "fact_api",
+              "metrics": [
+                "10M daily requests",
+                "99.99% availability"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Python",
+                "PostgreSQL",
+                "REST APIs"
+              ],
+              "text": "Built a public REST API serving 10M daily requests with 99.99% availability.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "data",
+              "fact_id": "fact_queue",
+              "metrics": [
+                "6 hours to 5 minutes"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Kafka",
+                "Python"
+              ],
+              "text": "Migrated batch jobs to an event-driven Kafka pipeline, cutting processing lag from 6 hours to 5 minutes.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "security",
+              "fact_id": "fact_auth",
+              "metrics": [
+                "40 enterprise tenants"
+              ],
+              "source": "review_2023",
+              "technologies": [
+                "SAML",
+                "OAuth2"
+              ],
+              "text": "Shipped SSO/SAML login for 40 enterprise tenants.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-prior"
+            },
+            {
+              "category": "misc",
+              "fact_id": "fact_draft",
+              "metrics": [],
+              "source": "self",
+              "technologies": [],
+              "text": "Draft claim awaiting review.",
+              "verification_status": "pending",
+              "work_experience_id": "exp-prior"
+            }
+          ],
+          "work_experience": [
+            {
+              "company": "Northwind Labs",
+              "description": "Own backend platform APIs.",
+              "end_date": null,
+              "id": "exp-current",
+              "is_current": true,
+              "location": "Toronto, ON",
+              "role": "Senior Backend Engineer",
+              "start_date": "2021-03-01"
+            },
+            {
+              "company": "Contoso Systems",
+              "description": "Built internal tooling.",
+              "end_date": "2021-02-28",
+              "id": "exp-prior",
+              "is_current": false,
+              "location": "Remote",
+              "role": "Backend Engineer",
+              "start_date": "2018-06-01"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "missing contact fields omit cleanly",
+      "expected": {
+        "earlier_career": [],
+        "education_rows": [
+          {
+            "dates": "2018-05-31",
+            "detail": "B.Sc. in Computer Science, Test University",
+            "school": "Test University"
+          }
+        ],
+        "header": {
+          "contact_parts": [],
+          "full_name": "Parity Test Candidate"
+        },
+        "professional_experience": [
+          {
+            "bullets": [
+              "Built a public REST API serving 10M daily requests with 99.99% availability."
+            ],
+            "company": "Northwind Labs",
+            "dates": "Mar 2021 - Present",
+            "location": "Toronto, ON",
+            "role": "Senior Backend Engineer"
+          },
+          {
+            "bullets": [
+              "Shipped SSO/SAML login for 40 enterprise tenants."
+            ],
+            "company": "Contoso Systems",
+            "dates": "Jun 2018 - Feb 2021",
+            "location": "Remote",
+            "role": "Backend Engineer"
+          }
+        ],
+        "skill_rows": [
+          {
+            "label": "Core Competencies",
+            "terms": [
+              "Python",
+              "PostgreSQL"
+            ]
+          }
+        ],
+        "summary_copy": "Senior summary line."
+      },
+      "function": "build_view_model",
+      "id": "vm-minimal-contact",
+      "input": {
+        "draft": {
+          "claims": [
+            {
+              "claim_id": "claim_001",
+              "fact_ids": [
+                "fact_api"
+              ],
+              "generation_strategy": "derived_template",
+              "section": "summary",
+              "text": "Senior summary line."
+            },
+            {
+              "claim_id": "claim_002",
+              "company": "Contoso Systems",
+              "dates": {
+                "end": "2021-02-28",
+                "start": "2018-06-01"
+              },
+              "entity_id": "exp-prior",
+              "fact_ids": [
+                "fact_auth"
+              ],
+              "generation_strategy": "verbatim",
+              "role": "Backend Engineer",
+              "section": "experience",
+              "text": "Shipped SSO/SAML login for 40 enterprise tenants."
+            },
+            {
+              "claim_id": "claim_003",
+              "company": "Northwind Labs",
+              "dates": {
+                "end": "Present",
+                "start": "2021-03-01"
+              },
+              "entity_id": "exp-current",
+              "fact_ids": [
+                "fact_api"
+              ],
+              "generation_strategy": "verbatim",
+              "role": "Senior Backend Engineer",
+              "section": "experience",
+              "text": "Built a public REST API serving 10M daily requests with 99.99% availability."
+            }
+          ],
+          "job_id": "job-parity-001"
+        },
+        "profile": {
+          "credentials": [],
+          "education": [
+            {
+              "degree": "B.Sc.",
+              "end_date": "2018-05-31",
+              "field_of_study": "Computer Science",
+              "institution": "Test University",
+              "start_date": "2014-09-01"
+            }
+          ],
+          "email": "",
+          "full_name": "Parity Test Candidate",
+          "headline": "Senior Backend Engineer",
+          "id": "cand-parity-001",
+          "location": "",
+          "phone": "",
+          "preferences": {},
+          "skills": [
+            {
+              "category": "technical",
+              "name": "Python",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "PostgreSQL",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "Kafka",
+              "proficiency": "proficient",
+              "verified": true,
+              "years_experience": 4
+            },
+            {
+              "category": "technical",
+              "name": "Unverified Skill",
+              "proficiency": "beginner",
+              "verified": false,
+              "years_experience": 1
+            }
+          ],
+          "target_titles": [
+            "Senior Backend Engineer",
+            "Backend Engineer"
+          ],
+          "verified_facts": [
+            {
+              "category": "platform",
+              "fact_id": "fact_api",
+              "metrics": [
+                "10M daily requests",
+                "99.99% availability"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Python",
+                "PostgreSQL",
+                "REST APIs"
+              ],
+              "text": "Built a public REST API serving 10M daily requests with 99.99% availability.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "data",
+              "fact_id": "fact_queue",
+              "metrics": [
+                "6 hours to 5 minutes"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Kafka",
+                "Python"
+              ],
+              "text": "Migrated batch jobs to an event-driven Kafka pipeline, cutting processing lag from 6 hours to 5 minutes.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "security",
+              "fact_id": "fact_auth",
+              "metrics": [
+                "40 enterprise tenants"
+              ],
+              "source": "review_2023",
+              "technologies": [
+                "SAML",
+                "OAuth2"
+              ],
+              "text": "Shipped SSO/SAML login for 40 enterprise tenants.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-prior"
+            },
+            {
+              "category": "misc",
+              "fact_id": "fact_draft",
+              "metrics": [],
+              "source": "self",
+              "technologies": [],
+              "text": "Draft claim awaiting review.",
+              "verification_status": "pending",
+              "work_experience_id": "exp-prior"
+            }
+          ],
+          "work_experience": [
+            {
+              "company": "Northwind Labs",
+              "description": "Own backend platform APIs.",
+              "end_date": null,
+              "id": "exp-current",
+              "is_current": true,
+              "location": "Toronto, ON",
+              "role": "Senior Backend Engineer",
+              "start_date": "2021-03-01"
+            },
+            {
+              "company": "Contoso Systems",
+              "description": "Built internal tooling.",
+              "end_date": "2021-02-28",
+              "id": "exp-prior",
+              "is_current": false,
+              "location": "Remote",
+              "role": "Backend Engineer",
+              "start_date": "2018-06-01"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "full plain-text projection golden",
+      "expected": {
+        "text": "PARITY TEST CANDIDATE\nToronto, ON | +1-555-0100 | parity@example.com\n------------------------------------------------------------\nSUMMARY\nSenior summary line.\n\nPROFESSIONAL EXPERIENCE\nNorthwind Labs | Mar 2021 - Present\nSenior Backend Engineer | Toronto, ON\n  - Built a public REST API serving 10M daily requests with 99.99% availability.\n\nContoso Systems | Jun 2018 - Feb 2021\nBackend Engineer | Remote\n  - Shipped SSO/SAML login for 40 enterprise tenants.\n\nSKILLS\nCore Competencies: Python, PostgreSQL\n\nEDUCATION\nB.Sc. in Computer Science, Test University (2018-05-31)\n"
+      },
+      "function": "render_resume_text",
+      "id": "text-golden",
+      "input": {
+        "draft": {
+          "claims": [
+            {
+              "claim_id": "claim_001",
+              "fact_ids": [
+                "fact_api"
+              ],
+              "generation_strategy": "derived_template",
+              "section": "summary",
+              "text": "Senior summary line."
+            },
+            {
+              "claim_id": "claim_002",
+              "company": "Contoso Systems",
+              "dates": {
+                "end": "2021-02-28",
+                "start": "2018-06-01"
+              },
+              "entity_id": "exp-prior",
+              "fact_ids": [
+                "fact_auth"
+              ],
+              "generation_strategy": "verbatim",
+              "role": "Backend Engineer",
+              "section": "experience",
+              "text": "Shipped SSO/SAML login for 40 enterprise tenants."
+            },
+            {
+              "claim_id": "claim_003",
+              "company": "Northwind Labs",
+              "dates": {
+                "end": "Present",
+                "start": "2021-03-01"
+              },
+              "entity_id": "exp-current",
+              "fact_ids": [
+                "fact_api"
+              ],
+              "generation_strategy": "verbatim",
+              "role": "Senior Backend Engineer",
+              "section": "experience",
+              "text": "Built a public REST API serving 10M daily requests with 99.99% availability."
+            }
+          ],
+          "job_id": "job-parity-001"
+        },
+        "profile": {
+          "credentials": [],
+          "education": [
+            {
+              "degree": "B.Sc.",
+              "end_date": "2018-05-31",
+              "field_of_study": "Computer Science",
+              "institution": "Test University",
+              "start_date": "2014-09-01"
+            }
+          ],
+          "email": "parity@example.com",
+          "full_name": "Parity Test Candidate",
+          "headline": "Senior Backend Engineer",
+          "id": "cand-parity-001",
+          "location": "Toronto, ON",
+          "phone": "+1-555-0100",
+          "preferences": {},
+          "skills": [
+            {
+              "category": "technical",
+              "name": "Python",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "PostgreSQL",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "Kafka",
+              "proficiency": "proficient",
+              "verified": true,
+              "years_experience": 4
+            },
+            {
+              "category": "technical",
+              "name": "Unverified Skill",
+              "proficiency": "beginner",
+              "verified": false,
+              "years_experience": 1
+            }
+          ],
+          "target_titles": [
+            "Senior Backend Engineer",
+            "Backend Engineer"
+          ],
+          "verified_facts": [
+            {
+              "category": "platform",
+              "fact_id": "fact_api",
+              "metrics": [
+                "10M daily requests",
+                "99.99% availability"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Python",
+                "PostgreSQL",
+                "REST APIs"
+              ],
+              "text": "Built a public REST API serving 10M daily requests with 99.99% availability.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "data",
+              "fact_id": "fact_queue",
+              "metrics": [
+                "6 hours to 5 minutes"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Kafka",
+                "Python"
+              ],
+              "text": "Migrated batch jobs to an event-driven Kafka pipeline, cutting processing lag from 6 hours to 5 minutes.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "security",
+              "fact_id": "fact_auth",
+              "metrics": [
+                "40 enterprise tenants"
+              ],
+              "source": "review_2023",
+              "technologies": [
+                "SAML",
+                "OAuth2"
+              ],
+              "text": "Shipped SSO/SAML login for 40 enterprise tenants.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-prior"
+            },
+            {
+              "category": "misc",
+              "fact_id": "fact_draft",
+              "metrics": [],
+              "source": "self",
+              "technologies": [],
+              "text": "Draft claim awaiting review.",
+              "verification_status": "pending",
+              "work_experience_id": "exp-prior"
+            }
+          ],
+          "work_experience": [
+            {
+              "company": "Northwind Labs",
+              "description": "Own backend platform APIs.",
+              "end_date": null,
+              "id": "exp-current",
+              "is_current": true,
+              "location": "Toronto, ON",
+              "role": "Senior Backend Engineer",
+              "start_date": "2021-03-01"
+            },
+            {
+              "company": "Contoso Systems",
+              "description": "Built internal tooling.",
+              "end_date": "2021-02-28",
+              "id": "exp-prior",
+              "is_current": false,
+              "location": "Remote",
+              "role": "Backend Engineer",
+              "start_date": "2018-06-01"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "empty draft still renders header",
+      "expected": {
+        "text": "PARITY TEST CANDIDATE\nToronto, ON | +1-555-0100 | parity@example.com\n------------------------------------------------------------\nEDUCATION\nB.Sc. in Computer Science, Test University (2018-05-31)\n"
+      },
+      "function": "render_resume_text",
+      "id": "text-empty",
+      "input": {
+        "draft": {
+          "claims": [],
+          "job_id": "job-parity-001"
+        },
+        "profile": {
+          "credentials": [],
+          "education": [
+            {
+              "degree": "B.Sc.",
+              "end_date": "2018-05-31",
+              "field_of_study": "Computer Science",
+              "institution": "Test University",
+              "start_date": "2014-09-01"
+            }
+          ],
+          "email": "parity@example.com",
+          "full_name": "Parity Test Candidate",
+          "headline": "Senior Backend Engineer",
+          "id": "cand-parity-001",
+          "location": "Toronto, ON",
+          "phone": "+1-555-0100",
+          "preferences": {},
+          "skills": [
+            {
+              "category": "technical",
+              "name": "Python",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "PostgreSQL",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "Kafka",
+              "proficiency": "proficient",
+              "verified": true,
+              "years_experience": 4
+            },
+            {
+              "category": "technical",
+              "name": "Unverified Skill",
+              "proficiency": "beginner",
+              "verified": false,
+              "years_experience": 1
+            }
+          ],
+          "target_titles": [
+            "Senior Backend Engineer",
+            "Backend Engineer"
+          ],
+          "verified_facts": [
+            {
+              "category": "platform",
+              "fact_id": "fact_api",
+              "metrics": [
+                "10M daily requests",
+                "99.99% availability"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Python",
+                "PostgreSQL",
+                "REST APIs"
+              ],
+              "text": "Built a public REST API serving 10M daily requests with 99.99% availability.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "data",
+              "fact_id": "fact_queue",
+              "metrics": [
+                "6 hours to 5 minutes"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Kafka",
+                "Python"
+              ],
+              "text": "Migrated batch jobs to an event-driven Kafka pipeline, cutting processing lag from 6 hours to 5 minutes.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "security",
+              "fact_id": "fact_auth",
+              "metrics": [
+                "40 enterprise tenants"
+              ],
+              "source": "review_2023",
+              "technologies": [
+                "SAML",
+                "OAuth2"
+              ],
+              "text": "Shipped SSO/SAML login for 40 enterprise tenants.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-prior"
+            },
+            {
+              "category": "misc",
+              "fact_id": "fact_draft",
+              "metrics": [],
+              "source": "self",
+              "technologies": [],
+              "text": "Draft claim awaiting review.",
+              "verification_status": "pending",
+              "work_experience_id": "exp-prior"
+            }
+          ],
+          "work_experience": [
+            {
+              "company": "Northwind Labs",
+              "description": "Own backend platform APIs.",
+              "end_date": null,
+              "id": "exp-current",
+              "is_current": true,
+              "location": "Toronto, ON",
+              "role": "Senior Backend Engineer",
+              "start_date": "2021-03-01"
+            },
+            {
+              "company": "Contoso Systems",
+              "description": "Built internal tooling.",
+              "end_date": "2021-02-28",
+              "id": "exp-prior",
+              "is_current": false,
+              "location": "Remote",
+              "role": "Backend Engineer",
+              "start_date": "2018-06-01"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "chronological verbatim claims plus headline",
+      "expected": {
+        "claims": [
+          {
+            "claim_id": "claim_001",
+            "fact_ids": [],
+            "generation_strategy": "headline",
+            "section": "summary",
+            "text": "Senior Backend Engineer"
+          },
+          {
+            "claim_id": "claim_002",
+            "claimed_metrics": [
+              "40 enterprise tenants"
+            ],
+            "claimed_technologies": [
+              "SAML",
+              "OAuth2"
+            ],
+            "company": "Contoso Systems",
+            "dates": {
+              "end": "2021-02-28",
+              "start": "2018-06-01"
+            },
+            "entity_id": "exp-prior",
+            "fact_ids": [
+              "fact_auth"
+            ],
+            "generation_strategy": "verbatim",
+            "role": "Backend Engineer",
+            "section": "experience",
+            "text": "Shipped SSO/SAML login for 40 enterprise tenants."
+          },
+          {
+            "claim_id": "claim_003",
+            "claimed_metrics": [
+              "10M daily requests",
+              "99.99% availability"
+            ],
+            "claimed_technologies": [
+              "Python",
+              "PostgreSQL",
+              "REST APIs"
+            ],
+            "company": "Northwind Labs",
+            "dates": {
+              "end": "Present",
+              "start": "2021-03-01"
+            },
+            "entity_id": "exp-current",
+            "fact_ids": [
+              "fact_api"
+            ],
+            "generation_strategy": "verbatim",
+            "role": "Senior Backend Engineer",
+            "section": "experience",
+            "text": "Built a public REST API serving 10M daily requests with 99.99% availability."
+          },
+          {
+            "claim_id": "claim_004",
+            "claimed_metrics": [
+              "6 hours to 5 minutes"
+            ],
+            "claimed_technologies": [
+              "Kafka",
+              "Python"
+            ],
+            "company": "Northwind Labs",
+            "dates": {
+              "end": "Present",
+              "start": "2021-03-01"
+            },
+            "entity_id": "exp-current",
+            "fact_ids": [
+              "fact_queue"
+            ],
+            "generation_strategy": "verbatim",
+            "role": "Senior Backend Engineer",
+            "section": "experience",
+            "text": "Migrated batch jobs to an event-driven Kafka pipeline, cutting processing lag from 6 hours to 5 minutes."
+          },
+          {
+            "claim_id": "claim_005",
+            "claimed_metrics": [],
+            "claimed_technologies": [],
+            "degree": "B.Sc.",
+            "fact_ids": [],
+            "field_of_study": "Computer Science",
+            "generation_strategy": "verbatim",
+            "institution": "Test University",
+            "section": "education",
+            "text": "B.Sc. in Computer Science, Test University"
+          }
+        ],
+        "job_id": "canonical-baseline",
+        "target_company": null,
+        "target_role": null
+      },
+      "function": "baseline_draft",
+      "id": "baseline-draft",
+      "input": {
+        "profile": {
+          "credentials": [],
+          "education": [
+            {
+              "degree": "B.Sc.",
+              "end_date": "2018-05-31",
+              "field_of_study": "Computer Science",
+              "institution": "Test University",
+              "start_date": "2014-09-01"
+            }
+          ],
+          "email": "parity@example.com",
+          "full_name": "Parity Test Candidate",
+          "headline": "Senior Backend Engineer",
+          "id": "cand-parity-001",
+          "location": "Toronto, ON",
+          "phone": "+1-555-0100",
+          "preferences": {},
+          "skills": [
+            {
+              "category": "technical",
+              "name": "Python",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "PostgreSQL",
+              "proficiency": "expert",
+              "verified": true,
+              "years_experience": 6
+            },
+            {
+              "category": "technical",
+              "name": "Kafka",
+              "proficiency": "proficient",
+              "verified": true,
+              "years_experience": 4
+            },
+            {
+              "category": "technical",
+              "name": "Unverified Skill",
+              "proficiency": "beginner",
+              "verified": false,
+              "years_experience": 1
+            }
+          ],
+          "target_titles": [
+            "Senior Backend Engineer",
+            "Backend Engineer"
+          ],
+          "verified_facts": [
+            {
+              "category": "platform",
+              "fact_id": "fact_api",
+              "metrics": [
+                "10M daily requests",
+                "99.99% availability"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Python",
+                "PostgreSQL",
+                "REST APIs"
+              ],
+              "text": "Built a public REST API serving 10M daily requests with 99.99% availability.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "data",
+              "fact_id": "fact_queue",
+              "metrics": [
+                "6 hours to 5 minutes"
+              ],
+              "source": "review_2024",
+              "technologies": [
+                "Kafka",
+                "Python"
+              ],
+              "text": "Migrated batch jobs to an event-driven Kafka pipeline, cutting processing lag from 6 hours to 5 minutes.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-current"
+            },
+            {
+              "category": "security",
+              "fact_id": "fact_auth",
+              "metrics": [
+                "40 enterprise tenants"
+              ],
+              "source": "review_2023",
+              "technologies": [
+                "SAML",
+                "OAuth2"
+              ],
+              "text": "Shipped SSO/SAML login for 40 enterprise tenants.",
+              "verification_status": "approved",
+              "work_experience_id": "exp-prior"
+            },
+            {
+              "category": "misc",
+              "fact_id": "fact_draft",
+              "metrics": [],
+              "source": "self",
+              "technologies": [],
+              "text": "Draft claim awaiting review.",
+              "verification_status": "pending",
+              "work_experience_id": "exp-prior"
+            }
+          ],
+          "work_experience": [
+            {
+              "company": "Northwind Labs",
+              "description": "Own backend platform APIs.",
+              "end_date": null,
+              "id": "exp-current",
+              "is_current": true,
+              "location": "Toronto, ON",
+              "role": "Senior Backend Engineer",
+              "start_date": "2021-03-01"
+            },
+            {
+              "company": "Contoso Systems",
+              "description": "Built internal tooling.",
+              "end_date": "2021-02-28",
+              "id": "exp-prior",
+              "is_current": false,
+              "location": "Remote",
+              "role": "Backend Engineer",
+              "start_date": "2018-06-01"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "suite": "view-model",
+  "version": "parity-fixtures/v1"
+}

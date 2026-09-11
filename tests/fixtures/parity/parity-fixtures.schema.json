@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "parity-fixtures.schema.json",
+  "title": "R4-B parity fixture envelope",
+  "type": "object",
+  "required": ["version", "suite", "cases"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"const": "parity-fixtures/v1"},
+    "suite": {"type": "string", "minLength": 1},
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "function", "input", "expected"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "description": {"type": "string"},
+          "function": {
+            "type": "string",
+            "enum": [
+              "validate_requirements",
+              "validate_draft",
+              "validate_submission",
+              "rank_facts",
+              "qualified_skills",
+              "keyword_plan",
+              "career_months",
+              "compose_summary",
+              "verify_derivation",
+              "build_view_model",
+              "render_resume_text",
+              "baseline_draft",
+              "generate_documents"
+            ]
+          },
+          "input": {"type": "object"},
+          "expected": true
+        }
+      }
+    }
+  }
+}
