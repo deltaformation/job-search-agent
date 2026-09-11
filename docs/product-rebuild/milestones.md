@@ -100,11 +100,14 @@ command, creates/migrates an SQLite database, and exposes a secure health page.
 
 ### Outcome
 
-The user can paste URLs, receive immediate per-line validation, and have every
-eligible public URL independently scraped and normalized with full evidence.
+The user can clip jobs directly in their browser with 1 click (past any anti-bot
+challenges naturally) or paste public URLs, having every job normalized with full
+evidence and landed directly on the board.
 
 ### Scope
 
+- 1-click browser clipper extension and bookmarklet sending rendered DOM
+  directly to `POST /api/intake/clip` for immediate normalization into `NEW`.
 - Multiline intake UI with blank-line handling, invalid-line reporting, and
   duplicate feedback.
 - URL policy and canonicalization with submitted URL retention.
@@ -121,6 +124,7 @@ eligible public URL independently scraped and normalized with full evidence.
 - Raw HTML/text/structured-data artifacts stored with size/hash metadata.
 - Successful extraction creates a `NEW` job; failed extraction remains in the
   intake/attempt UI and creates no malformed card.
+- Content paste fallback on attempt deep-dives for blocked pages.
 
 ### Explicit non-goals
 

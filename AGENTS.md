@@ -4,7 +4,7 @@ This repository is being rebuilt as a local-first job application tracker with
 one deterministic workflow:
 
 ```text
-paste public URLs → scrape/normalize → New → generate/review resume → Tailored
+clip job in browser (or paste URLs) → normalize → New → generate/review resume → Tailored
 → human applies → human records Applied / Interviewed / Rejected
 ```
 

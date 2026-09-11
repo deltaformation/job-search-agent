@@ -152,6 +152,22 @@ queue state, retry action, and links to evidence/errors.
 
 **Depends on:** stable commands/queries from R2-A/B/D.
 
+### R2-F — 1-Click Authenticated Browser Clipper and Direct DOM Intake
+
+**Owns:** `app/api/intake/clip/route.ts`, `src/server/clip.ts`, `extensions/clipper/*`, and manual content fallback in `/attempts/[id]`.
+
+**Deliver:**
+- Primary 1-click intake flow: clips rendered job postings directly from the user's active desktop browser (past any CAPTCHA/login challenges naturally).
+- `POST /api/intake/clip`: receives `{ url, html, title?, selectedText? }`, canonicalizes URL, enforces URL policy, writes immutable raw HTML artifact with SHA-256 hash, runs R2-D extraction synchronously, and inserts `NEW` job.
+- Unpackaged Chrome/Brave Manifest V3 clipper extension in `extensions/clipper/` for seamless capture without mixed-content or CORS blocks.
+- Draggable bookmarklet on `/intake`.
+- Content paste fallback on `/attempts/[id]` when an automated scrape records `CAPTCHA_REQUIRED` or `EXTRACTION_INCOMPLETE`.
+- Tests for URL policy, duplicate deduplication, extraction, and evidence persistence.
+
+**Do not:**
+- Access or store user browser cookies, auth tokens, or session credentials.
+- Automate form-filling or application submission.
+
 ## R3 work orders
 
 ### R3-A — Workflow command service
