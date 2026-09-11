@@ -29,5 +29,6 @@ Thumbs.db
 
 # Database & Runtime
 data/
+.playwright-browsers/
 *.log
 .control_center.json

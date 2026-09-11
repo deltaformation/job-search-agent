@@ -1,3 +1,4 @@
+import Link from "next/link";
 import PlatformStatus from "@/components/PlatformStatus";
 
 export default function HomePage() {
@@ -10,6 +11,11 @@ export default function HomePage() {
         Skip to platform status
       </a>
       <PlatformStatus />
+      <nav aria-label="Product" className="mt-6">
+        <Link href="/intake" className="underline">
+          Add job URLs
+        </Link>
+      </nav>
     </main>
   );
 }

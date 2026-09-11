@@ -10,8 +10,9 @@ describe("PlatformStatus", () => {
       screen.getByRole("heading", { level: 1, name: /local job tracker/i }),
     ).toBeInTheDocument();
     expect(screen.getByText(/platform scaffold/i)).toBeInTheDocument();
+    // R2-E shipped intake, so the scaffold copy changed with it.
     expect(
-      screen.getByText(/nothing here reads or writes product data yet/i),
+      screen.getByText(/url intake is available/i),
     ).toBeInTheDocument();
   });
 });

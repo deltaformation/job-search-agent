@@ -146,11 +146,14 @@ describe("worker lifecycle", () => {
         },
       );
       try {
-        await waitFor(spawned, /ready, waiting/);
+        // R2-B replaced the idle wait with the dispatch loop; readiness is
+        // the loop running, and shutdown must drain it before exiting.
+        await waitFor(spawned, /dispatch loop running/);
         spawned.proc.kill("SIGTERM");
         const { code } = await spawned.exit;
         expect(code).toBe(0);
         expect(spawned.output()).toContain("shutting down");
+        expect(spawned.output()).toContain("dispatcher drained");
       } finally {
         try {
           spawned.proc.kill("SIGKILL");

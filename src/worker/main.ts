@@ -1,13 +1,18 @@
 /**
- * Worker entrypoint (R1 lifecycle stub). Opens the supervised database,
- * verifies migrations ran, logs readiness, then idles until SIGINT/SIGTERM
- * triggers a clean close. R2-B adds queue dispatch inside the running
- * section; lifecycle and signal behavior stay here.
+ * Worker entrypoint. Opens the supervised database, verifies migrations
+ * ran, runs the R2-B dispatch loop, then drains it cleanly when
+ * SIGINT/SIGTERM arrives. Lifecycle and signal behavior stay here; the
+ * handler registry is filled in by later milestones (R2-C: SCRAPE,
+ * R4: TAILOR) and stays empty until then.
  *
  * Run from the repository root with the TS resolve hook, e.g.:
  * `node --import ./scripts/ts-register.mjs ./src/worker/main.ts`
  */
 import { openDatabase, type SqliteConnection } from "../db/client";
+import { runDispatcher } from "../queue/dispatch";
+import { closeSharedBrowser } from "../scraping/browser";
+import { createScrapeHandler } from "../scraping/handler";
+import { OriginThrottle } from "../scraping/throttle";
 import { createLogger, flushStdio } from "../security/logger";
 import { resolveWorkerConfig } from "./config";
 
@@ -36,10 +41,9 @@ function waitForShutdownSignal(): Promise<NodeJS.Signals> {
 
 /**
  * Liveness timer. Besides proving the worker is alive in supervised logs,
- * this referenced interval is what keeps the event loop (and therefore the
- * process) running until a shutdown signal arrives — without it Node would
- * drain the loop and exit right after the ready line. R2-B replaces the
- * idle wait with the real dispatch loop.
+ * this referenced interval keeps the event loop (and therefore the
+ * process) running alongside the dispatch loop until a shutdown signal
+ * arrives.
  */
 const HEARTBEAT_MS = 30_000;
 
@@ -53,15 +57,73 @@ export async function main(): Promise<void> {
   const heartbeat = setInterval(() => {
     log.debug("heartbeat", { workerId: config.workerId });
   }, HEARTBEAT_MS);
+  let stopRequested = false;
   try {
     assertMigrated(handle.sqlite);
-    log.info("ready, waiting for dispatch work (R2-B)", {
+    log.info("dispatch loop running", {
       workerId: config.workerId,
+      leaseDurationMs: config.leaseDurationMs,
+      pollIntervalMs: config.pollIntervalMs,
     });
-    const signal = await waitForShutdownSignal();
-    log.info("shutting down", { workerId: config.workerId, signal });
+    // Playwright resolves its browser registry lazily at launch, so a
+    // default exported here still wins over nothing and loses to an
+    // explicit environment value.
+    process.env.PLAYWRIGHT_BROWSERS_PATH ??= config.playwrightBrowsersPath;
+    const throttle = new OriginThrottle();
+    const dispatching = runDispatcher({
+      handle,
+      workerId: config.workerId,
+      // R2-C registers SCRAPE; R4 registers TAILOR.
+      handlers: {
+        SCRAPE: createScrapeHandler({
+          evidenceDir: config.evidenceDir,
+          throttle,
+        }),
+      },
+      leaseDurationMs: config.leaseDurationMs,
+      pollIntervalMs: config.pollIntervalMs,
+      shouldStop: () => stopRequested,
+    });
+    let rejectOnDispatchFailure: (error: unknown) => void = () => {};
+    const dispatchFailed = new Promise<never>((_resolve, reject) => {
+      rejectOnDispatchFailure = reject;
+    });
+    dispatching.then(
+      () => undefined,
+      (error: unknown) => rejectOnDispatchFailure(error),
+    );
+    let signal: NodeJS.Signals;
+    try {
+      signal = await Promise.race([waitForShutdownSignal(), dispatchFailed]);
+    } catch (error: unknown) {
+      log.error("dispatcher failed, exiting for supervisor restart", {
+        workerId: config.workerId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+    log.info("shutting down, draining dispatch loop", {
+      workerId: config.workerId,
+      signal,
+    });
+    stopRequested = true;
+    const summary = await dispatching;
+    log.info("dispatcher drained", {
+      workerId: config.workerId,
+      signal,
+      processed: summary.processed,
+      staleRecovered: summary.staleRecovered,
+    });
   } finally {
     clearInterval(heartbeat);
+    try {
+      await closeSharedBrowser();
+    } catch (error: unknown) {
+      log.error("browser shutdown failed", {
+        workerId: config.workerId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     handle.close();
   }
 }
@@ -76,7 +138,7 @@ process.on("unhandledRejection", (reason) => {
 
 main()
   .catch((error: unknown) => {
-    log.error("worker failed to start", {
+    log.error("worker exiting with failure", {
       error: error instanceof Error ? error.message : String(error),
     });
     process.exitCode = 1;

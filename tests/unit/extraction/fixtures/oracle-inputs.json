@@ -1,0 +1,26 @@
+{
+  "comment": "Runtime-neutral oracle inputs for R2-D normalization ports. The Python oracle (services/discovery/normalizer.py) generates the golden outputs; the TypeScript implementation must match byte-for-byte except where R2-D documents a deliberate fix.",
+  "contentHashCases": [
+    { "company": "Acme Cloud Corp", "title": "Senior Product Manager", "description": "Own the roadmap.  Ship often." },
+    { "company": "  Beta Inc  ", "title": "ENGINEER", "description": "Line one.\n\tLine two  with   spaces." },
+    { "company": "", "title": "", "description": "" },
+    { "company": "Unicode—Co", "title": "Développeur", "description": "Café ☕ résumé" },
+    { "company": "LongDesc", "title": "Writer", "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Extra words beyond five hundred characters should be truncated from the hashed payload and must not affect the digest value at all." }
+  ],
+  "arrangementCases": [
+    { "location": "Remote", "isRemote": false },
+    { "location": "Toronto, ON", "isRemote": false },
+    { "location": "Hybrid - New York", "isRemote": false },
+    { "location": "London, UK", "isRemote": false },
+    { "location": "", "isRemote": true },
+    { "location": "", "isRemote": false },
+    { "location": "  REMOTE (Canada)  ", "isRemote": false }
+  ],
+  "titleCases": [
+    "  Senior Product Manager  ",
+    "sr product manager",
+    "Software Engineer",
+    "",
+    "Lead Product Manager"
+  ]
+}

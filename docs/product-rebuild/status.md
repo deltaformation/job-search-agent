@@ -4,12 +4,12 @@ Last updated: 2026-09-11
 
 ## Current position
 
-- Current milestone: **R2 — URL intake and public scraping** (R1 completed and accepted)
+- Current milestone: **R3 — Persistent manual Kanban** (R1 and R2 completed and accepted)
 - Product runtime: **legacy Python/PostgreSQL remains operational source code**
-- Target runtime: **local platform foundation complete on `rebuild/r1-platform` (supervisor, Next.js, worker, SQLite, domain contracts, security layer)**
-- Next implementation work: **R2-A — URL policy and intake service** and **R2-B — Queue leasing and worker dispatch**.
+- Target runtime: **Milestones 1 & 2 complete on `rebuild/r1-platform` (supervisor, Next.js, worker, SQLite, security layer, URL intake, Playwright fetcher, extraction adapters, queue dispatcher, and attempt visibility UI)**
+- Next implementation work: **R3-A — Workflow command service**
 
-Do not report target commands, URL intake, Kanban, or DOCX generation as
+Do not report target commands, Kanban, or DOCX generation as
 available yet. SQLite migrations exist and execute automatically on startup.
 
 ## Work-order status
@@ -22,9 +22,12 @@ available yet. SQLite migrations exist and execute automatically on startup.
 | R1-B SQLite schema + repositories | accepted | `r1b-handoff.md`; 24-table baseline, trigger guards, runner, 40 DB tests green on Node 24; review NULL-guard fix included |
 | R1-C Domain contracts | accepted | `r1c-handoff.md`; pure Zod machines, mirror-tested against DDL, 50 domain tests green on Node 24 |
 | R1-D Supervisor + security | accepted | `r1d-handoff.md`; dev/start supervisor, worker stub, security layer, 39 tests green; user confirmed `npm run dev` serves page + `/api/health` 200 OK |
-| R2-A URL policy & intake service | ready | Unblocked; R1 complete |
-| R2-B Queue leasing & worker dispatch | ready | Unblocked; R1 complete |
-| R2-C through R5-D | blocked by dependency | Do not start ahead of milestone gates |
+| R2-A URL policy & intake service | accepted | `r2a-handoff.md`; URL policy, SSRF preflight, intake service, 30 new tests green on Node 24 |
+| R2-B Queue leasing & worker dispatch | accepted | `r2b-handoff.md`; leases, dispatcher, worker drain, 32 new tests green on Node 24 |
+| R2-C Playwright fetcher & network guard | accepted | `r2c-handoff.md`; fetch pipeline, guards, SCRAPE handler, 234/234 green incl. browser run, 5 review fixes approved |
+| R2-D Extraction adapters & normalization | accepted | `r2d-handoff.md`; adapters, JSON-LD, generic, oracle parity, handler integration, 23 new tests green on Node 24 |
+| R2-E Intake routes & attempt visibility | accepted | `r2e-handoff.md`; intake routes/pages, batch/attempt views, retry, evidence, 35 new tests green on Node 24; webpack build green |
+| R3-A through R5-D | blocked by dependency | Do not start ahead of milestone gates |
 
 Allowed status values are `ready`, `in progress`, `needs review`, `blocked by
 dependency`, and `accepted`. Avoid percentages: evidence and remaining gates are

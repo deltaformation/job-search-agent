@@ -11,8 +11,8 @@ export default function PlatformStatus() {
         Platform scaffold ({CURRENT_MILESTONE}): {PLATFORM_STACK}.
       </p>
       <p className="mt-2">
-        URL intake, the board, and resume tailoring arrive in later milestones.
-        Nothing here reads or writes product data yet.
+        URL intake is available; the board and resume tailoring arrive in
+        later milestones.
       </p>
     </section>
   );

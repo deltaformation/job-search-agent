@@ -1,0 +1,74 @@
+{
+  "contentHash": [
+    "ef14192be0be44d500041929f4019be4149d772674576d1e2a3c772caa650031",
+    "83a0f05fd98df3776037384eeeaaeb4d424e2b11dc1d759d47ac8c3eab4ef30a",
+    "565d240f5343e625ae579a4d45a770f1f02c6368b5ed4d06da4fbe6f47c28866",
+    "892c1cb55d0cf77d106e9b4e92a2f7f26a9b239f3ec99443bf573069e8d6478f",
+    "2dc80d40e6a7839647f36ae21d22d7bd881c850401f066fb25612fd96d13fe64"
+  ],
+  "arrangement": [
+    {
+      "location": "Remote",
+      "isRemote": false,
+      "legacy": [
+        "Remote Canada",
+        "remote"
+      ]
+    },
+    {
+      "location": "Toronto, ON",
+      "isRemote": false,
+      "legacy": [
+        "Toronto, ON, Canada",
+        "onsite"
+      ]
+    },
+    {
+      "location": "Hybrid - New York",
+      "isRemote": false,
+      "legacy": [
+        "Hybrid - New York",
+        "hybrid"
+      ]
+    },
+    {
+      "location": "London, UK",
+      "isRemote": false,
+      "legacy": [
+        "London, UK",
+        "onsite"
+      ]
+    },
+    {
+      "location": "",
+      "isRemote": true,
+      "legacy": [
+        "Remote Canada",
+        "remote"
+      ]
+    },
+    {
+      "location": "",
+      "isRemote": false,
+      "legacy": [
+        "Canada",
+        "unknown"
+      ]
+    },
+    {
+      "location": "  REMOTE (Canada)  ",
+      "isRemote": false,
+      "legacy": [
+        "Remote Canada",
+        "remote"
+      ]
+    }
+  ],
+  "title": [
+    "Senior Product Manager",
+    "Senior Product Manager",
+    "Software Engineer",
+    "Unknown Role",
+    "Lead Product Manager"
+  ]
+}

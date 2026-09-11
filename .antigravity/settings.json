@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "command(*)",
+      "read_url(*)",
+      "mcp(*)"
+    ],
+    "deny": [
+      "command(rm -rf /)",
+      "command(regex:git push --force.*)"
+    ]
+  }
+}
