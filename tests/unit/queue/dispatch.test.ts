@@ -307,4 +307,37 @@ describe("dispatcher", () => {
       expect(attemptsFor(t.handle, id)).toHaveLength(1);
     });
   });
+
+  it("swaps to the refreshed handle on the next tick (R5-A reopen)", async () => {
+    await withAsyncDatabase(async (t) => {
+      const id = seedItem(t.handle);
+      let stop = false;
+      let refreshCalls = 0;
+      let handlerSawRefreshed = false;
+      const refreshed = { ...t.handle, refreshedHandleMarker: true };
+      const handler: WorkHandler = async (context) => {
+        handlerSawRefreshed = context.handle === (refreshed as typeof t.handle);
+        stop = true;
+        return { result: "SUCCEEDED" };
+      };
+      const summary = await runDispatcher({
+        handle: t.handle,
+        workerId: "worker-a",
+        handlers: { SCRAPE: handler },
+        leaseDurationMs: 60_000,
+        pollIntervalMs: 1,
+        clock: () => T0,
+        shouldStop: () => stop,
+        refreshHandle: (current) => {
+          refreshCalls += 1;
+          expect(current).toBe(t.handle);
+          return refreshed as typeof t.handle;
+        },
+      });
+      expect(refreshCalls).toBe(1);
+      expect(handlerSawRefreshed).toBe(true);
+      expect(summary.processed).toBe(1);
+      expect(getItem(t.handle, id)).toMatchObject({ state: "SUCCEEDED" });
+    });
+  });
 });

@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Kanban,
   Plus,
+  Settings,
   Sparkles,
   UserCheck,
 } from "lucide-react";
@@ -21,10 +22,12 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { apiPost, errorMessage } from "./api";
+import SettingsModal from "./settings/SettingsModal";
 
 export default function AppHeader() {
   const pathname = usePathname();
   const [addJobOpen, setAddJobOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [quickUrl, setQuickUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [quickMessage, setQuickMessage] = useState<{
@@ -140,6 +143,16 @@ export default function AppHeader() {
         <div className="flex items-center gap-2">
           <Button
             size="sm"
+            variant="outline"
+            onClick={() => setSettingsOpen(true)}
+            className="h-8 gap-1 text-xs font-medium"
+            aria-label="Open settings and data management"
+          >
+            <Settings className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Settings</span>
+          </Button>
+          <Button
+            size="sm"
             onClick={() => setAddJobOpen(true)}
             className="h-8 gap-1 text-xs font-medium"
           >
@@ -232,6 +245,9 @@ export default function AppHeader() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Settings & Data Management */}
+      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
     </header>
   );
 }

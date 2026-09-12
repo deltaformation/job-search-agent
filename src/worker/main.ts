@@ -7,11 +7,12 @@
  * Run from the repository root with the TS resolve hook, e.g.:
  * `node --import ./scripts/ts-register.mjs ./src/worker/main.ts`
  */
-import { openDatabase, type SqliteConnection } from "../db/client";
+import { openDatabase, type DatabaseHandle, type SqliteConnection } from "../db/client";
 import { runDispatcher } from "../queue/dispatch";
 import { closeSharedBrowser, getSharedBrowser } from "../scraping/browser";
 import { createScrapeHandler } from "../scraping/handler";
 import { OriginThrottle } from "../scraping/throttle";
+import { readGeneration } from "../server/backup";
 import { createLogger, flushStdio } from "../security/logger";
 import { CommandProvider } from "../tailoring/commandAdapter";
 import { createTailorHandler } from "../tailoring/handler";
@@ -54,13 +55,50 @@ export async function main(): Promise<void> {
     workerId: config.workerId,
     databasePath: config.databasePath,
   });
-  const handle = openDatabase({ path: config.databasePath });
+  // Current database handle, swapped in place when a restore/reset
+  // bumps the generation marker. better-sqlite3 holds an open file
+  // descriptor, so the pre-swap handle keeps reading the OLD inode after
+  // the atomic swap; reopening picks up the new database file without a
+  // process restart. The in-memory origin throttle is deliberately NOT
+  // reset: its only effect is to delay fetches, which stays safe.
+  let current: DatabaseHandle = openDatabase({ path: config.databasePath });
+  let lastGeneration: string | null = readGeneration(config.root);
+  const refreshHandle = (handle: DatabaseHandle): DatabaseHandle => {
+    const generation = readGeneration(config.root);
+    if (generation === lastGeneration) {
+      return handle;
+    }
+    log.info("database generation changed, reopening handle", {
+      workerId: config.workerId,
+      previous: lastGeneration,
+      current: generation,
+    });
+    const reopened = openDatabase({ path: config.databasePath });
+    try {
+      assertMigrated(reopened.sqlite);
+    } catch (error: unknown) {
+      // The swap is atomic and the staged database was verified before
+      // it, so an unmigrated file here means operator interference; keep
+      // the old handle (old inode) rather than wedging the dispatcher,
+      // and retry on the next tick.
+      log.error("reopened database is unmigrated, keeping previous handle", {
+        workerId: config.workerId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      reopened.close();
+      return handle;
+    }
+    handle.close();
+    current = reopened;
+    lastGeneration = generation;
+    return reopened;
+  };
   const heartbeat = setInterval(() => {
     log.debug("heartbeat", { workerId: config.workerId });
   }, HEARTBEAT_MS);
   let stopRequested = false;
   try {
-    assertMigrated(handle.sqlite);
+    assertMigrated(current.sqlite);
     log.info("dispatch loop running", {
       workerId: config.workerId,
       leaseDurationMs: config.leaseDurationMs,
@@ -86,7 +124,8 @@ export async function main(): Promise<void> {
       });
     }
     const dispatching = runDispatcher({
-      handle,
+      handle: current,
+      refreshHandle,
       workerId: config.workerId,
       handlers: {
         SCRAPE: createScrapeHandler({
@@ -144,7 +183,7 @@ export async function main(): Promise<void> {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    handle.close();
+    current.close();
   }
 }
 

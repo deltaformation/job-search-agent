@@ -80,6 +80,14 @@ export interface DispatcherOptions {
   clock?: () => string;
   /** Polled before every claim and sleep; true stops after drain. */
   shouldStop?: () => boolean;
+  /**
+   * Optional per-tick handle refresh (R5-A). Called at the top of every
+   * loop iteration with the current handle; return a different handle to
+   * swap it (e.g. reopen after a restore/reset swapped the database
+   * file). The callback owns closing the replaced handle; the dispatcher
+   * never closes handles. Absent means the initial handle is used.
+   */
+  refreshHandle?: (current: DatabaseHandle) => DatabaseHandle;
 }
 
 export interface DispatcherSummary {
@@ -163,10 +171,14 @@ export async function runDispatcher(
   const shouldStop = options.shouldStop ?? (() => false);
   const kinds = Object.keys(options.handlers) as WorkKindValue[];
   const summary: DispatcherSummary = { processed: 0, staleRecovered: 0 };
+  let handle = options.handle;
 
   while (!shouldStop()) {
+    if (options.refreshHandle !== undefined) {
+      handle = options.refreshHandle(handle);
+    }
     const tickNow = clock();
-    const recovered = recoverStaleLeases(options.handle, { now: tickNow });
+    const recovered = recoverStaleLeases(handle, { now: tickNow });
     summary.staleRecovered += recovered.recovered;
     if (recovered.recovered > 0) {
       log.info("recovered stale leases", {
@@ -178,7 +190,7 @@ export async function runDispatcher(
     }
     const item = kinds.length === 0
       ? null
-      : claimNextWorkItem(options.handle, {
+      : claimNextWorkItem(handle, {
         workerId: input.workerId,
         kinds,
         leaseDurationMs,
@@ -197,7 +209,7 @@ export async function runDispatcher(
         workItemId: item.id,
         kind: item.kind,
       });
-      completeWorkItem(options.handle, {
+      completeWorkItem(handle, {
         workItemId: item.id,
         leaseToken: item.leaseToken,
         result: "FAILED",
@@ -208,7 +220,7 @@ export async function runDispatcher(
       continue;
     }
     const heartbeat = (): boolean =>
-      renewLease(options.handle, {
+      renewLease(handle, {
         workItemId: item.id,
         leaseToken: item.leaseToken,
         leaseDurationMs,
@@ -220,7 +232,7 @@ export async function runDispatcher(
       // SQLite transaction, per the R2-B work-order constraint.
       outcome = coerceOutcome(
         await handler({
-          handle: options.handle,
+          handle: handle,
           item: { ...item, leaseToken: item.leaseToken },
           workerId: input.workerId,
           heartbeat,
@@ -235,7 +247,7 @@ export async function runDispatcher(
       outcome = handlerThrew(error);
     }
     const completed = completeWorkItem(
-      options.handle,
+      handle,
       {
         workItemId: item.id,
         leaseToken: item.leaseToken,
