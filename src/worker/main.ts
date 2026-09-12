@@ -97,6 +97,7 @@ export async function main(): Promise<void> {
           artifactsDir: config.artifactsDir,
           provider: tailorProvider,
           browser: getSharedBrowser,
+          ...(config.salaryFallback === null ? {} : { salaryFallback: config.salaryFallback }),
         }),
       },
       leaseDurationMs: config.leaseDurationMs,

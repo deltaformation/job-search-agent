@@ -111,6 +111,48 @@ describe("worker configuration", () => {
     });
   });
 
+  it("defaults the salary fallback to the checked-in script", () => {
+    expect(resolveWorkerConfig({}, "/repo", 1).salaryFallback).toEqual({
+      argv: [process.execPath, "/repo/scripts/extract-salary-facts.mjs"],
+      timeoutMs: 150_000,
+      maxOutputBytes: 65_536,
+    });
+  });
+
+  it("honors salary fallback overrides and the off switch", () => {
+    const config = resolveWorkerConfig(
+      {
+        SALARY_PROVIDER_ARGV: JSON.stringify(["/bin/salary", "--fast"]),
+        SALARY_PROVIDER_TIMEOUT_MS: "30000",
+      },
+      "/repo",
+      1,
+    );
+    expect(config.salaryFallback).toEqual({
+      argv: ["/bin/salary", "--fast"],
+      timeoutMs: 30_000,
+      maxOutputBytes: 65_536,
+    });
+    expect(resolveWorkerConfig({ SALARY_FALLBACK: "off" }, "/repo", 1).salaryFallback).toBeNull();
+    expect(resolveWorkerConfig({ SALARY_FALLBACK: "OFF" }, "/repo", 1).salaryFallback).toBeNull();
+  });
+
+  it("rejects invalid salary fallback configuration", () => {
+    expect(() =>
+      resolveWorkerConfig({ SALARY_PROVIDER_ARGV: "not-json" }, "/repo", 1),
+    ).toThrow(/SALARY_PROVIDER_ARGV/);
+    expect(() =>
+      resolveWorkerConfig({ SALARY_PROVIDER_ARGV: JSON.stringify([]) }, "/repo", 1),
+    ).toThrow(/SALARY_PROVIDER_ARGV/);
+    expect(() =>
+      resolveWorkerConfig(
+        { SALARY_PROVIDER_TIMEOUT_MS: "99999999" },
+        "/repo",
+        1,
+      ),
+    ).toThrow(/SALARY_PROVIDER_TIMEOUT_MS/);
+  });
+
   it("rejects invalid provider configuration", () => {
     expect(() =>
       resolveWorkerConfig({ TAILOR_PROVIDER_ARGV: "not-json" }, "/repo", 1),

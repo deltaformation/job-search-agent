@@ -11,7 +11,7 @@ import { useEffect, useRef } from "react";
 interface DialogProps {
   labelledBy: string;
   onClose: () => void;
-  position: "center" | "right";
+  position: "center" | "right" | "workspace";
   children: React.ReactNode;
 }
 
@@ -27,11 +27,14 @@ export default function Dialog({ labelledBy, onClose, position, children }: Dial
   });
 
   useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     openerRef.current = document.activeElement;
     const panel = panelRef.current;
     const first = panel?.querySelector<HTMLElement>(FOCUSABLE);
     (first ?? panel)?.focus();
     return () => {
+      document.body.style.overflow = previousOverflow;
       const opener = openerRef.current;
       if (opener instanceof HTMLElement) {
         opener.focus();
@@ -41,6 +44,8 @@ export default function Dialog({ labelledBy, onClose, position, children }: Dial
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
+      const dialogs = document.querySelectorAll('[role="dialog"]');
+      if (dialogs[dialogs.length - 1] !== panelRef.current) return;
       if (event.key === "Escape") {
         event.stopPropagation();
         onCloseRef.current();
@@ -71,7 +76,7 @@ export default function Dialog({ labelledBy, onClose, position, children }: Dial
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/40"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -85,9 +90,11 @@ export default function Dialog({ labelledBy, onClose, position, children }: Dial
         aria-labelledby={labelledBy}
         tabIndex={-1}
         className={
-          position === "right"
-            ? "absolute top-0 right-0 h-full w-full max-w-xl overflow-y-auto bg-white p-6 shadow-xl"
-            : "mx-auto mt-24 w-full max-w-lg bg-white p-6 shadow-xl"
+          position === "workspace"
+            ? "workspace-panel relative h-dvh w-full overflow-y-auto bg-background p-4 sm:p-8 text-foreground"
+            : position === "right"
+            ? "relative h-full w-full max-w-2xl overflow-y-auto border-l border-border bg-background p-6 shadow-2xl text-foreground"
+            : "mx-auto my-auto w-full max-h-[90dvh] overflow-y-auto max-w-lg rounded-xl border border-border bg-background p-6 shadow-2xl text-foreground"
         }
       >
         {children}

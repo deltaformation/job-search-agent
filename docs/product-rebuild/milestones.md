@@ -234,42 +234,48 @@ produces immutable Markdown, DOCX, and PDF artifacts and moves the job to
 - Direct API calls cannot approve as an agent or move an unapproved job to
   `TAILORED`.
 
-## R5 — Data import, hardening, and cutover
+## R5 — Settings UI, backup/restore, and legacy cutover
 
 ### Outcome
 
-The new tracker contains the valuable existing data, passes the complete local
-workflow, has a tested backup/restore path, and has no runtime dependency on
-Python, PostgreSQL, MCP, Nimbalyst, or application automation.
+The new tracker is a 100% standalone, local-first Node.js/SQLite application
+with a dedicated Settings and Data Management interface, one-click backup and
+restore, clear OpenRouter configuration and diagnostics, and zero runtime or
+file dependency on Python, PostgreSQL, Docker, MCP, or Nimbalyst.
 
 ### Scope
 
-- Read-only PostgreSQL-to-SQLite import with stable ID mapping, explicit status
-  mapping, artifact hash verification, and a machine-readable manifest.
-- Dry-run and commit modes; import into a new database only.
-- Ambiguity report for statuses, missing artifacts, invalid facts, and
-  unverifiable approvals. Never manufacture a successful mapping.
-- Backup/restore commands and UI guidance for database + files + manifest.
-- Full acceptance flow and crash/restart/retry tests.
-- Performance check with a realistically sized local dataset.
-- Update README and operations documentation to the new one-command workflow.
-- Remove retired Python/PostgreSQL/MCP/Starlette/bridge/application-copilot code,
-  dependencies, migrations, and scripts only after import and parity gates pass.
-- Confirm that no product action submits, fills, or attests to an application.
+- **Settings & Data Management UI**:
+  - Persistent Settings dialog accessible from the top navigation bar.
+  - One-click backup export (`job-tracker-backup-YYYY-MM-DD.tar.gz`) combining
+    the SQLite database (cleanly checkpointed via `wal_checkpoint(TRUNCATE)`),
+    generated resume artifacts, and candidate profile, strictly excluding `.env.local`.
+  - Safe restore with schema integrity verification and automated pre-restore
+    rollback snapshot.
+  - Safe "Clear All Jobs" board reset action protected by a confirmation dialog.
+  - AI model status check, model switcher, and OpenRouter test connection ping.
+  - Candidate profile status display with "Re-sync Master Resume" action.
+- **Legacy Removal & Clean Cutover**:
+  - Complete deletion of retired Python runtime, `.venv/`, `services/`,
+    PostgreSQL migrations, `docker-compose.yml`, Python scripts, and Python tests.
+  - Zero remaining references to PostgreSQL, Python, Docker, or Nimbalyst.
+  - Modernized `README.md` with single-command local run (`npm run dev`).
+- **User-Led Acceptance**:
+  - Human walkthrough verifying intake, scraping, AI tailoring with Top 5
+    ATS keywords, resume approval, application tracking, and backup/restore.
+
+### Explicit non-goals
+
+- No PostgreSQL data migration (dropped per user decision).
+- No automated heavy end-to-end test suite for cutover (verified via user manual walkthrough).
 
 ### Acceptance evidence
 
-- Import dry-run and committed manifests reconcile source/destination counts and
-  identify every skipped/ambiguous record.
-- Existing approved artifacts import only when their file and digest verify.
-- Backup, destructive test mutation, and restore recover the same record counts
-  and artifact hashes.
-- The complete MVP scenario in the rebuild README passes in an end-to-end test
-  and a human walkthrough.
-- A clean machine setup uses only documented Node/Playwright prerequisites and
-  no running PostgreSQL service.
-- Repository scans show no active Nimbalyst, Python runtime, PostgreSQL, MCP,
-  application autofill, or autonomous-submit dependency.
+- Settings modal in `AppHeader.tsx` opens and displays backup, model, profile, and storage statistics.
+- Downloading a backup produces a valid, uncorrupted archive that restores cleanly.
+- Board reset clears jobs and extractions without errors and leaves schema intact.
+- Repository scans confirm zero Python files, zero PostgreSQL configs, and zero running Docker dependencies.
+- `npm run dev` and `npm test` pass cleanly with zero dead-reference errors.
 
 ## Cross-milestone release rules
 

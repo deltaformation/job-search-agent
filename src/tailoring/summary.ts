@@ -5,15 +5,22 @@ import { compareCodePoints, normalizeTerm } from "./text";
 
 /**
  * Summary ports (`unioned_career_months`, `compose_summary`,
- * `verify_derivation`, `build_derived_text`).
+ * `verify_derivation`, `build_derived_text`) plus the baseline-preserving
+ * `summary/v2` formula.
  *
  * Only three summary strategies exist: `verbatim` (quotes one approved
  * fact), `approved_variant` (validated in `validator.ts`), and
- * `derived_template` (fixed `summary/v1` formula slots, byte-reconstructable
- * from the persisted derivation manifest).
+ * `derived_template` (fixed-formula slots, byte-reconstructable from the
+ * persisted derivation manifest). `derived_template` has two formulas:
+ * `summary/v1` (title + unioned tenure + proof fact) and `summary/v2`
+ * (verbatim baseline narrative + evidence-derived focus terms). v2 applies
+ * only when the profile carries a human-authored baseline summary;
+ * profiles without one take the v1 path exactly as before, so every
+ * oracle parity fixture stays on v1.
  */
 
 export const FORMULA_VERSION = "summary/v1";
+export const BASELINE_FORMULA_VERSION = "summary/v2";
 
 const CONNECTOR_WITH = "with";
 const CONNECTOR_SPECIALIZING = "Specializing in";
@@ -158,6 +165,56 @@ export function buildDerivedText(slotValues: Record<string, unknown>): string {
   return parts.join(" ");
 }
 
+/** `summary/v2` text builder (single source of truth, composer + validator). */
+export function buildBaselineText(slotValues: Record<string, unknown>): string {
+  const parts = [
+    `${pyString(slotValues["narrative"])} ${CONNECTOR_SPECIALIZING} ${pyString(slotValues["domains_techs"])}.`,
+  ];
+  if (pyTruthy(slotValues["target_label"])) {
+    parts.push(pyString(slotValues["target_label"]));
+  }
+  return parts.join(" ");
+}
+
+/** Targeting line, gated to the headline/target-title allow-list (v1 + v2). */
+function targetLabelFor(headline: string, targetTitles: string[], jobTitle: string): string {
+  const normalizedJob = normalizeTerm(jobTitle);
+  const allowList = new Set([normalizeTerm(headline), ...targetTitles.map(normalizeTerm)]);
+  if (normalizedJob !== "" && allowList.has(normalizedJob)) {
+    return `Targeting ${jobTitle.trim()} roles.`;
+  }
+  return "";
+}
+
+type ApprovedFactRecord = CandidateProfileInput["verified_facts"][number];
+
+/** Rank-ordered domain-term collection shared by both formulas. */
+function collectDomainTerms(
+  factsById: Map<string, ApprovedFactRecord>,
+  ranked: string[],
+  maxDomainTerms: number,
+): { domainTerms: string[]; citedIds: string[] } {
+  const seen = new Set<string>();
+  const domainTerms: string[] = [];
+  const citedIds: string[] = [];
+  for (const fid of ranked) {
+    const fact = factsById.get(fid) as ApprovedFactRecord;
+    citedIds.push(fid);
+    for (const tech of fact.technologies) {
+      const term = tech.trim();
+      const key = normalizeTerm(term);
+      if (term !== "" && !seen.has(key)) {
+        seen.add(key);
+        domainTerms.push(term);
+      }
+    }
+    if (domainTerms.length >= maxDomainTerms) {
+      break;
+    }
+  }
+  return { domainTerms, citedIds };
+}
+
 const ComposeEnvelope = z.object({
   profile: z.unknown(),
   rankedFactIds: z.array(z.string()),
@@ -168,11 +225,12 @@ const ComposeEnvelope = z.object({
 
 export interface SummaryDerivation {
   formula_version: string;
-  calculation_as_of: string;
-  employment_intervals: CareerInterval[];
-  total_months: number;
+  /** v1-only: v2 carries no tenure arithmetic, only narrative + terms. */
+  calculation_as_of?: string;
+  employment_intervals?: CareerInterval[];
+  total_months?: number;
   fact_ids: string[];
-  proof_fact_id: string;
+  proof_fact_id?: string;
   slot_values: Record<string, unknown>;
   final_text: string;
 }
@@ -185,7 +243,7 @@ export interface SummaryResult {
   fallback_reason: string | null;
 }
 
-/** Port of `compose_summary`. */
+/** Port of `compose_summary`, dispatching to v1 or the baseline v2 formula. */
 export function composeSummary(input: {
   profile: unknown;
   rankedFactIds: unknown;
@@ -206,7 +264,75 @@ export function composeSummary(input: {
   if (ranked.length === 0) {
     return { strategy: "none", text: "", fact_ids: [], derivation: null, fallback_reason: "NO_EVIDENCE" };
   }
+  const narrative = (profile.summary ?? "").trim();
+  if (narrative !== "") {
+    return composeBaselineSummary({
+      profile,
+      factsById,
+      ranked,
+      narrative,
+      jobTitle: envelope.jobTitle,
+      asOf: envelope.asOf,
+      maxDomainTerms,
+    });
+  }
+  return composeDerivedV1({
+    profile,
+    factsById,
+    ranked,
+    jobTitle: envelope.jobTitle,
+    asOf: envelope.asOf,
+    maxDomainTerms,
+  });
+}
 
+interface ComposerArgs {
+  profile: CandidateProfileInput;
+  factsById: Map<string, ApprovedFactRecord>;
+  ranked: string[];
+  jobTitle: string;
+  maxDomainTerms: number;
+}
+
+/** `summary/v2`: verbatim baseline narrative plus evidence focus terms. */
+function composeBaselineSummary(
+  args: ComposerArgs & { narrative: string; asOf: string },
+): SummaryResult {
+  const { domainTerms, citedIds } = collectDomainTerms(
+    args.factsById,
+    args.ranked,
+    args.maxDomainTerms,
+  );
+  if (domainTerms.length === 0) {
+    // No usable evidence terms: the v2 shape cannot be built honestly,
+    // so delegate to the v1 path (derived or verbatim fallback).
+    return composeDerivedV1(args);
+  }
+  const headline = (args.profile.headline ?? "").trim();
+  const targetTitles = args.profile.target_titles.filter((title) => title.trim() !== "");
+  const slotValues: Record<string, unknown> = {
+    narrative: args.narrative,
+    domains_techs: oxfordJoin(domainTerms.slice(0, args.maxDomainTerms)),
+    target_label: targetLabelFor(headline, targetTitles, args.jobTitle),
+  };
+  const finalText = buildBaselineText(slotValues);
+  return {
+    strategy: "derived_template",
+    text: finalText,
+    fact_ids: citedIds,
+    derivation: {
+      formula_version: BASELINE_FORMULA_VERSION,
+      fact_ids: citedIds,
+      slot_values: slotValues,
+      final_text: finalText,
+    },
+    fallback_reason: null,
+  };
+}
+
+/** `summary/v1` composer (oracle behavior, extracted verbatim). */
+function composeDerivedV1(args: ComposerArgs & { asOf: string }): SummaryResult {
+  const { profile, factsById, ranked, jobTitle, asOf, maxDomainTerms } = args;
   const headline = (profile.headline ?? "").trim();
   const targetTitles = profile.target_titles.filter((title) => title.trim() !== "");
   const titleFamily = headline !== "" ? headline : (targetTitles[0] ?? "");
@@ -223,7 +349,7 @@ export function composeSummary(input: {
 
   const { total_months: totalMonths, intervals } = unionedCareerMonths({
     workExperiences: profile.work_experience,
-    asOf: envelope.asOf,
+    asOf,
   });
   const completedYears = Math.floor(totalMonths / 12);
   if (completedYears < 1) {
@@ -237,24 +363,7 @@ export function composeSummary(input: {
     };
   }
 
-  const seen = new Set<string>();
-  const domainTerms: string[] = [];
-  const citedIds: string[] = [];
-  for (const fid of ranked) {
-    const fact = factsById.get(fid) as (typeof profile.verified_facts)[number];
-    citedIds.push(fid);
-    for (const tech of fact.technologies) {
-      const term = tech.trim();
-      const key = normalizeTerm(term);
-      if (term !== "" && !seen.has(key)) {
-        seen.add(key);
-        domainTerms.push(term);
-      }
-    }
-    if (domainTerms.length >= maxDomainTerms) {
-      break;
-    }
-  }
+  const { domainTerms, citedIds } = collectDomainTerms(factsById, ranked, maxDomainTerms);
   if (domainTerms.length === 0) {
     const fact = factsById.get(ranked[0] as string) as (typeof profile.verified_facts)[number];
     return {
@@ -270,19 +379,12 @@ export function composeSummary(input: {
   const proofFact = factsById.get(ranked[0] as string) as (typeof profile.verified_facts)[number];
   const proofPoint = proofFact.text;
 
-  let targetLabel = "";
-  const normalizedJob = normalizeTerm(envelope.jobTitle);
-  const allowList = new Set([normalizeTerm(headline), ...targetTitles.map(normalizeTerm)]);
-  if (normalizedJob !== "" && allowList.has(normalizedJob)) {
-    targetLabel = `Targeting ${envelope.jobTitle.trim()} roles.`;
-  }
-
   const slotValues: Record<string, unknown> = {
     title_family: titleFamily,
     completed_years: completedYears,
     domains_techs: oxfordJoin(cappedTerms),
     proof_point: proofPoint,
-    target_label: targetLabel,
+    target_label: targetLabelFor(headline, targetTitles, jobTitle),
   };
   const finalText = buildDerivedText(slotValues);
   return {
@@ -291,7 +393,7 @@ export function composeSummary(input: {
     fact_ids: citedIds,
     derivation: {
       formula_version: FORMULA_VERSION,
-      calculation_as_of: envelope.asOf,
+      calculation_as_of: asOf,
       employment_intervals: intervals,
       total_months: totalMonths,
       fact_ids: citedIds,
@@ -313,7 +415,82 @@ export interface DerivationValidation {
   errors: string[];
 }
 
-/** Port of `verify_derivation`. */
+/** Shared domain-term evidence check (v1 + v2 use identical rules). */
+function checkDomainTerms(
+  slots: Record<string, unknown>,
+  factsById: Map<string, ApprovedFactRecord>,
+  manifestFactIds: unknown[],
+  errors: string[],
+): void {
+  const evidenceTexts: string[] = [];
+  const evidenceTechs: string[] = [];
+  for (const fid of manifestFactIds) {
+    if (typeof fid !== "string" || !factsById.has(fid)) {
+      continue;
+    }
+    const fact = factsById.get(fid) as ApprovedFactRecord;
+    evidenceTexts.push(fact.text);
+    evidenceTechs.push(...fact.technologies);
+  }
+  const domainsRaw = "domains_techs" in slots ? pyString(slots["domains_techs"]) : "";
+  for (const raw of domainsRaw.split(",")) {
+    const term = raw.trim().replace(/^(and|or)\s+/, "");
+    if (term === "") {
+      continue;
+    }
+    if (!evidenceTexts.includes(term) && !evidenceTechs.includes(term) && !evidenceTexts.some((text) => text.includes(term))) {
+      errors.push(`Derivation domain term '${term}' is not verbatim fact evidence.`);
+    }
+  }
+}
+
+function approvedFactsById(profile: CandidateProfileInput): Map<string, ApprovedFactRecord> {
+  const factsById = new Map<string, ApprovedFactRecord>();
+  for (const fact of profile.verified_facts) {
+    if (fact.verification_status === "approved") {
+      factsById.set(fact.fact_id, fact);
+    }
+  }
+  return factsById;
+}
+
+/** `summary/v2` verifier: narrative verbatim, terms evidenced, rebuildable. */
+function verifyBaselineDerivation(
+  manifest: Record<string, unknown>,
+  profile: CandidateProfileInput,
+): DerivationValidation {
+  const errors: string[] = [];
+  const slots = isRecord(manifest["slot_values"]) ? manifest["slot_values"] : {};
+  const narrative = (profile.summary ?? "").trim();
+  if (narrative === "") {
+    errors.push("Baseline derivation requires a profile baseline summary.");
+  } else if (pyString("narrative" in slots ? slots["narrative"] : undefined) !== narrative) {
+    errors.push("Derivation narrative must equal the profile baseline summary verbatim.");
+  }
+  const factsById = approvedFactsById(profile);
+  let manifestFactIds: unknown[] = [];
+  if (!Array.isArray(manifest["fact_ids"]) || manifest["fact_ids"].length === 0) {
+    errors.push("Derivation must cite at least one approved fact_id.");
+  } else {
+    manifestFactIds = manifest["fact_ids"] as unknown[];
+  }
+  for (const fid of manifestFactIds) {
+    if (typeof fid !== "string" || !factsById.has(fid)) {
+      errors.push(`Derivation cites unknown or unapproved fact_id '${typeof fid === "string" ? fid : pyString(fid)}'.`);
+    }
+  }
+  checkDomainTerms(slots, factsById, manifestFactIds, errors);
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
+  const rebuilt = buildBaselineText(slots);
+  if (rebuilt !== (manifest["final_text"] ?? null)) {
+    return { valid: false, errors: ["Derivation final_text is not byte-for-byte reconstructable."] };
+  }
+  return { valid: true, errors: [] };
+}
+
+/** Port of `verify_derivation`, extended with the `summary/v2` formula. */
 export function verifyDerivation(input: { manifest: unknown; profile: unknown }): DerivationValidation {
   const envelope = VerifyEnvelope.parse(input);
   if (!isRecord(envelope.manifest)) {
@@ -321,6 +498,9 @@ export function verifyDerivation(input: { manifest: unknown; profile: unknown })
   }
   const manifest = envelope.manifest;
   const profile = CandidateProfileInput.parse(envelope.profile);
+  if (manifest["formula_version"] === BASELINE_FORMULA_VERSION) {
+    return verifyBaselineDerivation(manifest, profile);
+  }
   if (manifest["formula_version"] !== FORMULA_VERSION) {
     return {
       valid: false,
@@ -369,26 +549,7 @@ export function verifyDerivation(input: { manifest: unknown; profile: unknown })
     }
   }
 
-  const evidenceTexts: string[] = [];
-  const evidenceTechs: string[] = [];
-  for (const fid of manifestFactIds) {
-    if (typeof fid !== "string" || !factsById.has(fid)) {
-      continue;
-    }
-    const fact = factsById.get(fid) as (typeof profile.verified_facts)[number];
-    evidenceTexts.push(fact.text);
-    evidenceTechs.push(...fact.technologies);
-  }
-  const domainsRaw = "domains_techs" in slots ? pyString(slots["domains_techs"]) : "";
-  for (const raw of domainsRaw.split(",")) {
-    const term = raw.trim().replace(/^(and|or)\s+/, "");
-    if (term === "") {
-      continue;
-    }
-    if (!evidenceTexts.includes(term) && !evidenceTechs.includes(term) && !evidenceTexts.some((text) => text.includes(term))) {
-      errors.push(`Derivation domain term '${term}' is not verbatim fact evidence.`);
-    }
-  }
+  checkDomainTerms(slots, factsById, manifestFactIds, errors);
 
   const proofId = manifest["proof_fact_id"];
   const proofFact = typeof proofId === "string" ? (factsById.get(proofId) ?? null) : null;

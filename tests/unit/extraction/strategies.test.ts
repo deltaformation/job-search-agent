@@ -173,3 +173,91 @@ describe("extraction completeness", () => {
     expect(second).toEqual(first);
   });
 });
+
+describe("description salary backfill", () => {
+  function jsonLdHtml(posting: Record<string, unknown>): string {
+    return `<html><head><script type="application/ld+json">${JSON.stringify(posting)}</script></head><body><h1>${String(posting["title"] ?? "")}</h1></body></html>`;
+  }
+
+  it("backfills min/max from the winner's description when structured salary is missing", () => {
+    const html = jsonLdHtml({
+      "@type": "JobPosting",
+      title: "Product Manager",
+      hiringOrganization: { name: "Jobber" },
+      jobLocation: { address: { addressLocality: "Toronto" } },
+      description: "Lead the team.\nSalary: $145,900 - $197,400 CAD per year.\nGreat benefits.",
+    });
+    const outcome = runExtraction(inputFor(html, { jsonLdBlocks: jsonLdFrom(html) }));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      throw new Error("unreachable");
+    }
+    expect(outcome.adapterId).toBe("jsonld");
+    expect(outcome.fields).toMatchObject({
+      salaryText: "Lead the team. Salary: $145,900 - $197,400 CAD per year. Great benefits.",
+      salaryCurrency: "CAD",
+      salaryMinMinor: 14590000,
+      salaryMaxMinor: 19740000,
+    });
+    expect(outcome.provenance.salaryText).toBe("fallback:description-salary-line");
+    expect(outcome.missingFields).not.toContain("salary");
+  });
+
+  it("keeps hourly lines verbatim with null minors", () => {
+    const html = jsonLdHtml({
+      "@type": "JobPosting",
+      title: "Support Specialist",
+      description: "Help customers.\nPay: $75 - $95 / hr plus bonus.\nApply now.",
+    });
+    const outcome = runExtraction(inputFor(html, { jsonLdBlocks: jsonLdFrom(html) }));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      throw new Error("unreachable");
+    }
+    expect(outcome.fields).toMatchObject({
+      salaryText: "Help customers. Pay: $75 - $95 / hr plus bonus. Apply now.",
+      salaryMinMinor: null,
+      salaryMaxMinor: null,
+    });
+    expect(outcome.missingFields).not.toContain("salary");
+  });
+
+  it("never overwrites the winner's own salary", () => {
+    const html = jsonLdHtml({
+      "@type": "JobPosting",
+      title: "Engineer",
+      baseSalary: {
+        currency: "USD",
+        value: { minValue: 100000, maxValue: 150000, unitText: "YEAR" },
+      },
+      description: "Build things.\nContractors earn $50 per hour.\nApply now.",
+    });
+    const outcome = runExtraction(inputFor(html, { jsonLdBlocks: jsonLdFrom(html) }));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      throw new Error("unreachable");
+    }
+    expect(outcome.fields).toMatchObject({
+      salaryText: "USD 100000-150000",
+      salaryCurrency: "USD",
+      salaryMinMinor: 10000000,
+      salaryMaxMinor: 15000000,
+    });
+    expect(outcome.provenance.salaryText).toBe("jsonld:baseSalary");
+  });
+
+  it("still reports a salary gap when no money line exists", () => {
+    const html = jsonLdHtml({
+      "@type": "JobPosting",
+      title: "Engineer",
+      description: "Build things with a great team. No pay mentioned.",
+    });
+    const outcome = runExtraction(inputFor(html, { jsonLdBlocks: jsonLdFrom(html) }));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      throw new Error("unreachable");
+    }
+    expect(outcome.fields.salaryText).toBeNull();
+    expect(outcome.missingFields).toContain("salary");
+  });
+});

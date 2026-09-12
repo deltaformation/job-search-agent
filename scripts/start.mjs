@@ -3,22 +3,47 @@
  * `npm run start` — prepare storage + migrations, then supervise the
  * production Next.js server and the worker. Requires `npm run build` first.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { flushStdio } from "./flush.mjs";
 import { REPO_ROOT, runSetup } from "./setup-data.mjs";
 import { supervise } from "./supervise.mjs";
+
+function loadEnvFile(filePath) {
+  if (!existsSync(filePath)) return;
+  const content = readFileSync(filePath, "utf8");
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const val = trimmed.slice(eqIdx + 1).trim();
+    if (!process.env[key]) {
+      process.env[key] = val;
+    }
+  }
+}
+
+loadEnvFile(join(REPO_ROOT, ".env.local"));
 
 try {
   if (!existsSync(join(REPO_ROOT, ".next", "BUILD_ID"))) {
     throw new Error("production build not found; run `npm run build` first");
   }
   const config = await runSetup(process.env);
+  const defaultTailorArgv = JSON.stringify([
+    process.execPath,
+    join(REPO_ROOT, "scripts/tailor-provider.mjs"),
+  ]);
   const childEnv = {
     APP_DATA_ROOT: config.root,
     DATABASE_PATH: config.databasePath,
     PORT: String(config.port),
     HOST: config.host,
+    TAILOR_PROVIDER_ARGV: process.env.TAILOR_PROVIDER_ARGV || defaultTailorArgv,
+    ...(process.env.OPENROUTER_API_KEY ? { OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY } : {}),
+    ...(process.env.OPENROUTER_MODEL ? { OPENROUTER_MODEL: process.env.OPENROUTER_MODEL } : {}),
   };
   const { code } = await supervise([
     {

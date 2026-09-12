@@ -850,4 +850,52 @@ describe("getResumeReviewView", () => {
     const newView = getResumeReviewView(t.handle, v2);
     expect(newView?.actions.reason).toMatch(/REVISION_REQUESTED/);
   });
+
+  it("audits top keywords with placements against the stored draft", () => {
+    const { t, artifactsDir } = setup();
+    const base = JSON.parse(CONTENT_JSON) as Record<string, unknown>;
+    const seed = seedReviewable(t, artifactsDir, {
+      contentJson: JSON.stringify({
+        ...base,
+        draft: {
+          job_id: "job-x",
+          target_role: "Backend Engineer",
+          target_company: "Acme",
+          claims: [
+            { section: "summary", text: "Backend engineer with deep TypeScript API experience." },
+            { section: "experience", text: "Led the API migration to TypeScript." },
+            { section: "education", text: "BSc in Computer Science, State University" },
+          ],
+        },
+      }),
+    });
+    const view = getResumeReviewView(t.handle, seed.versionId);
+    // Required-first across requirements + gaps: matched, gap, then preferred.
+    expect(view?.topKeywords.map((entry) => entry.requirementId)).toEqual([
+      "req_api",
+      "req_k8s",
+      "req_cache",
+    ]);
+    expect(view?.topKeywords[0]).toMatchObject({
+      keyword: "TypeScript API experience",
+      evidenced: true,
+      evidenceFactIds: ["f1"],
+      placements: ["summary", "experience"],
+    });
+    // The gap keyword is reported honestly and woven nowhere.
+    expect(view?.topKeywords[1]).toMatchObject({
+      keyword: "Kubernetes deployment",
+      evidenced: false,
+      evidenceFactIds: [],
+      placements: [],
+    });
+  });
+
+  it("returns no keywords when the analysis is corrupt", () => {
+    const { t, artifactsDir } = setup();
+    const seed = seedReviewable(t, artifactsDir, { requirementsJson: "{not json" });
+    const view = getResumeReviewView(t.handle, seed.versionId);
+    expect(view?.analysis).toBeNull();
+    expect(view?.topKeywords).toEqual([]);
+  });
 });

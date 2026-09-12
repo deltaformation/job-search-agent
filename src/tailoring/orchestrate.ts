@@ -31,7 +31,12 @@ import {
 } from "./contract";
 import { buildTailoredDraft, type StructuredDraft } from "./draft";
 import { sha256HexUtf8 } from "./hash";
-import { evidenceQualifiedSkills, planKeywords } from "./keywords";
+import {
+  evidenceQualifiedSkills,
+  planKeywords,
+  planSkillRows,
+  selectTopKeywords,
+} from "./keywords";
 import type { CandidateProfileInput } from "./schemas";
 import { checkGenerationInputs, type CanonicalRequirement } from "./staleness";
 import { validateDraft, validateSubmission } from "./validator";
@@ -267,6 +272,7 @@ export async function orchestrateTailoring(
 
   let draft: StructuredDraft;
   let rankedFactIds: string[];
+  let citedFactIds: string[];
   let summaryStrategy: string;
   try {
     const built = buildTailoredDraft({
@@ -279,6 +285,7 @@ export async function orchestrateTailoring(
     });
     draft = built.draft;
     rankedFactIds = built.rankedFactIds;
+    citedFactIds = built.citedFactIds;
     summaryStrategy = built.summaryStrategy;
   } catch (error: unknown) {
     return fail(
@@ -297,7 +304,7 @@ export async function orchestrateTailoring(
     );
   }
 
-  const skillTerms = evidenceQualifiedSkills({ profile: inputs.profile, citedFactIds: rankedFactIds });
+  const skillTerms = evidenceQualifiedSkills({ profile: inputs.profile, citedFactIds });
   const keywordPlan = planKeywords({
     profile: inputs.profile,
     requirements: canonical,
@@ -305,10 +312,16 @@ export async function orchestrateTailoring(
     skillTerms: skillTerms.skills,
   });
 
+  const topKeywordQuotes = selectTopKeywords(canonical).map((entry) => entry.keyword);
   const model = buildViewModel({
     profile: inputs.profile,
     draft,
     maxDetailedRoles: RESUME_CONFIG.maxDetailedRoles,
+    skillRows: planSkillRows({
+      profile: inputs.profile,
+      requirements: canonical,
+      priorityQuotes: topKeywordQuotes,
+    }),
   });
   const plainText = renderPlainText(model);
   const contentHash = sha256HexUtf8(plainText.trim());

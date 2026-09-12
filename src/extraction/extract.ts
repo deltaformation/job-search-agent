@@ -4,7 +4,9 @@ import { extractGeneric } from "./generic";
 import { extractFromJsonLd } from "./jsonld";
 import {
   classifyArrangement,
+  findSalaryLine,
   generateContentHash,
+  parseSalaryLine,
 } from "./normalize";
 import {
   GAP_FIELDS,
@@ -23,6 +25,10 @@ import {
  * outright. Fields never merge across strategies, so provenance stays
  * exact. The JSON-LD telecommute signal is the one cross-strategy read:
  * arrangement classification always honors it.
+ *
+ * The salary backfill below is not a merge: when the winner left salary
+ * empty, the winner's own description text is scanned for a salary line
+ * the winner's parser missed (provenance `fallback:description-salary-line`).
  *
  * Confidence is deterministic: a per-strategy base plus coverage bonus,
  * capped below 1 because heuristics are never certain.
@@ -113,6 +119,30 @@ export function runExtraction(input: ExtractionInput): ExtractionOutcome {
   if (winner.fields.applyUrl === undefined) {
     provenance.applyUrl = "fallback:final-url";
   }
+  // Step-1 salary fallback: the winner's structured parsers (e.g.
+  // JSON-LD baseSalary) miss salary lines buried in prose. Scan the
+  // winner's own description text before reporting a salary gap. Hourly
+  // and unrecognized lines keep verbatim text with null minors — the
+  // parser never annualizes or invents amounts.
+  let salaryText = winner.fields.salaryText ?? null;
+  let salaryCurrency = winner.fields.salaryCurrency ?? null;
+  let salaryMinMinor = winner.fields.salaryMinMinor ?? null;
+  let salaryMaxMinor = winner.fields.salaryMaxMinor ?? null;
+  const descriptionText = winner.fields.descriptionText ?? null;
+  if (salaryText === null && descriptionText !== null) {
+    const line = findSalaryLine(descriptionText);
+    const parsed = line === null ? null : parseSalaryLine(line);
+    if (parsed !== null) {
+      salaryText = parsed.text;
+      salaryCurrency = parsed.currency;
+      salaryMinMinor = parsed.minMinor;
+      salaryMaxMinor = parsed.maxMinor;
+      provenance.salaryText = "fallback:description-salary-line";
+      provenance.salaryCurrency = "fallback:description-salary-line";
+      provenance.salaryMinMinor = "fallback:description-salary-line";
+      provenance.salaryMaxMinor = "fallback:description-salary-line";
+    }
+  }
   const fields: NormalizedJobFields = {
     title: winner.fields.title ?? null,
     company: winner.fields.company ?? null,
@@ -121,11 +151,11 @@ export function runExtraction(input: ExtractionInput): ExtractionOutcome {
       winner.fields.location ?? null,
       jsonLd.telecommute,
     ),
-    salaryText: winner.fields.salaryText ?? null,
-    salaryCurrency: winner.fields.salaryCurrency ?? null,
-    salaryMinMinor: winner.fields.salaryMinMinor ?? null,
-    salaryMaxMinor: winner.fields.salaryMaxMinor ?? null,
-    descriptionText: winner.fields.descriptionText ?? null,
+    salaryText,
+    salaryCurrency,
+    salaryMinMinor,
+    salaryMaxMinor,
+    descriptionText,
     postedAt: winner.fields.postedAt ?? null,
     applyUrl,
   };

@@ -38,7 +38,7 @@ describe("tailoring orchestration", () => {
     const value = result.value;
     expect(value.requirements).toHaveLength(5);
     expect(value.gaps.map((gap) => gap.requirement_id).sort()).toEqual(["req_cobol", "req_k8s"]);
-    expect(value.draft.claims).toHaveLength(5);
+    expect(value.draft.claims).toHaveLength(6);
     expect(value.contentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(value.markdown.subarray(0, 2).toString()).toBe("# ");
     expect(value.docx.subarray(0, 2).toString("latin1")).toBe("PK");
@@ -48,11 +48,13 @@ describe("tailoring orchestration", () => {
     expect(value.content.audit.requirementsTotal).toBe(5);
     expect(value.content.audit.supportedCount).toBe(3);
     expect(value.content.audit.gapCount).toBe(2);
-    expect(value.content.audit.validatedClaims).toBe(5);
-    expect(value.content.audit.factsReferenced.sort()).toEqual(["f_api", "f_auth", "f_scale"]);
+    expect(value.content.audit.validatedClaims).toBe(6);
+    expect(value.content.audit.factsReferenced.sort()).toEqual(["f_api", "f_auth", "f_scale", "f_team"]);
     expect(value.content.audit.providerId).toBe("test-provider");
     expect(value.content.changeSummary.summaryChanged).toBe(true);
     expect(provider.receivedInputs).toHaveLength(1);
+    // Skills keep their profile category with JD-matched terms first.
+    expect(value.markdown.toString()).toContain("**technical:** TypeScript, SAML, COBOL");
     // Gaps never leak into claims or keywords.
     const claimTexts = value.draft.claims.map((claim) => String(claim["text"])).join("\n");
     expect(claimTexts).not.toContain("COBOL");

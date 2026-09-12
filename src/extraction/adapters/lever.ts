@@ -30,6 +30,14 @@ export const leverAdapter: ExtractionAdapter = {
       fields.title = title;
       provenance.title = "lever:.posting-headline h2";
     }
+    const logoAlt = root.querySelector(".main-header-logo img")?.getAttribute("alt");
+    if (logoAlt) {
+      const company = cleanText(logoAlt.replace(/\s+logo$/i, ""), 200);
+      if (company !== null) {
+        fields.company = company;
+        provenance.company = "lever:.main-header-logo img[alt]";
+      }
+    }
     const location = textOf(root, ".posting-categories .location");
     if (location !== null) {
       fields.location = location;
@@ -38,10 +46,23 @@ export const leverAdapter: ExtractionAdapter = {
     const content =
       root.querySelector(".posting-content .content") ??
       root.querySelector(".posting-content");
-    const description = cleanText(content?.text ?? null);
+    let description = cleanText(content?.text ?? null);
+    let descriptionProvenance = "lever:.posting-content";
+
+    if (description === null) {
+      // Modern Lever posting pages use data-qa sections
+      const sections = root.querySelectorAll(
+        '[data-qa="job-description"], [data-qa="posting-requirements"], [data-qa="closing-description"]',
+      );
+      if (sections.length > 0) {
+        description = cleanText(sections.map((s) => s.text).join("\n\n"));
+        descriptionProvenance = "lever:data-qa-sections";
+      }
+    }
+
     if (description !== null) {
       fields.descriptionText = description;
-      provenance.descriptionText = "lever:.posting-content";
+      provenance.descriptionText = descriptionProvenance;
       const salaryLine = findSalaryLine(description);
       if (salaryLine !== null) {
         const parsed = parseSalaryLine(salaryLine);

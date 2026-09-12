@@ -180,6 +180,10 @@ const ViewModelEnvelope = z.object({
   profile: z.unknown(),
   draft: z.unknown(),
   maxDetailedRoles: z.number().int().optional(),
+  // Upstream-selected skill rows (e.g. categorized JD-ordered rows from
+  // the tailoring pipeline). Absent by default, in which case the legacy
+  // single-row evidence-qualified computation below applies unchanged.
+  skillRows: z.array(SkillRowSchema).optional(),
 });
 
 /** Port of `build_view_model`. */
@@ -187,6 +191,7 @@ export function buildViewModel(input: {
   profile: unknown;
   draft: unknown;
   maxDetailedRoles?: number;
+  skillRows?: Array<{ label: string; terms: string[] }>;
 }): ResumeViewModel {
   const envelope = ViewModelEnvelope.parse(input);
   const maxDetailedRoles = envelope.maxDetailedRoles ?? DEFAULT_MAX_DETAILED_ROLES;
@@ -233,18 +238,23 @@ export function buildViewModel(input: {
     .map(jobEntry)
     .filter((job) => job.bullets.length > 0);
 
-  const citedFactIds: string[] = [];
-  for (const claim of claims) {
-    const ids = claim["fact_ids"];
-    const list = (Array.isArray(ids) ? ids : []) as unknown[];
-    for (const fid of list) {
-      if (typeof fid === "string") {
-        citedFactIds.push(fid);
+  let skillRows: Array<{ label: string; terms: string[] }>;
+  if (envelope.skillRows !== undefined) {
+    skillRows = envelope.skillRows;
+  } else {
+    const citedFactIds: string[] = [];
+    for (const claim of claims) {
+      const ids = claim["fact_ids"];
+      const list = (Array.isArray(ids) ? ids : []) as unknown[];
+      for (const fid of list) {
+        if (typeof fid === "string") {
+          citedFactIds.push(fid);
+        }
       }
     }
+    const qualified = evidenceQualifiedSkills({ profile, citedFactIds }).skills;
+    skillRows = qualified.length > 0 ? [{ label: "Core Competencies", terms: qualified }] : [];
   }
-  const qualified = evidenceQualifiedSkills({ profile, citedFactIds }).skills;
-  const skillRows = qualified.length > 0 ? [{ label: "Core Competencies", terms: qualified }] : [];
 
   const educationRaw = profile["education"];
   const educationRows: Array<{ school: string; detail: string; dates: string }> = [];

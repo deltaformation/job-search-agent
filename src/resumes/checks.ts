@@ -33,11 +33,11 @@ export function htmlBodyFragments(html: string): string[] {
     return [];
   }
   const fragments: string[] = [];
-  const visit = (node: { childNodes?: unknown[]; rawText?: string; tagName?: string }): void => {
+  const visit = (node: { childNodes?: unknown[]; text?: string; rawText?: string; tagName?: string }): void => {
     for (const child of node.childNodes ?? []) {
-      const element = child as { rawText?: string; tagName?: string; childNodes?: unknown[] };
+      const element = child as { text?: string; rawText?: string; tagName?: string; childNodes?: unknown[] };
       if (element.tagName === undefined) {
-        const text = (element.rawText ?? "").trim();
+        const text = (element.text ?? element.rawText ?? "").trim();
         if (text !== "") {
           fragments.push(text);
         }

@@ -261,44 +261,73 @@ human-attributed transition to `TAILORED`.
 
 ## R5 work orders
 
-### R5-A — PostgreSQL read-only importer
+### R5-A — Settings and Data Management UI
 
-**Owns:** isolated import tool and mapping tests.
+**Owns:** `components/settings/SettingsModal.tsx`, `components/AppHeader.tsx`, `/app/api/backup/**`, `/app/api/restore/**`, `/app/api/settings/**`, `/app/api/jobs/reset/**`, and data management tests.
 
-**Deliver:** dry-run/commit modes into a new SQLite file, stable ID mapping,
-explicit legacy status mapping, artifact digest verification, ambiguity report,
-and JSON manifest.
+**Deliver:**
+1. **Settings Modal in UI**: Accessible via a persistent `Settings (⚙️)` button in `AppHeader.tsx`.
+2. **One-Click Backup & Export**:
+   - `GET /api/backup`: Runs `PRAGMA wal_checkpoint(TRUNCATE)` on SQLite to flush uncommitted frames into a single solid `.sqlite` file.
+   - Archives `data/rebuild/job-tracker.sqlite`, `data/rebuild/artifacts/`, and `data/candidate/` into a timestamped `.tar.gz` (e.g. `job-tracker-backup-YYYY-MM-DD.tar.gz`).
+   - Strictly excludes `.env.local` and secret files.
+   - Streams directly to the browser as a download attachment.
+3. **Safe Restore from Backup**:
+   - `POST /api/restore`: Receives an uploaded `.tar.gz` archive.
+   - Automatically creates an automated pre-restore rollback backup before touching existing data.
+   - Verifies SQLite schema integrity and unpacks database and artifacts atomically.
+   - Resets the background worker's queue cache without requiring process restart.
+4. **Safe Board Reset ("Clear All Jobs")**:
+   - `POST /api/jobs/reset`: Truncates `jobs`, `job_sources`, `job_extractions`, `resume_versions`, and `work_items` while preserving candidate profile tables and schema.
+   - UI requires an explicit confirmation modal (typing "RESET" or clicking confirm) to protect against accidental clicks.
+5. **AI & OpenRouter Diagnostics**:
+   - Displays active primary model (`google/gemma-4-26b-a4b-it:free`) and fallback model (`nvidia/nemotron-3.5-lightning:free`).
+   - Validates that `OPENROUTER_API_KEY` is loaded from `.env.local` without displaying the raw secret key.
+   - `POST /api/settings/ai-test`: Pings OpenRouter with a lightweight test prompt and returns latency and status.
+6. **Candidate Profile Quick-View**:
+   - Displays active candidate profile (Mouad Atfi, 17 approved facts, 38 verified skills).
+   - "Re-sync Master Resume" button calling `candidate:import` logic to reload `data/candidate/master-resume.json`.
+7. **Storage Stats**: Displays database byte size, count of tracked jobs, and artifact storage usage.
 
-**Do not:** mutate PostgreSQL, overwrite an existing SQLite database, or treat a
-legacy hash/signature as human consent without the associated review evidence.
+**Do not:** bundle `.env.local` into backup archives; overwrite an existing database on restore without a pre-restore backup; run raw destructive shell commands.
 
-### R5-B — Backup and restore
+### R5-B — Final Legacy Removal and Clean Cutover
 
-**Owns:** backup/restore commands, manifest, integrity tests, and user docs.
+**Depends on:** R4-G and R5-A verified.
 
-**Deliver:** consistent SQLite + evidence + artifact snapshot and verified
-restore. Destructive restore requires explicit confirmation and pre-restore
-backup.
+**Owns:** Clean deletion of retired Python, PostgreSQL, and Docker files, documentation cutover, and dead-reference verification.
 
-### R5-C — End-to-end acceptance and visual QA
+**Deliver:**
+1. **Complete Removal of Python Runtime & Services**:
+   - Delete `services/` (all 10 legacy Python packages: applications, briefing, discovery, documents, intelligence, mcp, memory, ui).
+   - Delete `.venv/`, `.pytest_cache/`, `pyproject.toml`, `pytest.ini`, `requirements.txt`.
+   - Delete all 18 legacy Python scripts in `scripts/*.py` (`check_environment.py`, `init_db.py`, `load_candidate_profile.py`, `migrate.py`, `run_discovery.py`, etc.).
+   - Delete all 25 legacy Python test files in `tests/*.py` and `tests/conftest.py`.
+2. **Complete Removal of PostgreSQL & Container Files**:
+   - Delete `docker-compose.yml`.
+   - Delete `db/migrations/` (16 PostgreSQL SQL migrations; Node migrations are in `drizzle/`) and `db/seeds/`.
+3. **Toolchain & Deprecation Fixes**:
+   - Update `scripts/ts-register.mjs` to eliminate Node v26 module registration deprecation warnings.
+4. **Documentation Cutover**:
+   - Rewrite root `README.md` to be 100% focused on the single-command local runtime (`npm run dev`) with zero mentions of Python, PostgreSQL, Docker, or Nimbalyst.
+   - Update `docs/product-rebuild/` status to reflect full MVP completion.
 
-**Owns:** Playwright product tests, realistic fixtures, document visual/text QA,
-restart/crash scenarios, and accessibility checks.
+**Do not:** use shell `rm` (Rule `user_global` Always Deny: `rm`); use Node `fs.rmSync` or `git rm`; delete `data/candidate/master-resume.json` or `data/rebuild/`.
 
-**Deliver:** evidence for all 12 MVP acceptance steps in the rebuild README.
-Keep external-site tests opt-in and reason-code restrictions honestly.
+### R5-C — User-Led Manual Acceptance Walkthrough
 
-### R5-D — Final legacy removal and documentation cutover
+**Owns:** User acceptance checklist for end-to-end local operation.
 
-**Depends on:** R5-A/B/C accepted.
+**Deliver:** A concise 1-page manual verification checklist for the user:
+1. Clip or paste a job URL $\rightarrow$ verifies scrape and extraction.
+2. Verify Kanban card shows prominent Salary Min/Max badge and extracted company/title.
+3. Open card workspace $\rightarrow$ check Compensation Highlights and Top 5 ATS Keywords.
+4. Verify AI tailoring runs automatically and badges card as `Resumes (1) · Awaiting Review`.
+5. Review resume $\rightarrow$ verify exact phrase mirroring, hard skills focus, and natural placement.
+6. Click "Approve Resume" $\rightarrow$ verifies job transitions from `NEW` to `TAILORED`.
+7. Click "Apply & Log" $\rightarrow$ records manual application timestamp.
+8. Open Settings $\rightarrow$ download backup $\rightarrow$ verify `.tar.gz` archive is created.
 
-**Owns:** retired Python/PostgreSQL/MCP/Starlette/bridge/application-copilot code,
-dependencies, operational docs, root README, and final dead-reference checks.
-
-**Deliver:** Node/SQLite-only active runtime and concise setup/operation docs.
-
-**Do not:** delete current candidate data or generated artifacts; do not remove
-the temporary parity oracle until R4 parity acceptance is recorded.
 
 ## Parallelism guide
 

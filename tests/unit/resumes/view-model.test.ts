@@ -88,6 +88,21 @@ describe("view-model structure", () => {
     expect(model.earlier_career.map((job) => job.company)).toEqual(["Old Co"]);
   });
 
+  it("uses upstream skill rows when provided, bypassing the legacy collapse", () => {
+    const model = buildViewModel({
+      profile: { full_name: "S" },
+      draft: { claims: [] },
+      skillRows: [
+        { label: "Cat A", terms: ["X", "Y"] },
+        { label: "Cat B", terms: ["Z"] },
+      ],
+    });
+    expect(model.skill_rows).toEqual([
+      { label: "Cat A", terms: ["X", "Y"] },
+      { label: "Cat B", terms: ["Z"] },
+    ]);
+  });
+
   it("renders malformed profile/draft input as an empty model, never throwing", () => {
     const model = buildViewModel({ profile: null, draft: "not-an-object" });
     expect(model.header.full_name).toBe("Candidate");

@@ -34,6 +34,7 @@ export const jobs = sqliteTable(
     salaryCurrency: text("salary_currency"),
     salaryMinMinor: integer("salary_min_minor"),
     salaryMaxMinor: integer("salary_max_minor"),
+    compensationHighlightsJson: text("compensation_highlights_json"),
     descriptionText: text("description_text"),
     postedAt: text("posted_at"),
     scrapeState: text("scrape_state").notNull().default("QUEUED"),

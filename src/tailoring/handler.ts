@@ -3,7 +3,12 @@ import { CandidateSnapshotV1 } from "../domain/candidate";
 import type { DatabaseHandle } from "../db/client";
 import { parseVersionedPayload } from "../domain/envelopes";
 import { ReasonCode } from "../domain/enums";
-import { getCandidateSnapshotById, getJdSnapshotById, getTailoringJob } from "../db/tailoring";
+import {
+  getCandidateSnapshotById,
+  getJdSnapshotById,
+  getJobSalaryState,
+  getTailoringJob,
+} from "../db/tailoring";
 import { utcNow } from "../db/utils";
 import type { HandlerOutcome, WorkHandler, WorkHandlerContext } from "../queue/dispatch";
 import { loadDocxTemplateBytes } from "../resumes/docx";
@@ -28,6 +33,11 @@ import {
 } from "./persist";
 import { sha256HexUtf8 } from "./hash";
 import { publishArtifacts } from "./publish";
+import {
+  backfillJobSalary,
+  runSalaryFallback,
+  type SalaryFallbackConfig,
+} from "./salaryFallback";
 
 const log = createLogger("tailor-handler");
 
@@ -43,6 +53,12 @@ export interface TailorHandlerDeps {
   artifactsDir: string;
   /** Null when no provider is configured: runs report BLOCKED. */
   provider: TailoringProvider | null;
+  /**
+   * R4-G salary sidecar. When set, runs missing salary text but existing
+   * extraction text trigger one best-effort AI backfill before the fenced
+   * run begins. Unset skips the step entirely (existing tests, offline use).
+   */
+  salaryFallback?: SalaryFallbackConfig;
   browser?: BrowserSupplier;
   /** Test seam; defaults to Chromium rendering through `browser`. */
   renderPdf?: (html: string) => Promise<{ bytes: Buffer }>;
@@ -87,6 +103,58 @@ function failJob(
     now,
   });
   return { result: "FAILED", errorCode: reason, errorDetail: detail };
+}
+
+/**
+ * R4-G Step-2 pre-step. Best-effort and outcome-neutral: every guard
+ * miss, sidecar failure, and write skip returns quietly so salary can
+ * never fail (or delay fencing for) the tailoring run it precedes.
+ */
+async function backfillMissingSalary(
+  handle: DatabaseHandle,
+  jobId: string,
+  extractionId: string,
+  config: SalaryFallbackConfig,
+): Promise<void> {
+  let state;
+  try {
+    state = getJobSalaryState(handle, jobId);
+  } catch {
+    return;
+  }
+  if (state === null) {
+    return;
+  }
+  if (state.activeExtractionId !== extractionId) {
+    return;
+  }
+  if (state.salaryText !== null && state.salaryText.trim() !== "") {
+    return;
+  }
+  if (state.descriptionText === null || state.descriptionText.trim() === "") {
+    return;
+  }
+  const facts = await runSalaryFallback({
+    config,
+    request: {
+      jobTitle: state.title,
+      company: state.company,
+      location: state.location,
+      jdText: state.descriptionText,
+    },
+    onDiagnostic: (message) => log.warn("salary fallback skipped run input", { jobId, message }),
+  });
+  if (facts === null) {
+    return;
+  }
+  try {
+    const outcome = backfillJobSalary(handle, { jobId, extractionId, facts });
+    if (outcome === "written") {
+      log.info("salary fallback backfilled job", { jobId, model: facts.model });
+    }
+  } catch {
+    // Best-effort: a write fault must not fail the tailoring run.
+  }
 }
 
 export function createTailorHandler(deps: TailorHandlerDeps): WorkHandler {
@@ -139,6 +207,21 @@ export function createTailorHandler(deps: TailorHandlerDeps): WorkHandler {
 
     if (!context.heartbeat()) {
       return { result: "FAILED", errorCode: "LEASE_EXPIRED", errorDetail: "lease lost before run" };
+    }
+    if (deps.salaryFallback !== undefined) {
+      await backfillMissingSalary(
+        context.handle,
+        payload.jobId,
+        payload.extractionId,
+        deps.salaryFallback,
+      );
+      if (!context.heartbeat()) {
+        return {
+          result: "FAILED",
+          errorCode: "LEASE_EXPIRED",
+          errorDetail: "lease lost during salary fallback",
+        };
+      }
     }
     const begun = beginTailorRun(context.handle, {
       jobId: payload.jobId,

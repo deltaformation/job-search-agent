@@ -31,6 +31,48 @@ export const DEFAULT_PROVIDER_TIMEOUT_MS = 120_000;
 export const DEFAULT_PROVIDER_MAX_OUTPUT_BYTES = 262_144;
 const KILL_GRACE_MS = 5_000;
 
+/**
+ * Classified provider exit statuses (see `scripts/tailor-provider.mjs`).
+ * stderr stays discarded by design, so the exit status is the only
+ * failure signal the adapter trusts — and every code maps onto the
+ * existing reason enum, never a new one.
+ */
+export const PROVIDER_EXIT_AUTH = 10;
+export const PROVIDER_EXIT_RATE_LIMIT = 11;
+export const PROVIDER_EXIT_TIMEOUT = 12;
+export const PROVIDER_EXIT_BAD_RESPONSE = 13;
+
+function classifyProviderExit(code: number, stderrBytes: number): ProviderError {
+  if (code === PROVIDER_EXIT_AUTH) {
+    return new ProviderError(
+      "PROVIDER_UNAVAILABLE",
+      "OpenRouter authentication failed (HTTP 401/402): check OPENROUTER_API_KEY and account credits",
+    );
+  }
+  if (code === PROVIDER_EXIT_RATE_LIMIT) {
+    return new ProviderError(
+      "PROVIDER_UNAVAILABLE",
+      "OpenRouter rate limit reached (HTTP 429): wait for quota, then retry",
+    );
+  }
+  if (code === PROVIDER_EXIT_TIMEOUT) {
+    return new ProviderError(
+      "TIMEOUT",
+      "OpenRouter request timed out or the network failed before a proposal arrived",
+    );
+  }
+  if (code === PROVIDER_EXIT_BAD_RESPONSE) {
+    return new ProviderError(
+      "PROVIDER_UNAVAILABLE",
+      "OpenRouter returned an unusable response (empty, unparseable, or too few requirements)",
+    );
+  }
+  return new ProviderError(
+    "PROVIDER_UNAVAILABLE",
+    `provider exited with status ${String(code)} (${stderrBytes} stderr bytes discarded)`,
+  );
+}
+
 export const CommandProviderConfig = z
   .object({
     argv: z.array(z.string().min(1)).min(1).max(64),
@@ -57,6 +99,91 @@ function summarizeIssues(proposal: unknown): string {
     .map((issue) => `${issue.path.join(".") || "(root)"}:${issue.code}`)
     .slice(0, 12)
     .join(", ");
+}
+
+export interface RunCommandJsonInput {
+  argv: string[];
+  stdin: string;
+  timeoutMs: number;
+  maxOutputBytes: number;
+  onDiagnostic?: (message: string) => void;
+}
+
+/**
+ * Generic JSON-over-stdio sidecar invocation for tailoring helpers that
+ * need a subprocess but not the proposal protocol (salary facts). Same
+ * discipline as the provider path — argv array, never a shell string;
+ * wall-clock timeout and stdout cap kill the child; stderr is counted
+ * and discarded. Resolves the trimmed stdout on exit 0, else null after
+ * one diagnostic line. Never throws, never rejects.
+ */
+export function runCommandJson(input: RunCommandJsonInput): Promise<string | null> {
+  const { argv, stdin, timeoutMs, maxOutputBytes, onDiagnostic } = input;
+  const diagnose = onDiagnostic ?? ((): void => {});
+  return new Promise<string | null>((resolve) => {
+    const [executable, ...args] = argv;
+    if (executable === undefined) {
+      diagnose("sidecar argv is empty");
+      resolve(null);
+      return;
+    }
+    let settled = false;
+    const done = (value: string | null): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const child = spawn(executable, args, { stdio: ["pipe", "pipe", "pipe"], shell: false });
+    const chunks: Buffer[] = [];
+    let stdoutBytes = 0;
+    const timer = setTimeout(() => {
+      diagnose(`sidecar exceeded ${timeoutMs}ms`);
+      child.kill("SIGTERM");
+      done(null);
+    }, timeoutMs);
+    timer.unref();
+    child.on("error", (error: Error) => {
+      diagnose(`sidecar spawn failed: ${error.message}`);
+      done(null);
+    });
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutBytes += chunk.length;
+      if (stdoutBytes > maxOutputBytes) {
+        diagnose(`sidecar exceeded ${maxOutputBytes} output bytes`);
+        child.kill("SIGTERM");
+        done(null);
+      } else {
+        chunks.push(chunk);
+      }
+    });
+    // Counted and discarded: never persisted, never logged.
+    child.stderr.on("data", () => {});
+    child.on("close", (code) => {
+      if (settled) {
+        return;
+      }
+      if (code !== 0) {
+        diagnose(`sidecar exited with status ${String(code)}`);
+        done(null);
+        return;
+      }
+      const stdout = Buffer.concat(chunks).toString("utf8");
+      if (stdout.trim() === "") {
+        diagnose("sidecar stdout is empty");
+        done(null);
+        return;
+      }
+      done(stdout);
+    });
+    child.stdin.on("error", () => {
+      // Child exited early; the close handler reports the outcome.
+    });
+    child.stdin.write(stdin, "utf8");
+    child.stdin.end();
+  });
 }
 
 export class CommandProvider implements TailoringProvider {
@@ -183,12 +310,7 @@ export class CommandProvider implements TailoringProvider {
         settled = true;
         clearTimeout(timer);
         if (code !== 0) {
-          reject(
-            new ProviderError(
-              "PROVIDER_UNAVAILABLE",
-              `provider exited with status ${String(code)} (${stderrBytes} stderr bytes discarded)`,
-            ),
-          );
+          reject(classifyProviderExit(code ?? 1, stderrBytes));
           return;
         }
         const stdout = Buffer.concat(chunks).toString("utf8");

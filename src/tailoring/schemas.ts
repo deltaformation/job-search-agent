@@ -59,6 +59,9 @@ export const CandidateProfileInput = z.object({
   id: z.string().optional(),
   full_name: z.string().optional().default(""),
   headline: z.string().nullable().optional(),
+  // Human-authored baseline narrative (R4-A payload `summary`). Optional:
+  // profiles without one take the legacy summary path exactly as before.
+  summary: z.string().nullable().optional(),
   email: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   location: z.string().nullable().optional(),

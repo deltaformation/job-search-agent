@@ -127,6 +127,9 @@ cutover work order after parity and import gates pass.
   recovery. Retries append attempts/events instead of erasing history.
 - Use UTC ISO-8601 timestamps; preserve raw salary/date text when normalization
   is uncertain.
+- Never guess database column or table names in ad-hoc commands or scripts. Always
+  inspect the canonical Drizzle definitions in `src/persistence/schema.ts` before
+  querying or manipulating SQLite.
 
 ## Code and test standards
 

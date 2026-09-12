@@ -14,6 +14,7 @@ function snapshot(overrides: Partial<CandidateSnapshotV1> = {}): CandidateSnapsh
       identity: { fullName: "Ada Example" },
       targetTitles: ["Engineer"],
       targetLocations: [],
+      summary: "Seasoned engineer.",
       employment: [
         {
           id: "emp-1",
@@ -54,6 +55,7 @@ describe("snapshot adapter", () => {
     expect(profile.id).toBe(LOCAL_CANDIDATE_ID);
     expect(profile.full_name).toBe("Ada Example");
     expect(profile.headline).toBeNull();
+    expect(profile.summary).toBe("Seasoned engineer.");
     expect(profile.target_titles).toEqual(["Engineer"]);
     expect(profile.work_experience).toEqual([
       {

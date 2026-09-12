@@ -2,14 +2,23 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import {
+  AlertTriangle,
+  Banknote,
+  CheckCircle2,
+  ExternalLink,
+  GripVertical,
+  MapPin,
+  MessageSquare,
+  Sparkles,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import type { BoardCardView } from "@/src/server/board";
+import { formatSalaryBadge } from "./salaryFormat";
 
 /**
- * One Kanban card: a dedicated drag handle plus a details button. Splitting
- * the two keeps pointer dragging, keyboard dragging (focus the handle,
- * Space to lift, arrows to move, Space to drop), and plain activation on
- * separate controls so they never fight. States render as text, never
- * color-only; the same moves also exist as buttons in the detail drawer.
+ * One Kanban card: a dedicated accessible drag handle plus an interactive
+ * details activation button. States render as clear text and badges.
  */
 
 const PRETTY_STATUS: Record<string, string> = {
@@ -36,58 +45,157 @@ interface JobCardProps {
 export default function JobCard({ card, onOpen }: JobCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: card.id });
+
   const headline = card.title ?? "Untitled posting";
-  const where = [card.company, card.location].filter((part) => part !== null && part !== "");
+  const salaryBadge = formatSalaryBadge(card);
+  const hasMeta = card.location || card.arrangement || salaryBadge !== null;
+
   return (
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`flex gap-1 border bg-white p-2 ${isDragging ? "opacity-50" : ""}`}
+      className={`group relative flex rounded-lg border border-border/80 bg-card text-card-foreground shadow-sm transition-[box-shadow,border-color] duration-200 hover:border-primary/40 hover:shadow-md ${
+        isDragging ? "opacity-50 ring-2 ring-primary ring-offset-2 z-50 shadow-lg" : ""
+      }`}
       aria-label={`${headline}, ${PRETTY_STATUS[card.status] ?? card.status}`}
     >
+      {/* Accessible Drag Handle */}
       <button
         type="button"
         {...attributes}
         {...listeners}
         aria-label={`Drag ${headline} to move it`}
         title="Drag to move (keyboard: Space, arrows, Space)"
-        className="cursor-grab px-1 text-lg leading-none"
+        className="flex w-7 cursor-grab items-center justify-center rounded-l-lg border-r border-border/40 bg-muted/20 text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground active:cursor-grabbing focus-visible:bg-muted focus-visible:text-foreground focus-visible:outline-none"
       >
-        <span aria-hidden="true">⠿</span>
+        <GripVertical className="h-4 w-4" aria-hidden="true" />
       </button>
+
+      {/* Main Interactive Details Button */}
       <button
         type="button"
         onClick={() => onOpen(card.id)}
-        className="block flex-1 cursor-pointer text-left"
+        className="flex min-w-0 flex-1 flex-col gap-2 p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-r-lg cursor-pointer"
         aria-label={`Open details for ${headline}`}
       >
-        <span className="block font-semibold">{headline}</span>
-        {where.length > 0 && <span className="block text-sm">{where.join(" · ")}</span>}
-        {(card.arrangement !== null || card.salaryText !== null) && (
-          <span className="block text-sm">
-            {[card.arrangement, card.salaryText]
-              .filter((part) => part !== null && part !== "")
-              .join(" · ")}
+        {/* Top Header: Company + External Link */}
+        <div className="flex items-center justify-between gap-1 w-full">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground truncate pr-5">
+            {card.company ?? "Unknown Company"}
           </span>
-        )}
-        <span className="mt-1 block text-xs">
-          Scrape: {pretty(card.scrapeState)}
-          {card.scrapeReasonCode !== null ? ` (${pretty(card.scrapeReasonCode)})` : ""}
+
+        </div>
+
+        {/* Title */}
+        <span className="font-semibold text-sm leading-snug text-foreground group-hover:text-primary transition-colors line-clamp-2">
+          {headline}
         </span>
-        {card.tailoringState !== "PENDING" && (
-          <span className="block text-xs">Tailoring: {pretty(card.tailoringState)}</span>
+
+        {/* Metadata Badges */}
+        {hasMeta && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            {card.location && (
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <MapPin className="h-3 w-3 shrink-0" />
+                <span className="truncate max-w-[120px]">{card.location}</span>
+              </span>
+            )}
+            {card.arrangement && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal">
+                {card.arrangement}
+              </Badge>
+            )}
+            {salaryBadge !== null && (
+              <Badge variant="secondary" className="text-[11px] px-2 py-0.5 font-semibold gap-1">
+                <Banknote className="h-3 w-3 shrink-0" aria-hidden="true" />
+                <span className="truncate max-w-[180px]">{salaryBadge}</span>
+              </Badge>
+            )}
+          </div>
         )}
-        {card.resume !== null && (
-          <span className="block text-xs">
-            Resume v{card.resume.version}: {pretty(card.resume.reviewState)}
-          </span>
-        )}
-        {card.notesCount > 0 && (
-          <span className="block text-xs">
-            {card.notesCount} {card.notesCount === 1 ? "note" : "notes"}
-          </span>
+
+        {/* Resume & Tailoring Status */}
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 pt-1 border-t border-border/40">
+          {card.tailoringState === "RUNNING" && (
+            <Badge variant="warning" className="gap-1 text-[11px] py-0.5 font-medium">
+              <Sparkles className="h-3 w-3 animate-spin" aria-hidden="true" />
+              <span>Tailoring in progress…</span>
+            </Badge>
+          )}
+          {(card.tailoringState === "FAILED" || card.tailoringState === "BLOCKED") && (
+            <Badge variant="destructive" className="gap-1 text-[11px] py-0.5 font-medium">
+              <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+              <span>Tailoring failed (open to retry)</span>
+            </Badge>
+          )}
+          {card.resume !== null ? (
+            card.resume.reviewState === "AWAITING_REVIEW" ? (
+              <Badge variant="warning" className="gap-1 text-[11px] py-0.5 font-medium">
+                <Sparkles className="h-3 w-3" />
+                <span>Resume v{card.resume.version}: Awaiting review</span>
+              </Badge>
+            ) : card.resume.reviewState === "APPROVED" ? (
+              <Badge variant="success" className="gap-1 text-[11px] py-0.5 font-medium">
+                <CheckCircle2 className="h-3 w-3" />
+                <span>Tailored (v{card.resume.version})</span>
+              </Badge>
+            ) : card.resume.reviewState === "REVISION_REQUESTED" ? (
+              <Badge variant="destructive" className="gap-1 text-[11px] py-0.5 font-medium">
+                <AlertTriangle className="h-3 w-3" />
+                <span>Revision Requested (v{card.resume.version})</span>
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-[11px] py-0.5 font-normal">
+                Resume v{card.resume.version}: {pretty(card.resume.reviewState)}
+              </Badge>
+            )
+          ) : (
+            <span className="text-[11px] text-muted-foreground">
+              Scrape: {pretty(card.scrapeState)}
+              {card.scrapeReasonCode !== null ? ` (${pretty(card.scrapeReasonCode)})` : ""}
+            </span>
+          )}
+
+          {card.tailoringState !== "PENDING" &&
+            card.tailoringState !== "RUNNING" &&
+            card.tailoringState !== "FAILED" &&
+            card.tailoringState !== "BLOCKED" &&
+            card.resume === null && (
+              <Badge variant="outline" className="text-[10px] py-0">
+                Tailoring: {pretty(card.tailoringState)}
+              </Badge>
+            )}
+        </div>
+
+        {/* Footer: Notes Count + Quick Review Prompt */}
+        {(card.notesCount > 0 || card.resume?.reviewState === "AWAITING_REVIEW") && (
+          <div className="flex items-center justify-between pt-1 text-xs text-muted-foreground">
+            {card.notesCount > 0 ? (
+              <span className="inline-flex items-center gap-1 text-[11px]">
+                <MessageSquare className="h-3 w-3" />
+                <span>
+                  {card.notesCount} {card.notesCount === 1 ? "note" : "notes"}
+                </span>
+              </span>
+            ) : (
+              <span />
+            )}
+
+            {card.resume?.reviewState === "AWAITING_REVIEW" && (
+              <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 group-hover:underline">
+                Review Resume →
+              </span>
+            )}
+          </div>
         )}
       </button>
+      {card.sourceUrl && (
+        <a href={card.sourceUrl} target="_blank" rel="noreferrer"
+          aria-label={`Open original job posting for ${headline}`}
+          className="absolute right-2 top-2 rounded p-1 text-muted-foreground hover:bg-muted">
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      )}
     </li>
   );
 }

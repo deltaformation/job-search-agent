@@ -33,6 +33,16 @@ export interface WorkerConfig extends RuntimeConfig {
     maxOutputBytes: number;
     model: string | null;
   } | null;
+  /**
+   * R4-G salary sidecar command. Defaults to the checked-in script (a
+   * no-op without an API key); `SALARY_PROVIDER_ARGV` overrides, and
+   * `SALARY_FALLBACK=off` disables the pre-step entirely.
+   */
+  salaryFallback: {
+    argv: string[];
+    timeoutMs: number;
+    maxOutputBytes: number;
+  } | null;
 }
 
 /**
@@ -138,5 +148,49 @@ export function resolveWorkerConfig(
             ),
             model: env.TAILOR_PROVIDER_MODEL?.trim() || null,
           },
+    salaryFallback: parseSalaryFallback(env, cwd),
+  };
+}
+
+function parseSalaryFallback(
+  env: Record<string, string | undefined>,
+  cwd: string,
+): WorkerConfig["salaryFallback"] {
+  if ((env.SALARY_FALLBACK ?? "").trim().toLowerCase() === "off") {
+    return null;
+  }
+  const raw = env.SALARY_PROVIDER_ARGV;
+  let argv: string[];
+  if (raw === undefined || raw.trim() === "") {
+    argv = [process.execPath, join(cwd, "scripts", "extract-salary-facts.mjs")];
+  } else {
+    let decoded: unknown;
+    try {
+      decoded = JSON.parse(raw) as unknown;
+    } catch {
+      throw new Error("SALARY_PROVIDER_ARGV must be a JSON array of strings");
+    }
+    if (
+      !Array.isArray(decoded) ||
+      decoded.length === 0 ||
+      decoded.some((entry) => typeof entry !== "string" || entry === "")
+    ) {
+      throw new Error("SALARY_PROVIDER_ARGV must be a non-empty JSON array of non-empty strings");
+    }
+    argv = [...decoded];
+  }
+  return {
+    argv,
+    timeoutMs: parseDurationMs(
+      "SALARY_PROVIDER_TIMEOUT_MS",
+      env.SALARY_PROVIDER_TIMEOUT_MS,
+      150_000,
+      300_000,
+    ),
+    maxOutputBytes: parseByteLimit(
+      "SALARY_PROVIDER_MAX_OUTPUT_BYTES",
+      env.SALARY_PROVIDER_MAX_OUTPUT_BYTES,
+      65_536,
+    ),
   };
 }

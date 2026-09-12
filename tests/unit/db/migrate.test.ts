@@ -19,6 +19,7 @@ describe("migration runner", () => {
       "0001_trigger_guards.sql",
       "0002_candidate_snapshot_dedupe.sql",
       "0003_analysis_attempt.sql",
+      "0004_compensation_highlights.sql",
     ]);
     for (const file of files) {
       expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
@@ -32,12 +33,12 @@ describe("migration runner", () => {
         migrationsDir: resolveMigrationsDir(),
       });
       expect(rerun.applied).toEqual([]);
-      expect(rerun.alreadyApplied).toHaveLength(4);
+      expect(rerun.alreadyApplied).toHaveLength(5);
 
       const recorded = t.handle.sqlite
         .prepare("SELECT version, sha256 FROM _schema_migrations ORDER BY version")
         .all() as Array<{ version: string; sha256: string }>;
-      expect(recorded).toHaveLength(4);
+      expect(recorded).toHaveLength(5);
 
       const tables = t.handle.sqlite
         .prepare(
@@ -58,6 +59,11 @@ describe("migration runner", () => {
         .prepare("SELECT name FROM sqlite_master WHERE type = 'index'")
         .all() as Array<{ name: string }>;
       expect(indexes.map((row) => row.name)).toContain("candidate_snapshots_version_hash");
+
+      const jobColumns = t.handle.sqlite
+        .prepare("SELECT name FROM pragma_table_info('jobs')")
+        .all() as Array<{ name: string }>;
+      expect(jobColumns.map((row) => row.name)).toContain("compensation_highlights_json");
     });
   });
 
@@ -70,7 +76,7 @@ describe("migration runner", () => {
       }
       const handle = openDatabase({ path: join(dir, "scratch.sqlite") });
       try {
-        expect(migrate(handle.sqlite, { migrationsDir: dir }).applied).toHaveLength(4);
+        expect(migrate(handle.sqlite, { migrationsDir: dir }).applied).toHaveLength(5);
         writeFileSync(join(dir, "0001_trigger_guards.sql"), "-- tampered\n");
         expect(() => migrate(handle.sqlite, { migrationsDir: dir })).toThrow(
           /drift detected/,

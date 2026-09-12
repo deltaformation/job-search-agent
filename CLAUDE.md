@@ -19,3 +19,7 @@ Inspect the actual repository and tests before trusting any completion claim.
 The target runtime is Node/TypeScript/Next.js/SQLite; the existing
 Python/PostgreSQL system remains a temporary executable oracle and import source
 until parity and cutover gates pass.
+
+Always inspect canonical schema definitions in `src/persistence/schema.ts` before
+running diagnostic queries or scripts. Never guess table names, column names, or
+enum values via trial-and-error CLI commands.

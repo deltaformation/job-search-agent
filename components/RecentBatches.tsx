@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ArrowRight, History, Sparkles } from "lucide-react";
 import type { BatchSummary } from "@/src/server/queries";
 import { apiGet, errorMessage } from "./api";
 
@@ -29,50 +30,102 @@ export default function RecentBatches() {
   }, []);
 
   return (
-    <section aria-labelledby="recent-batches-heading" className="mt-10">
-      <h2 id="recent-batches-heading" className="text-xl font-semibold">
-        Recent batches
-      </h2>
-      {error !== null && (
-        <p role="alert" className="mt-2">
-          Could not load batches: {error}
+    <section
+      aria-labelledby="recent-batches-heading"
+      className="rounded-xl border border-border/70 bg-card p-6 shadow-xs text-card-foreground"
+    >
+      <div className="border-b border-border/60 pb-4">
+        <h2 id="recent-batches-heading" className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
+          <History className="h-5 w-5 text-primary" />
+          <span>Recent batches</span>
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Track previously submitted URL batches, their progress, and scrape results.
         </p>
+      </div>
+
+      {error !== null && (
+        <div
+          role="alert"
+          className="mt-4 rounded-lg border border-destructive/20 bg-destructive/10 p-3.5 text-sm font-semibold text-destructive"
+        >
+          Could not load batches: {error}
+        </div>
       )}
+
       {batches === null && error === null && (
-        <p className="mt-2">Loading batches…</p>
+        <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+          <Sparkles className="h-4 w-4 animate-spin text-primary" />
+          <span>Loading batches…</span>
+        </div>
       )}
+
       {batches !== null && batches.length === 0 && (
-        <p className="mt-2">No batches yet — paste URLs above to start.</p>
+        <div className="mt-6 rounded-lg border border-dashed border-border/80 p-8 text-center">
+          <p className="text-sm text-muted-foreground">
+            No batches yet — paste URLs above to start.
+          </p>
+        </div>
       )}
+
       {batches !== null && batches.length > 0 && (
-        <table className="mt-2 w-full border-collapse border text-left">
-          <thead>
-            <tr>
-              <th scope="col" className="border p-2">Created</th>
-              <th scope="col" className="border p-2">Queued</th>
-              <th scope="col" className="border p-2">Duplicate</th>
-              <th scope="col" className="border p-2">Invalid</th>
-              <th scope="col" className="border p-2">Blocked</th>
-              <th scope="col" className="border p-2">Batch</th>
-            </tr>
-          </thead>
-          <tbody>
-            {batches.map((batch) => (
-              <tr key={batch.id}>
-                <td className="border p-2">{batch.createdAt}</td>
-                <td className="border p-2">{batch.enqueuedCount}</td>
-                <td className="border p-2">{batch.duplicateCount}</td>
-                <td className="border p-2">{batch.invalidCount}</td>
-                <td className="border p-2">{batch.blockedCount}</td>
-                <td className="border p-2">
-                  <Link href={`/intake/batches/${batch.id}`} className="underline">
-                    open
-                  </Link>
-                </td>
+        <div className="mt-5 overflow-hidden rounded-lg border border-border/80">
+          <table className="w-full border-collapse text-left text-sm">
+            <thead className="bg-muted/50 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/80">
+              <tr>
+                <th scope="col" className="p-3">Created</th>
+                <th scope="col" className="p-3 text-center">Queued</th>
+                <th scope="col" className="p-3 text-center">Duplicate</th>
+                <th scope="col" className="p-3 text-center">Invalid</th>
+                <th scope="col" className="p-3 text-center">Blocked</th>
+                <th scope="col" className="p-3 text-right">Batch</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-border/60">
+              {batches.map((batch) => (
+                <tr key={batch.id} className="hover:bg-muted/30 transition-colors">
+                  <td className="p-3 text-xs font-mono text-muted-foreground">
+                    {batch.createdAt}
+                  </td>
+                  <td className="p-3 text-center">
+                    <span className="inline-block rounded px-2 py-0.5 text-xs font-semibold bg-sky-50 text-sky-800 dark:bg-sky-950 dark:text-sky-300">
+                      {batch.enqueuedCount}
+                    </span>
+                  </td>
+                  <td className="p-3 text-center text-xs text-muted-foreground font-medium">
+                    {batch.duplicateCount}
+                  </td>
+                  <td className="p-3 text-center text-xs">
+                    {batch.invalidCount > 0 ? (
+                      <span className="inline-block rounded px-2 py-0.5 font-semibold bg-destructive/10 text-destructive">
+                        {batch.invalidCount}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">0</span>
+                    )}
+                  </td>
+                  <td className="p-3 text-center text-xs">
+                    {batch.blockedCount > 0 ? (
+                      <span className="inline-block rounded px-2 py-0.5 font-semibold bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                        {batch.blockedCount}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">0</span>
+                    )}
+                  </td>
+                  <td className="p-3 text-right">
+                    <Link
+                      href={`/intake/batches/${batch.id}`}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-primary underline underline-offset-4 hover:text-primary/80 transition-colors"
+                    >
+                      open <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );

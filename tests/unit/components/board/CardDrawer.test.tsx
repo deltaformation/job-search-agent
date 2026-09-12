@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JobDetailView } from "../../../../src/server/board";
 import CardDrawer from "../../../../components/board/CardDrawer";
@@ -49,9 +49,12 @@ function detailView(): JobDetailView {
         createdAt: "2026-09-11T10:00:05.000Z",
       },
     ],
+    tailoringAttempt: null,
     artifacts: [
       { id: "art-1", attemptId: "att-1", kind: "HTML", mediaType: "text/html", byteSize: 99, sha256: "a" },
     ],
+    compensationHighlights: [],
+    topKeywords: [],
     extraction: {
       id: "ext-1",
       adapter: "generic",
@@ -117,11 +120,13 @@ describe("CardDrawer", () => {
     expect(screen.getByText("Gamma LLC · Remote")).toBeInTheDocument();
     expect(screen.getByText(/missing/i)).toBeInTheDocument();
     expect(screen.getByText(/postedAt/)).toBeInTheDocument();
-    expect(screen.getByText(/html evidence/i)).toBeInTheDocument();
-    expect(screen.getByText(/NEW → TAILORED/)).toBeInTheDocument();
+
     const originals = screen.getAllByRole("link", { name: /open original/i });
     expect(originals).toHaveLength(2);
     expect(originals[0]).toHaveAttribute("href", "https://example.com/jobs/1");
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Notes & Timeline" }), { button: 0, ctrlKey: false });
+    expect(screen.getByText(/html evidence/i)).toBeInTheDocument();
+    expect(screen.getByText(/NEW → TAILORED/)).toBeInTheDocument();
     // The note body renders as text, never as markup.
     expect(screen.getByText("<b>call back</b>")).toBeInTheDocument();
     expect(container.querySelector("b")).toBeNull();
@@ -171,9 +176,258 @@ describe("CardDrawer", () => {
     await waitFor(() => expect(props.onChanged).toHaveBeenCalled());
     expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/jobs/job-1/move");
 
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Notes & Timeline" }), { button: 0, ctrlKey: false });
     fireEvent.change(screen.getByLabelText("Add a note"), { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: /^add note$/i }));
     await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(4));
     expect(fetchMock.mock.calls[3]?.[0]).toBe("/api/jobs/job-1/notes");
+  });
+});
+
+describe("CardDrawer tailoring status", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function drawerProps() {
+    return {
+      jobId: "job-1",
+      refreshToken: 0,
+      onClose: vi.fn(),
+      onChanged: vi.fn(),
+      onCorrect: vi.fn(),
+      onApplied: vi.fn(),
+      onReject: vi.fn(),
+    };
+  }
+
+  function failedView(): JobDetailView {
+    const base = detailView();
+    return {
+      ...base,
+      job: { ...base.job, tailoringState: "FAILED", tailoringReasonCode: "PROVIDER_UNAVAILABLE" },
+      tailoringAttempt: {
+        result: "FAILED",
+        errorCode: "PROVIDER_UNAVAILABLE",
+        errorDetail: "OpenRouter rate limit reached (HTTP 429): wait for quota, then retry",
+        startedAt: "2026-09-11T12:00:00.000Z",
+        finishedAt: "2026-09-11T12:00:30.000Z",
+      },
+    };
+  }
+
+  function runningView(): JobDetailView {
+    const base = detailView();
+    return {
+      ...base,
+      job: { ...base.job, tailoringState: "RUNNING", tailoringReasonCode: null },
+      tailoringAttempt: null,
+    };
+  }
+
+  function reviewPayload() {
+    return {
+      job: {
+        id: "job-1",
+        status: "NEW",
+        rowVersion: 3,
+        tailoringState: "AWAITING_REVIEW",
+        activeResumeVersionId: "ver-1",
+      },
+      version: {
+        id: "ver-1",
+        jobId: "job-1",
+        version: 1,
+        parentVersionId: null,
+        reviewState: "AWAITING_REVIEW",
+        contentHash: "c".repeat(64),
+        templateId: "standard",
+        templateVersion: "v1",
+        rankerVersion: "ranker-v1",
+        policyVersion: "policy-v1",
+        configVersion: "config-v1",
+        renderSchemaVersion: "render-v1",
+        createdAt: "2026-09-11T12:00:00.000Z",
+      },
+      analysis: null,
+      claims: [],
+      topKeywords: [],
+      content: null,
+      artifacts: [],
+      reviews: [],
+      actions: { canApprove: false, canRequestRevision: false, reason: "test fixture" },
+    };
+  }
+
+  function landedView(): JobDetailView {
+    const base = detailView();
+    return {
+      ...base,
+      job: {
+        ...base.job,
+        tailoringState: "AWAITING_REVIEW",
+        tailoringReasonCode: null,
+        activeResumeVersionId: "ver-1",
+      },
+      resumes: [
+        {
+          id: "ver-1",
+          version: 1,
+          parentVersionId: null,
+          reviewState: "AWAITING_REVIEW",
+          contentHash: "c".repeat(64),
+          createdAt: "2026-09-11T12:00:00.000Z",
+          artifacts: [],
+          reviews: [],
+        },
+      ],
+    };
+  }
+
+  function openResumesTab(): void {
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Tailoring & Resumes" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+  }
+
+  it("shows the failure alert with detail and retries the run", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: { method?: string }) => {
+      if (init?.method === "POST") {
+        return okJson({ workItemId: "work-1", action: "requeued" });
+      }
+      return okJson(fetchMock.mock.calls.filter(([u, i]) => u === "/api/jobs/job-1" && i?.method !== "POST").length <= 1 ? failedView() : runningView());
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const props = drawerProps();
+    render(<CardDrawer {...props} />);
+    expect(await screen.findByText(/tailoring failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/rate limit reached \(HTTP 429\)/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /retry tailoring/i }));
+    await waitFor(() => expect(props.onChanged).toHaveBeenCalled());
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(post?.[0]).toBe("/api/jobs/job-1/tailor/retry");
+    expect(await screen.findByText(/tailoring restarted/i)).toBeInTheDocument();
+  });
+
+  it("surfaces retry failures instead of hanging", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: { method?: string }) => {
+      if (init?.method === "POST") {
+        return { ok: false, status: 400, json: async () => ({ error: "extraction incomplete" }) };
+      }
+      return okJson(failedView());
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CardDrawer {...drawerProps()} />);
+    expect(await screen.findByText(/tailoring failed/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /retry tailoring/i }));
+    expect(await screen.findByText(/extraction incomplete/i)).toBeInTheDocument();
+  });
+
+  it("polls while the run is live and lands the review on its own", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn(async (url: string) => {
+        if (url.startsWith("/api/resumes/")) {
+          return okJson(reviewPayload());
+        }
+        return okJson(fetchMock.mock.calls.filter(([u]) => u === "/api/jobs/job-1").length <= 1 ? runningView() : landedView());
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      render(<CardDrawer {...drawerProps()} />);
+      await vi.waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+      await vi.waitFor(() => {
+        expect(screen.getByText("Staff Engineer")).toBeInTheDocument();
+      });
+      openResumesTab();
+      expect(screen.getByText(/tailoring in progress/i)).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2100);
+      });
+      // The poll landed a version: the review renders without a refresh.
+      expect(screen.getByText(/1 version generated/)).toBeInTheDocument();
+      expect(screen.queryByText(/tailoring in progress/i)).not.toBeInTheDocument();
+      const settledCalls = fetchMock.mock.calls.filter(([u]) => u === "/api/jobs/job-1").length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10000);
+      });
+      // Settled: polling stopped.
+      expect(fetchMock.mock.calls.filter(([u]) => u === "/api/jobs/job-1").length).toBe(settledCalls);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ticks the elapsed clock while RUNNING", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn(async () => okJson(runningView()));
+      vi.stubGlobal("fetch", fetchMock);
+      render(<CardDrawer {...drawerProps()} />);
+      await vi.waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+      await vi.waitFor(() => {
+        expect(screen.getByText("Staff Engineer")).toBeInTheDocument();
+      });
+      openResumesTab();
+      expect(screen.getByText(/0s elapsed/)).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      expect(screen.getByText(/3s elapsed/)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the queued banner while PENDING", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okJson(detailView()));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CardDrawer {...drawerProps()} />);
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    openResumesTab();
+    expect(await screen.findByText(/queued for tailoring/i)).toBeInTheDocument();
+  });
+
+  it("shows formatted salary, highlights, and keyword chips", async () => {
+    const base = detailView();
+    const view: JobDetailView = {
+      ...base,
+      job: {
+        ...base.job,
+        salaryText: "$145,900 - $197,400 CAD per year",
+        salaryCurrency: "CAD",
+        salaryMinMinor: 14590000,
+        salaryMaxMinor: 19740000,
+      },
+      compensationHighlights: ["RRSP matching", "Equity"],
+      topKeywords: [
+        { keyword: "TypeScript API experience", evidenced: true },
+        { keyword: "Kubernetes deployment", evidenced: false },
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(okJson(view));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CardDrawer {...drawerProps()} />);
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    expect(screen.getByText("$145,900 – $197,400 CAD")).toBeInTheDocument();
+    expect(screen.getByText("Compensation highlights")).toBeInTheDocument();
+    expect(screen.getByText("RRSP matching")).toBeInTheDocument();
+    expect(screen.getByText("Top 5 ATS keywords")).toBeInTheDocument();
+    expect(screen.getByText("Evidenced in resume")).toBeInTheDocument();
+    expect(screen.getByText("Gaps — not on resume")).toBeInTheDocument();
+  });
+
+  it("hides highlights and keywords when none are reported", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okJson(detailView()));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CardDrawer {...drawerProps()} />);
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    expect(screen.queryByText("Compensation highlights")).toBeNull();
+    expect(screen.queryByText("Top 5 ATS keywords")).toBeNull();
   });
 });

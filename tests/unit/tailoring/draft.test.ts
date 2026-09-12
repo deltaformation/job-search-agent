@@ -31,17 +31,29 @@ describe("deterministic draft builder", () => {
       "claim_003",
       "claim_004",
       "claim_005",
+      "claim_006",
     ]);
     expect(claims[0]?.["section"]).toBe("summary");
     expect(claims[0]?.["generation_strategy"]).toBe("derived_template");
-    expect(claims.slice(1, 4).map((claim) => claim["section"])).toEqual([
+    expect(claims.slice(1, 5).map((claim) => claim["section"])).toEqual([
+      "experience",
       "experience",
       "experience",
       "experience",
     ]);
     // Profile employment order (emp-1 before emp-2), rank order within.
-    expect(claims.slice(1, 4).map((claim) => claim["entity_id"])).toEqual(["emp-1", "emp-2", "emp-2"]);
-    expect(claims[4]?.["section"]).toBe("education");
+    expect(claims.slice(1, 5).map((claim) => claim["entity_id"])).toEqual([
+      "emp-1",
+      "emp-1",
+      "emp-2",
+      "emp-2",
+    ]);
+    // Ranked facts first within a role, then backfilled baseline facts.
+    expect(claims.slice(1, 3).map((claim) => (claim["fact_ids"] as string[])[0])).toEqual([
+      "f_scale",
+      "f_team",
+    ]);
+    expect(claims[5]?.["section"]).toBe("education");
     expect(built.draft.job_id).toBe("job-1");
     expect(built.draft.target_role).toBe("Backend Engineer");
   });
@@ -50,7 +62,59 @@ describe("deterministic draft builder", () => {
     const report = validateDraft({ profile, draft: built.draft });
     expect(report.report.errors).toEqual([]);
     expect(report.valid).toBe(true);
-    expect(report.report.validated_claims).toBe(5);
+    expect(report.report.validated_claims).toBe(6);
+  });
+
+  it("backfills every role and trims the total budget from the oldest roles", () => {
+    const employments = ["e1", "e2", "e3", "e4", "e5"].map((id, index) => ({
+      id,
+      company: `Company ${id}`,
+      role: "Engineer",
+      start_date: `20${10 + index}-01-15`,
+      end_date: `20${10 + index}-12-15`,
+      is_current: false,
+    }));
+    const verifiedFacts = employments.flatMap((exp, index) =>
+      ["a", "b", "c", "d"].map((suffix) => ({
+        fact_id: `f${index + 1}${suffix}`,
+        work_experience_id: exp.id,
+        category: "experience",
+        text: `Fact ${index + 1}${suffix} at ${exp.company}.`,
+        technologies: ["Go"],
+        metrics: ["1x"],
+        verification_status: "approved",
+      })),
+    );
+    const many = buildTailoredDraft({
+      profile: { ...e2eProfile(), work_experience: employments, verified_facts: verifiedFacts },
+      requirements: [],
+      jobId: "job-trim",
+      jobTitle: "Backend Engineer",
+      jobCompany: "Acme",
+      asOf: "2024-05-01",
+    });
+    const expClaims = many.draft.claims.filter((claim) => claim["section"] === "experience");
+    // Per-role budget (3) over 5 roles yields 15; the global budget (14)
+    // trims one backfilled bullet from the least-recent role.
+    expect(expClaims).toHaveLength(14);
+    const byRole = new Map<string, string[]>();
+    for (const claim of expClaims) {
+      const list = byRole.get(String(claim["entity_id"])) ?? [];
+      list.push(String((claim["fact_ids"] as string[])[0]));
+      byRole.set(String(claim["entity_id"]), list);
+    }
+    expect([...byRole.keys()].sort()).toEqual(["e1", "e2", "e3", "e4", "e5"]);
+    expect(byRole.get("e5")).toHaveLength(3);
+    expect(byRole.get("e1")).toEqual(["f1a", "f1b"]);
+    // Ranked facts are never trimmed.
+    for (const fid of many.rankedFactIds) {
+      expect(many.citedFactIds).toContain(fid);
+    }
+    const report = validateDraft({
+      profile: { ...e2eProfile(), work_experience: employments, verified_facts: verifiedFacts },
+      draft: many.draft,
+    });
+    expect(report.valid).toBe(true);
   });
 });
 

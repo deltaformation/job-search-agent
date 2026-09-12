@@ -1,6 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import {
+  CheckCircle2,
+  FileCheck,
+  FileText,
+  History,
+  RotateCcw,
+  Sparkles,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import type { ResumeReviewView } from "@/src/server/review";
 import { apiGet, errorMessage } from "../api";
 import { postJobMutation } from "./mutate";
@@ -9,17 +21,7 @@ import { postJobMutation } from "./mutate";
  * Side-by-side resume review for one immutable version: proposed changes
  * and claims next to requirements, evidence facts, and explicit gaps,
  * plus artifact preview/download and the human decision buttons.
- *
- * Every rendered string is untrusted provider/page content: React escapes
- * by default and nothing here is injected as markup. Approval is a
- * deliberate two-step gesture (open the confirmation, then confirm);
- * revision requires a written note. Both mutate through the job's
- * compare-and-swap version with one conflict retry.
  */
-
-function shortHash(hash: string): string {
-  return hash.length > 12 ? `${hash.slice(0, 12)}…` : hash;
-}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) {
@@ -35,15 +37,19 @@ function prettyState(value: string): string {
 
 interface ResumeReviewProps {
   versionId: string;
-  /** Increment to force a re-read (e.g. after an outer refresh). */
   refreshToken: number;
-  /** Board-level refresh: approval moves the card between columns. */
   onChanged: () => void;
-  /** Card-detail refresh: version states and history changed. */
   onReviewed: () => void;
+  onSummary?: (summary: string) => void;
 }
 
-export default function ResumeReview({ versionId, refreshToken, onChanged, onReviewed }: ResumeReviewProps) {
+export default function ResumeReview({
+  versionId,
+  refreshToken,
+  onChanged,
+  onReviewed,
+  onSummary,
+}: ResumeReviewProps) {
   const [view, setView] = useState<ResumeReviewView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -55,12 +61,19 @@ export default function ResumeReview({ versionId, refreshToken, onChanged, onRev
 
   const load = useCallback(async (): Promise<void> => {
     try {
-      setView(await apiGet<ResumeReviewView>(`/api/resumes/${versionId}/review`));
+      const result = await apiGet<ResumeReviewView>(`/api/resumes/${versionId}/review`);
+      setView(result);
+      const requirements = result.analysis?.requirements;
+      const gapIds = new Set([
+        ...(result.analysis?.gaps ?? []).map((r) => r.requirementId),
+        ...(requirements ?? []).filter((r) => r.matchStatus === "gap" || r.matchStatus === "unsupported").map((r) => r.requirementId),
+      ]);
+      onSummary?.(requirements ? `${requirements.filter((r) => r.matchStatus === "matched").length} supported · ${requirements.filter((r) => r.matchStatus === "partial").length} partial · ${gapIds.size} gaps` : "Analysis unavailable.");
       setLoadError(null);
     } catch (fetchError: unknown) {
       setLoadError(errorMessage(fetchError));
     }
-  }, [versionId]);
+  }, [versionId, onSummary]);
 
   useEffect(() => {
     // Fetch-on-mount/refresh only; load sets state after a network
@@ -120,16 +133,22 @@ export default function ResumeReview({ versionId, refreshToken, onChanged, onRev
 
   if (loadError !== null) {
     return (
-      <p role="alert" className="mt-1">
-        Could not load the review: {loadError}{" "}
-        <button type="button" onClick={() => void load()} className="underline">
+      <div role="alert" className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm">
+        <p className="font-semibold text-destructive">Could not load the review: {loadError}</p>
+        <Button variant="outline" size="sm" onClick={() => void load()} className="mt-2">
           Retry
-        </button>
-      </p>
+        </Button>
+      </div>
     );
   }
+
   if (view === null) {
-    return <p className="mt-1">Loading review…</p>;
+    return (
+      <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+        <Sparkles className="h-4 w-4 animate-spin text-primary" />
+        <span>Loading review…</span>
+      </div>
+    );
   }
 
   const reviewHeadingId = `review-${view.version.id}-heading`;
@@ -137,271 +156,453 @@ export default function ResumeReview({ versionId, refreshToken, onChanged, onRev
   const reviseNoteId = `review-${view.version.id}-revise-note`;
 
   return (
-    <div aria-labelledby={reviewHeadingId} className="mt-1">
-      <p id={reviewHeadingId} className="font-semibold">
-        Version {view.version.version} · {prettyState(view.version.reviewState)}
-        {view.version.parentVersionId !== null ? " · revises an earlier version" : " · first version"}
-      </p>
-      <p className="mt-1 text-xs">
-        Template {view.version.templateId} {view.version.templateVersion} · ranker{" "}
-        {view.version.rankerVersion} · policy {view.version.policyVersion} · config{" "}
-        {view.version.configVersion} · content {shortHash(view.version.contentHash)}
-      </p>
-
-      {notice !== null && <p className="mt-2 font-semibold">{notice}</p>}
-      {actionError !== null && (
-        <p role="alert" className="mt-2 font-semibold">
-          {actionError}
-        </p>
-      )}
-
-      {view.actions.reason !== null && !view.actions.canApprove && !view.actions.canRequestRevision && (
-        <p className="mt-2">{view.actions.reason}</p>
-      )}
-
-      {view.actions.canApprove && !confirming && (
-        <div className="mt-3">
-          <button
-            type="button"
-            onClick={() => {
-              setActionError(null);
-              setConfirming(true);
-            }}
-            disabled={busy}
-            className="border px-3 py-1 font-semibold disabled:opacity-50"
-          >
-            Approve version {view.version.version}
-          </button>
-        </div>
-      )}
-
-      {view.actions.canApprove && confirming && (
-        <div className="mt-3 border p-3">
-          <p className="font-semibold">Confirm approval of version {view.version.version}</p>
-          <p className="mt-1">
-            This binds content {shortHash(view.version.contentHash)} and the{" "}
-            {view.artifacts.length} stored artifacts, and moves the card to Tailored. The version
-            becomes immutable.
-          </p>
-          <ul className="mt-1">
-            {view.artifacts.map((artifact) => (
-              <li key={artifact.id}>
-                {artifact.kind} · {formatBytes(artifact.byteSize)} · {shortHash(artifact.sha256)}
-              </li>
-            ))}
-          </ul>
-          <label htmlFor={approveNoteId} className="mt-2 block font-semibold">
-            Approval note (optional)
-          </label>
-          <textarea
-            id={approveNoteId}
-            value={approveNote}
-            onChange={(event) => setApproveNote(event.target.value)}
-            rows={2}
-            maxLength={4000}
-            className="mt-1 w-full border p-1"
-          />
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              onClick={() => void onConfirmApprove(view)}
-              disabled={busy}
-              className="border px-3 py-1 font-semibold disabled:opacity-50"
-            >
-              Confirm approval
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setConfirming(false);
-                setApproveNote("");
-              }}
-              disabled={busy}
-              className="border px-3 py-1 disabled:opacity-50"
-            >
-              Cancel
-            </button>
+    <div aria-labelledby={reviewHeadingId} className="space-y-5 pt-2">
+      {/* Version Header Card */}
+      <div className="rounded-lg border border-border/80 bg-muted/30 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <FileCheck className="h-5 w-5 text-primary" />
+            <h3 id={reviewHeadingId} className="text-base font-bold">
+              Version {view.version.version} · {prettyState(view.version.reviewState)}
+            </h3>
+            {view.version.parentVersionId !== null ? (
+              <Badge variant="outline" className="text-xs">
+                revises an earlier version
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="text-xs">
+                first version
+              </Badge>
+            )}
           </div>
         </div>
-      )}
 
-      {view.actions.canRequestRevision && (
-        <div className="mt-3">
-          <label htmlFor={reviseNoteId} className="block font-semibold">
-            Request revision
-          </label>
-          <textarea
-            id={reviseNoteId}
-            value={reviseNote}
-            onChange={(event) => setReviseNote(event.target.value)}
-            rows={2}
-            maxLength={4000}
-            placeholder="What is wrong with this version?"
-            className="mt-1 w-full border p-1"
-          />
-          <button
-            type="button"
-            onClick={() => void onRequestRevision(view)}
-            disabled={busy || reviseNote.trim() === ""}
-            className="mt-1 border px-3 py-1 font-semibold disabled:opacity-50"
-          >
-            Request revision
-          </button>
-        </div>
-      )}
+        {notice !== null && (
+          <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+            {notice}
+          </div>
+        )}
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <section aria-label="Proposed changes and claims">
-          <h4 className="font-semibold">Proposed changes</h4>
-          {view.content?.changeSummary === null || view.content?.changeSummary === undefined ? (
-            <p className="mt-1">Change summary unavailable.</p>
-          ) : (
-            <div className="mt-1">
-              <p>
-                {view.content.changeSummary.addedBullets.length} added ·{" "}
-                {view.content.changeSummary.removedBullets.length} removed · summary{" "}
-                {view.content.changeSummary.summaryChanged ? "changed" : "unchanged"}
-              </p>
-              {view.content.changeSummary.addedBullets.length > 0 && (
-                <ul className="mt-1 list-disc pl-5">
-                  {view.content.changeSummary.addedBullets.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-              )}
-              {view.content.changeSummary.removedBullets.length > 0 && (
-                <div className="mt-1">
-                  <p className="font-semibold">Removed</p>
-                  <ul className="list-disc pl-5">
-                    {view.content.changeSummary.removedBullets.map((line) => (
-                      <li key={line}>{line}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
+        {actionError !== null && (
+          <div role="alert" className="mt-3 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm font-semibold text-destructive">
+            {actionError}
+          </div>
+        )}
 
-          <h4 className="mt-3 font-semibold">Resume claims ({view.claims.length})</h4>
-          {view.claims.length === 0 && <p className="mt-1">No claims recorded.</p>}
-          <ul className="mt-1">
-            {view.claims.map((claim) => (
-              <li key={claim.id} className="mt-1 border-t pt-1">
-                {claim.claimText}
-                {claim.derivationKind !== null && (
-                  <span className="block">Derived by rule: {claim.derivationKind}</span>
-                )}
-                {claim.facts.length > 0 && (
-                  <ul className="list-disc pl-5">
-                    {claim.facts.map((fact) => (
-                      <li key={fact.factId}>
-                        [{fact.factId}] {fact.statement}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
+        {view.actions.reason !== null && !view.actions.canApprove && !view.actions.canRequestRevision && (
+          <p className="mt-2 text-xs text-muted-foreground">{view.actions.reason}</p>
+        )}
 
-        <section aria-label="Requirements, evidence, and gaps">
-          <h4 className="font-semibold">
-            Requirements ({view.analysis?.requirements.length ?? 0})
-          </h4>
-          {view.analysis === null && <p className="mt-1">Analysis unavailable.</p>}
-          {view.analysis !== null && view.analysis.requirements.length === 0 && (
-            <p className="mt-1">No requirements recorded.</p>
-          )}
-          <ul className="mt-1">
-            {(view.analysis?.requirements ?? []).map((requirement) => (
-              <li key={requirement.requirementId} className="mt-1 border-t pt-1">
-                <span className="block">“{requirement.jdQuote}”</span>
-                <span className="block">
-                  {prettyState(requirement.importance)} · {prettyState(requirement.matchStatus)}
-                </span>
-                {requirement.evidenceFactIds.length > 0 && (
-                  <span className="block">Evidence: {requirement.evidenceFactIds.join(", ")}</span>
-                )}
-              </li>
-            ))}
-          </ul>
 
-          <h4 className="mt-3 font-semibold">Gaps — not on the resume ({view.analysis?.gaps.length ?? 0})</h4>
-          <ul className="mt-1">
-            {(view.analysis?.gaps ?? []).map((gap) => (
-              <li key={gap.requirementId} className="mt-1 border-t pt-1">
-                <span className="block">“{gap.jdQuote}”</span>
-                <span className="block">
-                  {prettyState(gap.importance)} · {prettyState(gap.matchStatus)}
-                </span>
-              </li>
-            ))}
-          </ul>
-          {view.content !== null && view.content.omittedUnsupported.length > 0 && (
-            <p className="mt-1">Omitted unsupported terms: {view.content.omittedUnsupported.join(", ")}</p>
-          )}
-        </section>
       </div>
 
-      {view.content?.audit !== null && view.content?.audit !== undefined && (
-        <section aria-label="Generation notes" className="mt-4">
-          <h4 className="font-semibold">Generation notes</h4>
-          <p className="mt-1">
-            {view.content.audit.supportedCount} of {view.content.audit.requirementsTotal} requirements
-            supported · {view.content.audit.gapCount} gaps · {view.content.audit.validatedClaims} of{" "}
-            {view.content.audit.totalClaims} claims validated
-            {view.analysis?.provider !== null && view.analysis?.provider !== undefined
-              ? ` · via ${view.analysis.provider}`
-              : ""}
-          </p>
-          <p className="mt-1">{view.content.audit.rationale}</p>
-          {view.content.audit.questions.length > 0 && (
-            <ul className="mt-1 list-disc pl-5">
-              {view.content.audit.questions.map((question) => (
-                <li key={question}>{question}</li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-
-      <section aria-label="Resume files" className="mt-4">
-        <h4 className="font-semibold">Files ({view.artifacts.length})</h4>
-        {view.artifacts.length === 0 && <p className="mt-1">No files published yet.</p>}
-        <ul className="mt-1">
+      {/* Files & Artifacts */}
+      <div className="rounded-lg border border-border/80 bg-card p-4 space-y-3">
+        <h4 className="text-sm font-semibold flex items-center gap-2">
+          <FileText className="h-4 w-4 text-primary" />
+          <span>Files ({view.artifacts.length})</span>
+        </h4>
+        {view.artifacts.length === 0 && (
+          <p className="text-xs text-muted-foreground">No files published yet.</p>
+        )}
+        <div className="flex flex-wrap gap-2">
           {view.artifacts.map((artifact) => (
-            <li key={artifact.id}>
-              {artifact.kind} ({formatBytes(artifact.byteSize)}) ·{" "}
+            <div
+              key={artifact.id}
+              className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-1.5 text-xs"
+            >
+              <span className="font-semibold uppercase text-[11px]">{artifact.kind}</span>
+              <span className="text-muted-foreground font-mono">({formatBytes(artifact.byteSize)})</span>
+              <span className="text-border">|</span>
               <a
                 href={`/api/resumes/artifacts/${artifact.id}`}
                 target="_blank"
                 rel="noreferrer"
-                className="underline"
+                className="text-primary underline font-medium"
               >
                 Preview
-              </a>{" "}
-              ·{" "}
-              <a href={`/api/resumes/artifacts/${artifact.id}?download=1`} className="underline">
+              </a>
+              <a
+                href={`/api/resumes/artifacts/${artifact.id}?download=1`}
+                className="text-primary underline font-medium"
+              >
                 Download
               </a>
-            </li>
+            </div>
           ))}
-        </ul>
-      </section>
+        </div>
+      </div>
 
+      {/* Side-by-Side: Proposed Changes & Claims vs Requirements & Gaps */}
+      <div className="grid gap-5 xl:grid-cols-2">
+        {/* Left: Proposed Changes & Resume Claims */}
+        <Card className="shadow-xs">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center justify-between">
+              <span>Proposed changes</span>
+              {view.content?.changeSummary && (
+                <span className="text-xs font-normal text-muted-foreground">
+                  +{view.content.changeSummary.addedBullets.length} / -
+                  {view.content.changeSummary.removedBullets.length}
+                </span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm leading-relaxed">
+            {view.content?.changeSummary === null || view.content?.changeSummary === undefined ? (
+              <p className="text-muted-foreground">Change summary unavailable.</p>
+            ) : (
+              <div>
+                <p className="font-medium text-foreground">
+                  {view.content.changeSummary.addedBullets.length} added ·{" "}
+                  {view.content.changeSummary.removedBullets.length} removed · summary{" "}
+                  {view.content.changeSummary.summaryChanged ? "changed" : "unchanged"}
+                </p>
+                {view.content.changeSummary.addedBullets.length > 0 && (
+                  <ul className="mt-2 space-y-1 pl-4 list-disc text-emerald-800 dark:text-emerald-300">
+                    {view.content.changeSummary.addedBullets.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                )}
+                {view.content.changeSummary.removedBullets.length > 0 && (
+                  <div className="mt-2">
+                    <p className="font-semibold text-muted-foreground">Removed</p>
+                    <ul className="mt-1 space-y-1 pl-4 list-disc text-destructive line-through">
+                      {view.content.changeSummary.removedBullets.map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <Separator />
+
+            <div>
+              <h4 className="font-semibold text-sm mb-2">
+                Resume claims ({view.claims.length})
+              </h4>
+              {view.claims.length === 0 && (
+                <p className="text-muted-foreground">No claims recorded.</p>
+              )}
+              <ul className="space-y-2.5">
+                {view.claims.map((claim) => (
+                  <li key={claim.id} className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-1">
+                    <p className="font-medium text-foreground">{claim.claimText}</p>
+                    {claim.derivationKind !== null && (
+                      <span className="inline-block text-[11px] text-muted-foreground">
+                        Derived by rule: {claim.derivationKind}
+                      </span>
+                    )}
+                    {claim.facts.length > 0 && (
+                      <ul className="mt-1 pl-3 border-l-2 border-primary/30 space-y-0.5 text-[11px] text-muted-foreground">
+                        {claim.facts.map((fact) => (
+                          <li key={fact.factId}>
+                            [{fact.factId}] {fact.statement}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Right: Requirements & Explicit Gaps */}
+        <Card className="shadow-xs">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center justify-between">
+              <span>Requirements ({view.analysis?.requirements.length ?? 0})</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm leading-relaxed">
+            {view.analysis === null && <p className="text-muted-foreground">Analysis unavailable.</p>}
+            {view.analysis !== null && view.analysis.requirements.length === 0 && (
+              <p className="text-muted-foreground">No requirements recorded.</p>
+            )}
+
+            <ul className="space-y-2.5">
+              {(view.analysis?.requirements ?? []).map((requirement) => (
+                <li key={requirement.requirementId} className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-1">
+                  <p className="font-medium text-foreground italic">“{requirement.jdQuote}”</p>
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <Badge variant="outline" className="text-[10px]">
+                      {prettyState(requirement.importance)}
+                    </Badge>
+                    <Badge
+                      variant={
+                        requirement.matchStatus === "matched"
+                          ? "success"
+                          : requirement.matchStatus === "partial"
+                          ? "warning"
+                          : "muted"
+                      }
+                      className="text-[10px]"
+                    >
+                      {requirement.matchStatus === "matched" ? "Supported" : prettyState(requirement.matchStatus)}
+                    </Badge>
+                  </div>
+                  {requirement.evidenceFactIds.length > 0 && (
+                    <p className="text-[11px] text-muted-foreground pt-0.5">
+                      Evidence: {requirement.evidenceFactIds.join(", ")}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+
+            <Separator />
+
+            <div>
+              <h4 className="font-semibold text-sm mb-2 text-destructive">
+                Gaps — not on the resume ({view.analysis?.gaps.length ?? 0})
+              </h4>
+              <ul className="space-y-2">
+                {(view.analysis?.gaps ?? []).map((gap) => (
+                  <li key={gap.requirementId} className="rounded-md border border-destructive/20 bg-destructive/5 p-2 space-y-1">
+                    <p className="font-medium text-destructive italic">“{gap.jdQuote}”</p>
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className="text-[10px]">
+                        {prettyState(gap.importance)}
+                      </Badge>
+                      <Badge variant="destructive" className="text-[10px]">
+                        {prettyState(gap.matchStatus)}
+                      </Badge>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {view.content !== null && view.content.omittedUnsupported.length > 0 && (
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Omitted unsupported terms: {view.content.omittedUnsupported.join(", ")}
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Top 5 ATS Keywords & Match Audit */}
+      {view.topKeywords.length > 0 && (
+        <Card className="shadow-xs">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <span>Top 5 ATS keywords & match audit</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2.5 text-sm">
+              {view.topKeywords.map((entry) => (
+                <li key={entry.requirementId} className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-1">
+                  <p className="font-medium text-foreground italic">“{entry.keyword}”</p>
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    <Badge variant="outline" className="text-[10px]">
+                      {prettyState(entry.category)}
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px]">
+                      {prettyState(entry.importance)}
+                    </Badge>
+                    {entry.evidenced ? (
+                      <Badge variant="success" className="text-[10px]">
+                        Evidenced
+                      </Badge>
+                    ) : (
+                      <Badge variant="destructive" className="text-[10px]">
+                        Gap — not on resume
+                      </Badge>
+                    )}
+                  </div>
+                  {entry.evidenced ? (
+                    <p className="text-[11px] text-muted-foreground pt-0.5">
+                      {entry.placements.length > 0
+                        ? `Woven into: ${entry.placements.map((placement) => placement.charAt(0).toUpperCase() + placement.slice(1)).join(", ")}`
+                        : "Evidenced by facts but not literally woven into a section"}
+                      {entry.evidenceFactIds.length > 0
+                        ? ` · facts: ${entry.evidenceFactIds.join(", ")}`
+                        : ""}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground pt-0.5">
+                      No supporting candidate facts — honestly omitted from the resume.
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Generation Notes Card */}
+      {view.content?.audit !== null && view.content?.audit !== undefined && (
+        <Card className="shadow-xs bg-muted/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <span>Generation notes</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs space-y-2">
+            <p className="font-medium">
+              {view.content.audit.supportedCount} of {view.content.audit.requirementsTotal} requirements
+              supported · {view.content.audit.gapCount} gaps · {view.content.audit.validatedClaims} of{" "}
+              {view.content.audit.totalClaims} claims validated
+              {view.analysis?.provider !== null && view.analysis?.provider !== undefined
+                ? ` · via ${view.analysis.provider}`
+                : ""}
+            </p>
+            <p className="text-muted-foreground leading-relaxed">{view.content.audit.rationale}</p>
+            {view.content.audit.questions.length > 0 && (
+              <ul className="list-disc pl-4 space-y-1 text-muted-foreground">
+                {view.content.audit.questions.map((question) => (
+                  <li key={question}>{question}</li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <section aria-label="Human review decision" className="rounded-xl border border-primary/20 bg-muted/30 p-5">
+        <h4 className="font-semibold">Your review decision</h4>
+        <p className="text-sm text-muted-foreground">Review the claims, evidence and files before approving this exact version.</p>
+        {/* Human Action Triggers */}
+        {view.actions.canApprove && !confirming && (
+          <div className="mt-4 flex items-center gap-3">
+            <Button
+              type="button"
+              onClick={() => {
+                setActionError(null);
+                setConfirming(true);
+              }}
+              disabled={busy}
+              className="gap-1.5 font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Approve version {view.version.version}
+            </Button>
+          </div>
+        )}
+
+        {/* Confirmation Modal Area */}
+        {view.actions.canApprove && confirming && (
+          <div className="mt-4 rounded-lg border border-emerald-300/60 bg-emerald-50/60 dark:bg-emerald-950/30 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-emerald-900 dark:text-emerald-300">
+              <CheckCircle2 className="h-5 w-5" />
+              <h4 className="font-bold text-sm">
+                Confirm approval of version {view.version.version}
+              </h4>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              This approves version {view.version.version} with {view.artifacts.length} stored files, and moves the card to Tailored. The version becomes immutable.
+            </p>
+
+            <ul className="rounded-md border border-border/60 bg-background/80 p-2 text-xs divide-y divide-border/40">
+              {view.artifacts.map((artifact) => (
+                <li key={artifact.id} className="py-1 flex items-center justify-between font-mono">
+                  <span>{artifact.kind}</span>
+                  <span className="text-muted-foreground">
+                    {formatBytes(artifact.byteSize)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            <div>
+              <label htmlFor={approveNoteId} className="block text-xs font-semibold text-foreground mb-1">
+                Approval note (optional)
+              </label>
+              <textarea
+                id={approveNoteId}
+                value={approveNote}
+                onChange={(event) => setApproveNote(event.target.value)}
+                rows={2}
+                maxLength={4000}
+                placeholder="Add an optional note documenting reasons for approval…"
+                className="w-full rounded-md border border-input bg-background p-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <Button
+                type="button"
+                onClick={() => void onConfirmApprove(view)}
+                disabled={busy}
+                className="bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                Confirm approval
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setConfirming(false);
+                  setApproveNote("");
+                }}
+                disabled={busy}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Request Revision Form */}
+        {view.actions.canRequestRevision && (
+          <div className="mt-4 border-t border-border/60 pt-3">
+            <label htmlFor={reviseNoteId} className="block text-xs font-semibold text-foreground mb-1">
+              Request revision
+            </label>
+            <textarea
+              id={reviseNoteId}
+              value={reviseNote}
+              onChange={(event) => setReviseNote(event.target.value)}
+              rows={2}
+              maxLength={4000}
+              placeholder="What is wrong with this version?"
+              className="w-full rounded-md border border-input bg-background p-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void onRequestRevision(view)}
+              disabled={busy || reviseNote.trim() === ""}
+              className="mt-2 gap-1.5"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Request revision
+            </Button>
+          </div>
+        )}      </section>
+
+      {/* Review History */}
       {view.reviews.length > 0 && (
-        <section aria-label="Review history" className="mt-4">
-          <h4 className="font-semibold">Review history ({view.reviews.length})</h4>
-          <ul className="mt-1">
+        <div className="rounded-lg border border-border/80 bg-card p-4 space-y-2">
+          <h4 className="text-sm font-semibold flex items-center gap-2">
+            <History className="h-4 w-4 text-muted-foreground" />
+            <span>Review history ({view.reviews.length})</span>
+          </h4>
+          <ul className="text-xs divide-y divide-border/60">
             {view.reviews.map((review) => (
-              <li key={review.id}>
-                {prettyState(review.action)} by {review.actor} · {review.createdAt}
-                {review.note !== null ? ` — ${review.note}` : ""}
+              <li key={review.id} className="py-2">
+                <span className="font-semibold text-foreground">{prettyState(review.action)}</span>{" "}
+                <span className="text-muted-foreground">by {review.actor} · {review.createdAt}</span>
+                {review.note !== null && (
+                  <p className="mt-1 text-muted-foreground bg-muted/50 rounded p-2">
+                    {review.note}
+                  </p>
+                )}
               </li>
             ))}
           </ul>
-        </section>
+        </div>
       )}
     </div>
   );

@@ -63,6 +63,26 @@ function reviewView(): ResumeReviewView {
         facts: [{ factId: "f1", statement: "Led the API migration.", kind: "experience" }],
       },
     ],
+    topKeywords: [
+      {
+        keyword: "TypeScript API experience",
+        requirementId: "req_api",
+        category: "skill",
+        importance: "required",
+        evidenced: true,
+        evidenceFactIds: ["f1"],
+        placements: ["skills", "experience"],
+      },
+      {
+        keyword: "Kubernetes deployment",
+        requirementId: "req_k8s",
+        category: "skill",
+        importance: "required",
+        evidenced: false,
+        evidenceFactIds: [],
+        placements: [],
+      },
+    ],
     content: {
       summaryStrategy: "fact-grounded",
       omittedUnsupported: ["Kubernetes"],
@@ -126,10 +146,11 @@ describe("ResumeReview", () => {
     expect(screen.getByText(/\[f1\] led the api migration\./i)).toBeInTheDocument();
     // Evidence column.
     expect(screen.getByText(/requirements \(1\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/typescript api experience/i)).toBeInTheDocument();
+    // Each quote appears twice: once in requirements/gaps, once in the Top-5 audit.
+    expect(screen.getAllByText(/typescript api experience/i)).toHaveLength(2);
     expect(screen.getByText(/evidence: f1/i)).toBeInTheDocument();
     expect(screen.getByText(/gaps — not on the resume \(1\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/kubernetes deployment/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/kubernetes deployment/i)).toHaveLength(2);
     expect(screen.getByText(/omitted unsupported terms: kubernetes/i)).toBeInTheDocument();
     // Files with preview and download links.
     const previews = screen.getAllByRole("link", { name: "Preview" });
@@ -214,5 +235,22 @@ describe("ResumeReview", () => {
     expect(await screen.findByText(/only versions awaiting review can be decided/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /approve version/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /^request revision$/i })).toBeNull();
+  });
+
+  it("audits top keywords with evidenced and gap states", async () => {
+    renderReview();
+    expect(await screen.findByText(/top 5 ats keywords & match audit/i)).toBeInTheDocument();
+    expect(screen.getByText("Evidenced")).toBeInTheDocument();
+    expect(screen.getByText("Gap — not on resume")).toBeInTheDocument();
+    expect(screen.getByText(/woven into: skills, experience/i)).toBeInTheDocument();
+    expect(screen.getByText(/honestly omitted from the resume/i)).toBeInTheDocument();
+  });
+
+  it("hides the keyword audit when the analysis is missing", async () => {
+    const view = reviewView();
+    view.topKeywords = [];
+    renderReview(view);
+    expect(await screen.findByText(/version 1 · awaiting review/i)).toBeInTheDocument();
+    expect(screen.queryByText(/top 5 ats keywords & match audit/i)).toBeNull();
   });
 });

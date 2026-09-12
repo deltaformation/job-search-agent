@@ -1,7 +1,8 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { DatabaseHandle } from "./client";
-import { workItems } from "./schema/queue";
-import { newId } from "./utils";
+import { workAttempts, workItems } from "./schema/queue";
+import { withTransaction } from "./transactions";
+import { newId, utcNow } from "./utils";
 import { candidateSnapshots, type CandidateSnapshot } from "./schema/candidates";
 import { jdSnapshots, jobAnalyses, type JdSnapshot, type JobAnalysis } from "./schema/analysis";
 import { jobs } from "./schema/jobs";
@@ -19,7 +20,8 @@ import {
  * Row access for tailoring persistence. Single-statement helpers; the
  * caller composes them into short transactions (see
  * `src/tailoring/persist.ts`). State-machine and fencing decisions stay
- * out of this module.
+ * out of this module. The salary backfill is the one exception: its
+ * read-check-write must be atomic, so it owns its short transaction.
  */
 
 export interface TailoringJobRow {
@@ -72,6 +74,28 @@ export function getJdSnapshotById(
   snapshotId: string,
 ): JdSnapshot | null {
   const row = handle.db.select().from(jdSnapshots).where(eq(jdSnapshots.id, snapshotId)).get();
+  return row ?? null;
+}
+
+export interface LatestAnalysisDoc {
+  requirementsJson: string;
+  gapsJson: string;
+}
+
+/**
+ * Latest analysis documents for a job (insertion order), or null when the
+ * job was never analyzed. Powers the drawer's Top-5 keyword chips.
+ */
+export function getLatestAnalysisForJob(
+  handle: DatabaseHandle,
+  jobId: string,
+): LatestAnalysisDoc | null {
+  const row = handle.db
+    .select({ requirementsJson: jobAnalyses.requirementsJson, gapsJson: jobAnalyses.gapsJson })
+    .from(jobAnalyses)
+    .where(eq(jobAnalyses.jobId, jobId))
+    .orderBy(desc(jobAnalyses.createdAt), desc(jobAnalyses.id))
+    .get();
   return row ?? null;
 }
 
@@ -240,6 +264,167 @@ export function getWorkItemByIdempotencyKey(
     .select({ id: workItems.id })
     .from(workItems)
     .where(eq(workItems.idempotencyKey, idempotencyKey))
+    .get();
+  return row ?? null;
+}
+
+export interface JobSalaryState {
+  title: string | null;
+  company: string | null;
+  location: string | null;
+  descriptionText: string | null;
+  salaryText: string | null;
+  activeExtractionId: string | null;
+}
+
+/**
+ * Live salary inputs for the R4-G Step-2 fallback: one row read. The
+ * caller double-checks `activeExtractionId` against the run's bound
+ * extraction before and inside the backfill write, so a superseding
+ * scrape can never receive another extraction's salary.
+ */
+export function getJobSalaryState(handle: DatabaseHandle, jobId: string): JobSalaryState | null {
+  const row = handle.db
+    .select({
+      title: jobs.title,
+      company: jobs.company,
+      location: jobs.location,
+      descriptionText: jobs.descriptionText,
+      salaryText: jobs.salaryText,
+      activeExtractionId: jobs.activeExtractionId,
+    })
+    .from(jobs)
+    .where(eq(jobs.id, jobId))
+    .get();
+  return row ?? null;
+}
+
+export interface SalaryBackfillWrite {
+  salaryText: string | null;
+  currency: string | null;
+  salaryMinMinor: number | null;
+  salaryMaxMinor: number | null;
+  compensationHighlights: string[];
+}
+
+export type SalaryBackfillOutcome =
+  | "written"
+  | "skipped-missing-job"
+  | "skipped-drift"
+  | "skipped-present"
+  | "skipped-empty";
+
+/**
+ * Conditional salary backfill in one short transaction. Writes only when
+ * the run's extraction is still the job's active one and no salary text
+ * landed meanwhile (a concurrent scrape or an earlier backfill wins).
+ * Highlights overwrite only when the facts carry some; a highlight-less
+ * result preserves whatever is stored. Never bumps `row_version`:
+ * disjoint columns, invisible to board moves and the tailor fence.
+ */
+export function writeJobSalaryBackfill(
+  handle: DatabaseHandle,
+  input: { jobId: string; extractionId: string; facts: SalaryBackfillWrite },
+): SalaryBackfillOutcome {
+  const { jobId, extractionId, facts } = input;
+  return withTransaction(handle.sqlite, () => {
+    const current = handle.db
+      .select({
+        activeExtractionId: jobs.activeExtractionId,
+        salaryText: jobs.salaryText,
+        compensationHighlightsJson: jobs.compensationHighlightsJson,
+      })
+      .from(jobs)
+      .where(eq(jobs.id, jobId))
+      .get();
+    if (current === undefined) {
+      return "skipped-missing-job" as const;
+    }
+    if (current.activeExtractionId !== extractionId) {
+      return "skipped-drift" as const;
+    }
+    if (current.salaryText !== null && current.salaryText.trim() !== "") {
+      return "skipped-present" as const;
+    }
+    if (facts.salaryText === null && facts.compensationHighlights.length === 0) {
+      return "skipped-empty" as const;
+    }
+    const changed = handle.db
+      .update(jobs)
+      .set({
+        salaryText: facts.salaryText,
+        salaryCurrency: facts.currency,
+        salaryMinMinor: facts.salaryMinMinor,
+        salaryMaxMinor: facts.salaryMaxMinor,
+        compensationHighlightsJson:
+          facts.compensationHighlights.length > 0
+            ? JSON.stringify(facts.compensationHighlights)
+            : current.compensationHighlightsJson,
+        updatedAt: utcNow(),
+      })
+      .where(and(eq(jobs.id, jobId), eq(jobs.activeExtractionId, extractionId)))
+      .run().changes;
+    return changed === 1 ? ("written" as const) : ("skipped-drift" as const);
+  });
+}
+
+export interface LatestTailorWorkItem {
+  id: string;
+  state: string;
+  createdAt: string;
+}
+
+/**
+ * Most recent TAILOR queue item for a job (insertion order), or null
+ * when tailoring was never enqueued. The retry command keys off this
+ * row: FAILED items requeue, live items no-op, successes stay final.
+ */
+export function getLatestTailorWorkItem(
+  handle: DatabaseHandle,
+  jobId: string,
+): LatestTailorWorkItem | null {
+  const row = handle.db
+    .select({ id: workItems.id, state: workItems.state, createdAt: workItems.createdAt })
+    .from(workItems)
+    .where(and(eq(workItems.jobId, jobId), eq(workItems.kind, "TAILOR")))
+    .orderBy(desc(workItems.createdAt), desc(workItems.id))
+    .get();
+  return row ?? null;
+}
+
+export interface LatestTailorAttempt {
+  workItemId: string;
+  attemptNumber: number;
+  result: string;
+  errorCode: string | null;
+  errorDetail: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+/**
+ * Most recent attempt across a job's TAILOR items, or null when no
+ * attempt was ever recorded (e.g. a queued item no worker claimed yet).
+ * Powers the drawer's actionable tailoring-error card.
+ */
+export function getLatestTailorAttempt(
+  handle: DatabaseHandle,
+  jobId: string,
+): LatestTailorAttempt | null {
+  const row = handle.db
+    .select({
+      workItemId: workAttempts.workItemId,
+      attemptNumber: workAttempts.attemptNumber,
+      result: workAttempts.result,
+      errorCode: workAttempts.errorCode,
+      errorDetail: workAttempts.errorDetail,
+      startedAt: workAttempts.startedAt,
+      finishedAt: workAttempts.finishedAt,
+    })
+    .from(workAttempts)
+    .innerJoin(workItems, eq(workAttempts.workItemId, workItems.id))
+    .where(and(eq(workItems.jobId, jobId), eq(workItems.kind, "TAILOR")))
+    .orderBy(desc(workAttempts.startedAt), desc(workAttempts.attemptNumber))
     .get();
   return row ?? null;
 }

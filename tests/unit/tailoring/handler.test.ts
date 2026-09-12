@@ -112,19 +112,19 @@ describe("TAILOR handler", () => {
     expect(versions[0]?.reviewState).toBe("AWAITING_REVIEW");
     expect(versions[0]?.contentHash).toBe(outcome.outputHash);
     const content = ResumeContentV1.parse(JSON.parse(versions[0]?.contentJson as string));
-    expect(content.audit.validatedClaims).toBe(5);
-    expect(content.draft.claims).toHaveLength(5);
+    expect(content.audit.validatedClaims).toBe(6);
+    expect(content.draft.claims).toHaveLength(6);
 
     const claims = t.handle.db
       .select()
       .from(resumeClaims)
       .where(eq(resumeClaims.resumeVersionId, versions[0]?.id as string))
       .all();
-    expect(claims).toHaveLength(5);
+    expect(claims).toHaveLength(6);
     const citations = t.handle.db.select().from(resumeClaimFacts).all();
     expect(citations.length).toBeGreaterThan(0);
     expect(new Set(citations.map((row) => row.factId))).toEqual(
-      new Set(["f_api", "f_auth", "f_scale"]),
+      new Set(["f_api", "f_auth", "f_scale", "f_team"]),
     );
 
     const artifacts = t.handle.db
@@ -348,5 +348,77 @@ describe("TAILOR handler", () => {
     expect(first.deduped).toBe(false);
     expect(second.deduped).toBe(true);
     expect(second.workItemId).toBe(first.workItemId);
+  });
+
+  it("backfills missing salary before the fenced run", async () => {
+    const { t, artifactsDir } = setup();
+    importTestProfile(t);
+    const { jobId, extractionId } = seedJob(t, E2E_JD_TEXT);
+    const snapshots = resolveCurrentSnapshots(t.handle, jobId);
+    if (!snapshots.ok) {
+      throw new Error("snapshot resolution failed in setup");
+    }
+    const { workItemId } = requestTailoring(t.handle, { jobId, extractionId });
+    const factsJson = JSON.stringify({
+      schemaVersion: "salary-facts/v1",
+      salaryMinMinor: 14590000,
+      salaryMaxMinor: 19740000,
+      currency: "CAD",
+      salaryText: "$145,900 - $197,400 CAD per year",
+      isHourlyOrDaily: false,
+      compensationHighlights: ["RRSP matching"],
+      model: "stub",
+    });
+    const handler = createTailorHandler({
+      artifactsDir,
+      provider: new TestProvider({
+        proposals: { [snapshots.jdSnapshotId]: e2eProposal(snapshots.jdSnapshotId, snapshots.candidateSnapshotId) },
+      }),
+      renderPdf: async (html) => stubRenderPdf(html),
+      salaryFallback: {
+        argv: [process.execPath, "-e", `process.stdout.write(${JSON.stringify(factsJson)})`],
+        timeoutMs: 5000,
+        maxOutputBytes: 65_536,
+      },
+    });
+    const outcome = await handler(handlerContext(t, workItemId));
+    expect(outcome.result).toBe("SUCCEEDED");
+    const job = t.handle.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
+    expect(job).toMatchObject({
+      salaryText: "$145,900 - $197,400 CAD per year",
+      salaryCurrency: "CAD",
+      salaryMinMinor: 14590000,
+      salaryMaxMinor: 19740000,
+      compensationHighlightsJson: JSON.stringify(["RRSP matching"]),
+      tailoringState: "AWAITING_REVIEW",
+    });
+  });
+
+  it("survives salary sidecar failure without failing the run", async () => {
+    const { t, artifactsDir } = setup();
+    importTestProfile(t);
+    const { jobId, extractionId } = seedJob(t, E2E_JD_TEXT);
+    const snapshots = resolveCurrentSnapshots(t.handle, jobId);
+    if (!snapshots.ok) {
+      throw new Error("snapshot resolution failed in setup");
+    }
+    const { workItemId } = requestTailoring(t.handle, { jobId, extractionId });
+    const handler = createTailorHandler({
+      artifactsDir,
+      provider: new TestProvider({
+        proposals: { [snapshots.jdSnapshotId]: e2eProposal(snapshots.jdSnapshotId, snapshots.candidateSnapshotId) },
+      }),
+      renderPdf: async (html) => stubRenderPdf(html),
+      salaryFallback: {
+        argv: [process.execPath, "-e", "process.exit(3)"],
+        timeoutMs: 5000,
+        maxOutputBytes: 65_536,
+      },
+    });
+    const outcome = await handler(handlerContext(t, workItemId));
+    expect(outcome.result).toBe("SUCCEEDED");
+    const job = t.handle.db.select().from(jobs).where(eq(jobs.id, jobId)).get();
+    expect(job?.salaryText).toBeNull();
+    expect(job?.tailoringState).toBe("AWAITING_REVIEW");
   });
 });

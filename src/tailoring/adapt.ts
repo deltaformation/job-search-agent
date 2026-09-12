@@ -17,6 +17,7 @@ export function adaptSnapshotProfile(snapshot: CandidateSnapshotV1): CandidatePr
     id: LOCAL_CANDIDATE_ID,
     full_name: snapshot.payload.identity.fullName,
     headline: snapshot.payload.identity.headline ?? null,
+    summary: snapshot.payload.summary ?? null,
     email: snapshot.payload.identity.email ?? null,
     phone: snapshot.payload.identity.phone ?? null,
     location: snapshot.payload.identity.location ?? null,

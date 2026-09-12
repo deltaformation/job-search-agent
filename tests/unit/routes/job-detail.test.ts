@@ -68,6 +68,7 @@ describe("GET /api/jobs/[id]", () => {
       "application",
       "artifacts",
       "attempts",
+      "compensationHighlights",
       "extraction",
       "history",
       "intake",
@@ -75,6 +76,8 @@ describe("GET /api/jobs/[id]", () => {
       "notes",
       "resumes",
       "source",
+      "tailoringAttempt",
+      "topKeywords",
     ]);
     const job = body["job"] as Record<string, unknown>;
     expect(job).toMatchObject({ id: jobId, title: "Engineer", rowVersion: 1 });

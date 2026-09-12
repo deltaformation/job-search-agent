@@ -108,4 +108,32 @@ describe("lever adapter", () => {
     });
     expect(outcome.confidence).toBe(0.95);
   });
+
+  it("extracts a modern lever posting with data-qa sections and logo company", () => {
+    const html = `
+      <div class="main-header-logo"><img alt="Magnet Forensics logo" src="/logo.png" /></div>
+      <div class="posting-headline"><h2>Senior Software Developer</h2></div>
+      <div class="posting-categories"><div class="location">Waterloo, ON / Remote</div></div>
+      <div class="section-wrapper page-full-width">
+        <div class="section page-centered" data-qa="job-description">We are seeking a talented developer.</div>
+        <div class="section page-centered" data-qa="posting-requirements">Required skills include TypeScript and Node.</div>
+      </div>
+      <a class="postings-btn template-btn-submit" href="https://jobs.lever.co/magnetforensics/apply">Apply</a>
+    `;
+    const outcome = runExtraction(
+      inputFor(html, {
+        finalUrl: "https://jobs.lever.co/magnetforensics/419d3c80",
+        atsType: "Lever",
+      }),
+    );
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) throw new Error("unreachable");
+    expect(outcome.fields.company).toBe("Magnet Forensics");
+    expect(outcome.fields.title).toBe("Senior Software Developer");
+    expect(outcome.fields.descriptionText).toContain("We are seeking a talented developer.");
+    expect(outcome.fields.descriptionText).toContain("Required skills include TypeScript and Node.");
+    expect(outcome.provenance.descriptionText).toBe("lever:data-qa-sections");
+    expect(outcome.provenance.company).toBe("lever:.main-header-logo img[alt]");
+  });
 });
+

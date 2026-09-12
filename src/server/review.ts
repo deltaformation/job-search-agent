@@ -13,17 +13,31 @@ import {
   resumeVersions,
   type ResumeVersion,
 } from "../db/schema/resumes";
-import { casJobTailoringState, getTailoringJob, type TailoringJobRow } from "../db/tailoring";
+import {
+  casJobTailoringState,
+  getCandidateSnapshotById,
+  getTailoringJob,
+  type TailoringJobRow,
+} from "../db/tailoring";
 import { withTransaction } from "../db/transactions";
 import { newId, utcNow } from "../db/utils";
 import { checkRowVersion } from "../domain/board";
+import { CandidateSnapshotV1 } from "../domain/candidate";
 import { canonicalJson } from "../domain/canonical";
 import { EntityId, IsoUtcDateTime, RowVersion } from "../domain/fields";
 import { planReviewTransition } from "../domain/review";
 import { planTailoringTransition } from "../domain/tailoring";
 import type { ReviewState, TailoringState } from "../domain/enums";
 import { resolveArtifactPath } from "../security/paths";
+import { adaptSnapshotProfile } from "../tailoring/adapt";
 import { requestRevisionRun } from "../tailoring/enqueue";
+import type { CandidateProfileInput } from "../tailoring/schemas";
+import {
+  locateKeywordPlacements,
+  planSkillRows,
+  selectTopKeywords,
+  type KeywordPlacement,
+} from "../tailoring/keywords";
 import { approveTailored, type WorkflowCommandFailure } from "./workflow";
 
 /**
@@ -643,6 +657,17 @@ export interface ReviewGapView {
   matchStatus: string;
 }
 
+export interface TopKeywordAuditView {
+  keyword: string;
+  requirementId: string;
+  category: string;
+  importance: string;
+  evidenced: boolean;
+  evidenceFactIds: string[];
+  /** Rendered sections mentioning the keyword; gap keywords may list none. */
+  placements: KeywordPlacement[];
+}
+
 export interface ReviewClaimView {
   id: string;
   claimText: string;
@@ -722,6 +747,8 @@ export interface ResumeReviewView {
     promptVersion: string;
   } | null;
   claims: ReviewClaimView[];
+  /** Top-5 ATS keyword audit; empty when the analysis is unparseable. */
+  topKeywords: TopKeywordAuditView[];
   /** Null when the stored content envelope is unparseable. */
   content: ReviewContentView | null;
   artifacts: ResumeReviewArtifactView[];
@@ -806,6 +833,90 @@ function parseChangeSummary(value: unknown): ReviewContentView["changeSummary"] 
   return { addedBullets: added, removedBullets: removed, summaryChanged, baselineLines, tailoredLines };
 }
 
+function parseDraftClaims(value: unknown): Array<{ section: string; text: string }> {
+  const record = asRecord(value);
+  const draft = record === null ? null : asRecord(record["draft"]);
+  const claims = draft === null ? null : draft["claims"];
+  if (!Array.isArray(claims)) {
+    return [];
+  }
+  const parsed: Array<{ section: string; text: string }> = [];
+  for (const entry of claims) {
+    const item = asRecord(entry);
+    const section = item === null ? null : asString(item["section"]);
+    const text = item === null ? null : asString(item["text"]);
+    if (section !== null && text !== null) {
+      parsed.push({ section, text });
+    }
+  }
+  return parsed;
+}
+
+/**
+ * Top-5 ATS keyword audit for one version: deterministic selection over
+ * the stored analysis requirements plus a placement check against the
+ * stored draft, the rebuilt skill rows, and the header text. Fail-soft
+ * like the rest of the view — a missing snapshot or corrupt envelope
+ * yields keywords without placements (or none at all), never an error.
+ */
+function buildTopKeywordAudit(
+  handle: DatabaseHandle,
+  analysis: { candidateSnapshotId: string | null } | undefined,
+  contentJson: string,
+  requirementEntries: unknown[] | null,
+  gapEntries: unknown[] | null,
+): TopKeywordAuditView[] {
+  if (requirementEntries === null) {
+    return [];
+  }
+  const keywords = selectTopKeywords([...requirementEntries, ...(gapEntries ?? [])]);
+  if (keywords.length === 0) {
+    return [];
+  }
+  let profile: CandidateProfileInput | null = null;
+  const snapshotId = analysis?.candidateSnapshotId ?? null;
+  if (snapshotId !== null) {
+    try {
+      const snapshot = getCandidateSnapshotById(handle, snapshotId);
+      if (snapshot !== null) {
+        profile = adaptSnapshotProfile(
+          CandidateSnapshotV1.parse(JSON.parse(snapshot.canonicalJson)),
+        );
+      }
+    } catch {
+      profile = null;
+    }
+  }
+  let draftClaims: Array<{ section: string; text: string }> = [];
+  try {
+    draftClaims = parseDraftClaims(JSON.parse(contentJson));
+  } catch {
+    draftClaims = [];
+  }
+  const skillTerms =
+    profile === null
+      ? []
+      : planSkillRows({ profile, requirements: requirementEntries }).flatMap((row) => row.terms);
+  const headerText = profile === null ? "" : `${profile.full_name} ${profile.headline ?? ""}`;
+  const summaryText = draftClaims
+    .filter((claim) => claim.section === "summary")
+    .map((claim) => claim.text)
+    .join("\n");
+  const bulletTexts = draftClaims
+    .filter((claim) => claim.section === "experience")
+    .map((claim) => claim.text);
+  return keywords.map((entry) => ({
+    ...entry,
+    placements: locateKeywordPlacements({
+      keyword: entry.keyword,
+      headerText,
+      summaryText,
+      skillTerms,
+      bulletTexts,
+    }),
+  }));
+}
+
 function parseAudit(value: unknown): ReviewContentView["audit"] {
   const record = asRecord(value);
   if (record === null) {
@@ -869,6 +980,8 @@ export function getResumeReviewView(
     .get();
 
   let analysisView: ResumeReviewView["analysis"] = null;
+  let keywordEntries: unknown[] | null = null;
+  let keywordGaps: unknown[] | null = null;
   if (analysis !== undefined) {
     try {
       const requirementsDoc = asRecord(JSON.parse(analysis.requirementsJson));
@@ -877,6 +990,8 @@ export function getResumeReviewView(
         ? (requirementsDoc?.["requirements"] as unknown[])
         : null;
       const gapEntries = Array.isArray(gapsDoc?.["gaps"]) ? (gapsDoc?.["gaps"] as unknown[]) : null;
+      keywordEntries = requirementEntries;
+      keywordGaps = gapEntries;
       if (requirementEntries !== null && gapEntries !== null) {
         const requirements: ReviewRequirementView[] = [];
         const gaps: ReviewGapView[] = [];
@@ -1041,6 +1156,13 @@ export function getResumeReviewView(
     },
     analysis: analysisView,
     claims,
+    topKeywords: buildTopKeywordAudit(
+      handle,
+      analysis,
+      version.contentJson,
+      keywordEntries,
+      keywordGaps,
+    ),
     content: contentView,
     artifacts,
     reviews,

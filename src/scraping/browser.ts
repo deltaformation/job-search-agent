@@ -44,9 +44,31 @@ let sharedBrowser: Browser | null = null;
 let launchInFlight: Promise<Browser> | null = null;
 
 /**
+ * Container-safe Chromium launch flags. Stock headless Chromium
+ * initializes host sandboxing namespaces and crashes with `signal 11
+ * SEGV_ACCERR` where user namespaces are restricted or /dev/shm is
+ * small (containers, CI, sandboxed runners). `--no-sandbox` and
+ * `--disable-dev-shm-usage` prevent that crash; the remaining flags
+ * shed the zygote/GPU paths that also misbehave without a host
+ * namespace. Tradeoff, stated plainly: `--no-sandbox` removes the
+ * renderer's OS-level isolation, so a compromised page would run with
+ * the worker's own privileges — acceptable for a local single-user
+ * worker, and the per-fetch isolated contexts above still apply.
+ */
+export const CONTAINER_CHROMIUM_ARGS = [
+  "--no-sandbox",
+  "--disable-setuid-sandbox",
+  "--disable-dev-shm-usage",
+  "--disable-gpu",
+  "--no-zygote",
+  "--single-process",
+] as const;
+
+/**
  * Launch (once) or reuse the worker's Chromium instance. A dead or
  * disconnected browser is replaced on the next call, so a browser crash
- * fails at most the in-flight fetch.
+ * fails at most the in-flight fetch (or render — the resume PDF path
+ * shares this browser).
  */
 export async function getSharedBrowser(): Promise<Browser> {
   if (sharedBrowser !== null && sharedBrowser.isConnected()) {
@@ -54,7 +76,7 @@ export async function getSharedBrowser(): Promise<Browser> {
   }
   if (launchInFlight === null) {
     launchInFlight = chromium
-      .launch({ headless: true })
+      .launch({ headless: true, args: [...CONTAINER_CHROMIUM_ARGS] })
       .finally(() => {
         launchInFlight = null;
       });

@@ -69,6 +69,7 @@ export default function Board() {
   const [notice, setNotice] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [committedQuery, setCommittedQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"kanban" | "stacked">("kanban");
   const [sort, setSort] = useState<BoardSort>("rank");
   const [limits, setLimits] = useState<Record<string, number>>({});
   const [loadingMore, setLoadingMore] = useState(false);
@@ -127,6 +128,24 @@ export default function Board() {
       cancelled = true;
     };
   }, [refresh]);
+
+  const anyTailoringRunning =
+    board !== null &&
+    board.columns.some((column) => column.cards.some((card) => card.tailoringState === "RUNNING"));
+
+  useEffect(() => {
+    // While any visible card has a run in flight, re-read the board every
+    // 3s so badges flip to review/failed states on their own. Queued
+    // (PENDING) cards do not poll: with a manual queue runner they can sit
+    // indefinitely, and polling them would never settle.
+    if (!anyTailoringRunning) {
+      return;
+    }
+    const timer = setInterval(() => {
+      void refresh();
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [anyTailoringRunning, refresh]);
 
   useEffect(() => {
     // Skip unchanged queries: arming setLoading(true) with no fetch behind
@@ -285,9 +304,23 @@ export default function Board() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-end gap-4">
-        <div>
-          <label htmlFor="board-search" className="block font-semibold">
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border/70 bg-card p-3 shadow-xs">
+        <div className="flex flex-wrap items-center gap-3">
+          <div role="group" aria-label="Board view" className="flex rounded-lg bg-muted p-1">
+            {(["kanban", "stacked"] as const).map((mode) => (
+              <button key={mode} type="button" aria-pressed={viewMode === mode}
+                onClick={() => setViewMode(mode)}
+                className={`rounded-md px-3 py-2 text-sm transition-all duration-200 ${viewMode === mode ? "bg-background shadow-sm" : "text-muted-foreground"}`}>
+                {mode === "kanban" ? "Kanban" : "Stacked"}
+              </button>
+            ))}
+          </div>
+          {board && <p className="text-xs text-muted-foreground">
+            {committedQuery ? "Matching active" : "Active"}: {board.columns.filter((c) => c.status !== "REJECTED").reduce((n, c) => n + c.total, 0)} jobs · {board.columns.flatMap((c) => c.cards).filter((c) => c.resume?.reviewState === "AWAITING_REVIEW").length} awaiting review in loaded cards
+          </p>}
+        </div>
+        <div className="flex-1 min-w-[220px]">
+          <label htmlFor="board-search" className="block text-xs font-semibold text-muted-foreground mb-1">
             Search cards
           </label>
           <input
@@ -295,12 +328,12 @@ export default function Board() {
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Title, company, or location"
-            className="mt-1 border p-2"
+            placeholder="Title, company, or location…"
+            className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
         <div>
-          <label htmlFor="board-sort" className="block font-semibold">
+          <label htmlFor="board-sort" className="block text-xs font-semibold text-muted-foreground mb-1">
             Sort
           </label>
           <select
@@ -310,7 +343,7 @@ export default function Board() {
               setSort(event.target.value as BoardSort);
               setLoading(true);
             }}
-            className="mt-1 border bg-white p-2"
+            className="rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
           >
             <option value="rank">Manual order</option>
             <option value="updated">Recently updated</option>
@@ -320,16 +353,16 @@ export default function Board() {
       </div>
 
       {notice !== null && (
-        <p role="status" data-testid="board-notice" className="mt-4 border p-2 font-semibold">
+        <div role="status" data-testid="board-notice" className="mt-3 rounded-md border border-primary/20 bg-primary/5 p-3 text-sm font-semibold text-primary">
           {notice}
-        </p>
+        </div>
       )}
       {error !== null && (
-        <p role="alert" className="mt-4 font-semibold">
+        <div role="alert" className="mt-3 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm font-semibold text-destructive">
           Could not load the board: {error}
-        </p>
+        </div>
       )}
-      {loading && <p className="mt-4">Loading board…</p>}
+      {loading && <p className="mt-3 text-sm text-muted-foreground">Loading board…</p>}
 
       {board !== null && (
         <DndContext
@@ -340,7 +373,7 @@ export default function Board() {
           onDragEnd={(event) => void onDragEnd(event)}
           onDragCancel={() => setActiveId(null)}
         >
-          <div className="mt-4 flex gap-3 overflow-x-auto pb-4" role="group" aria-label="Kanban columns">
+          <div className={`board-canvas mt-4 flex gap-4 overflow-x-auto pb-4 ${viewMode === "stacked" ? "board-stacked flex-col" : ""}`} role="group" aria-label="Kanban columns">
             {board.columns.map((column) => (
               <BoardColumn
                 key={column.status}
@@ -365,6 +398,7 @@ export default function Board() {
 
       {openJobId !== null && (
         <CardDrawer
+          key={openJobId}
           jobId={openJobId}
           refreshToken={drawerToken}
           onClose={() => setOpenJobId(null)}

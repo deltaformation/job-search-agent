@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { CommandProvider } from "../../../src/tailoring/commandAdapter";
+import { CommandProvider, runCommandJson } from "../../../src/tailoring/commandAdapter";
 import {
   RESUME_PROPOSAL_SCHEMA_VERSION,
   TAILOR_PROMPT_VERSION,
@@ -125,6 +125,21 @@ describe("command provider adapter", () => {
     expect((error as ProviderError).detail).not.toContain("secret");
   });
 
+  it.each([
+    { code: 10, reason: "PROVIDER_UNAVAILABLE", detail: "authentication failed" },
+    { code: 11, reason: "PROVIDER_UNAVAILABLE", detail: "rate limit" },
+    { code: 12, reason: "TIMEOUT", detail: "timed out" },
+    { code: 13, reason: "PROVIDER_UNAVAILABLE", detail: "unusable response" },
+  ])("maps classified exit $code to $reason", async ({ code, reason, detail }) => {
+    const provider = new CommandProvider({
+      argv: [process.execPath, "-e", `process.exit(${code})`],
+    });
+    const error = await provider.prepare(INPUT).catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect((error as ProviderError).reason).toBe(reason);
+    expect((error as ProviderError).detail).toContain(detail);
+  });
+
   it("kills hung providers with TIMEOUT", async () => {
     const provider = new CommandProvider({
       argv: [process.execPath, "-e", `setTimeout(()=>{},10000)`],
@@ -170,5 +185,48 @@ describe("command provider adapter", () => {
     expect(() => new CommandProvider({ argv: ["", "x"] })).toThrow();
     expect(() => new CommandProvider({ argv: ["x"], timeoutMs: 0 })).toThrow();
     expect(() => new CommandProvider({ argv: ["x"], maxOutputBytes: 10 })).toThrow();
+  });
+});
+
+describe("runCommandJson", () => {
+  it("resolves stdout for a well-behaved sidecar", async () => {
+    const stdout = await runCommandJson({
+      argv: [
+        process.execPath,
+        "-e",
+        `let s="";process.stdin.on("data",c=>{s+=c});process.stdin.on("end",()=>{if(!s.includes("ping")){process.exit(9)}process.stdout.write(JSON.stringify({ok:true}))});`,
+      ],
+      stdin: JSON.stringify({ probe: "ping" }),
+      timeoutMs: 5000,
+      maxOutputBytes: 65_536,
+    });
+    expect(stdout).toBe(JSON.stringify({ ok: true }));
+  });
+
+  it("resolves null on every failure mode without throwing", async () => {
+    const diagnosed: string[] = [];
+    const diagnose = (message: string): void => {
+      diagnosed.push(message);
+    };
+    const cases: Array<{ name: string; argv: string[]; timeoutMs: number; maxOutputBytes: number }> = [
+      { name: "exit", argv: [process.execPath, "-e", "process.exit(3)"], timeoutMs: 5000, maxOutputBytes: 65_536 },
+      { name: "spawn", argv: ["/nonexistent-sidecar-binary-xyz"], timeoutMs: 5000, maxOutputBytes: 65_536 },
+      { name: "timeout", argv: [process.execPath, "-e", "setTimeout(()=>{},10000)"], timeoutMs: 200, maxOutputBytes: 65_536 },
+      { name: "cap", argv: [process.execPath, "-e", `process.stdout.write("x".repeat(100000))`], timeoutMs: 5000, maxOutputBytes: 1024 },
+      { name: "empty", argv: [process.execPath, "-e", ""], timeoutMs: 5000, maxOutputBytes: 65_536 },
+      { name: "empty-argv", argv: [], timeoutMs: 5000, maxOutputBytes: 65_536 },
+    ];
+    for (const failure of cases) {
+      const before = diagnosed.length;
+      const stdout = await runCommandJson({
+        argv: failure.argv,
+        stdin: "{}",
+        timeoutMs: failure.timeoutMs,
+        maxOutputBytes: failure.maxOutputBytes,
+        onDiagnostic: diagnose,
+      });
+      expect(stdout, failure.name).toBeNull();
+      expect(diagnosed.length, `${failure.name} diagnosed`).toBeGreaterThan(before);
+    }
   });
 });

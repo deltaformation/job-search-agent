@@ -25,6 +25,8 @@ import {
   resumeVersions,
   scrapeAttempts,
   sourceArtifacts,
+  workAttempts,
+  workItems,
   workflowEvents,
 } from "../../../src/db/schema";
 import type { BoardStatus } from "../../../src/domain/enums";
@@ -491,6 +493,169 @@ describe("getJobDetail", () => {
         intake: null,
       });
       expect(detail?.job.status).toBe("NEW");
+      expect(detail?.tailoringAttempt).toBeNull();
+    });
+  });
+
+  it("projects compensation highlights and top keywords for the drawer", () => {
+    withDatabase((t) => {
+      const jobId = seedJob(t.handle, {});
+      t.handle.db
+        .update(jobs)
+        .set({ compensationHighlightsJson: JSON.stringify(["RRSP matching", "Equity"]) })
+        .where(eq(jobs.id, jobId))
+        .run();
+      const attemptId = newId();
+      t.handle.db
+        .insert(scrapeAttempts)
+        .values({
+          id: attemptId,
+          jobId,
+          canonicalUrl: "https://example.com/jobs/1",
+          adapter: "generic",
+          startedAt: "2026-09-11T12:00:00.000Z",
+          finishedAt: "2026-09-11T12:00:05.000Z",
+          outcome: "SUCCEEDED",
+          workerId: "worker-a",
+        })
+        .run();
+      const extractionId = newId();
+      t.handle.db
+        .insert(jobExtractions)
+        .values({
+          id: extractionId,
+          jobId,
+          scrapeAttemptId: attemptId,
+          version: 1,
+          schemaVersion: "job-extraction-v1",
+          adapter: "generic",
+          extractedJson: JSON.stringify({
+            schemaVersion: "job-extraction-v1",
+            fields: {},
+            provenance: {},
+            contentHash: "b".repeat(64),
+          }),
+          confidence: 0.8,
+          missingFieldsJson: JSON.stringify([]),
+        })
+        .run();
+      t.handle.db.insert(candidateProfiles).values({ id: "local" }).run();
+      const profileVersionId = newId();
+      t.handle.db
+        .insert(candidateProfileVersions)
+        .values({
+          id: profileVersionId,
+          profileId: "local",
+          version: 1,
+          payloadJson: "{}",
+          payloadHash: "c".repeat(64),
+          schemaVersion: "candidate-profile-v1",
+        })
+        .run();
+      const snapshotId = newId();
+      t.handle.db
+        .insert(candidateSnapshots)
+        .values({
+          id: snapshotId,
+          profileVersionId,
+          canonicalJson: "{}",
+          schemaVersion: "candidate-snapshot-v1",
+          sha256: "d".repeat(64),
+        })
+        .run();
+      const jdSnapshotId = newId();
+      t.handle.db
+        .insert(jdSnapshots)
+        .values({
+          id: jdSnapshotId,
+          jobId,
+          extractionId,
+          jdText: "TypeScript API experience. Kubernetes deployment.",
+          canonicalSha256: "e".repeat(64),
+        })
+        .run();
+      t.handle.db
+        .insert(jobAnalyses)
+        .values({
+          id: newId(),
+          jobId,
+          jdSnapshotId,
+          candidateSnapshotId: snapshotId,
+          requirementsJson: JSON.stringify({
+            schemaVersion: "analysis-requirements/v1",
+            requirements: [
+              {
+                requirement_id: "req_api",
+                jd_quote: "TypeScript API experience",
+                category: "skill",
+                importance: "required",
+                match_status: "matched",
+                evidence_fact_ids: ["f1"],
+              },
+            ],
+          }),
+          gapsJson: JSON.stringify({
+            schemaVersion: "analysis-gaps/v1",
+            gaps: [
+              {
+                requirement_id: "req_k8s",
+                jd_quote: "Kubernetes deployment",
+                category: "skill",
+                importance: "required",
+                match_status: "gap",
+              },
+            ],
+          }),
+          promptVersion: "prompt-v1",
+          proposalSchemaVersion: "proposal-v1",
+        })
+        .run();
+      const detail = getJobDetail(t.handle, jobId);
+      expect(detail?.compensationHighlights).toEqual(["RRSP matching", "Equity"]);
+      expect(detail?.topKeywords).toEqual([
+        { keyword: "TypeScript API experience", evidenced: true },
+        { keyword: "Kubernetes deployment", evidenced: false },
+      ]);
+    });
+  });
+
+  it("projects the latest tailor attempt for the error card", () => {
+    withDatabase((t) => {
+      const jobId = seedJob(t.handle, {});
+      const itemId = newId();
+      t.handle.db
+        .insert(workItems)
+        .values({
+          id: itemId,
+          kind: "TAILOR",
+          idempotencyKey: `tailor:v1:${jobId}:ext-1`,
+          jobId,
+          payloadJson: JSON.stringify({ schemaVersion: "tailor-queue/v1" }),
+          state: "FAILED",
+        })
+        .run();
+      t.handle.db
+        .insert(workAttempts)
+        .values({
+          id: newId(),
+          workItemId: itemId,
+          attemptNumber: 1,
+          workerId: "worker-a",
+          startedAt: "2026-09-11T12:00:00.000Z",
+          finishedAt: "2026-09-11T12:00:30.000Z",
+          result: "FAILED",
+          errorCode: "PROVIDER_UNAVAILABLE",
+          errorDetail: "OpenRouter rate limit reached (HTTP 429): wait for quota, then retry",
+        })
+        .run();
+      const detail = getJobDetail(t.handle, jobId);
+      expect(detail?.tailoringAttempt).toEqual({
+        result: "FAILED",
+        errorCode: "PROVIDER_UNAVAILABLE",
+        errorDetail: "OpenRouter rate limit reached (HTTP 429): wait for quota, then retry",
+        startedAt: "2026-09-11T12:00:00.000Z",
+        finishedAt: "2026-09-11T12:00:30.000Z",
+      });
     });
   });
 

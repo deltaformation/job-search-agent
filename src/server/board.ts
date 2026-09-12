@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 // File imports: routes bundle this module into the Next server runtime,
 // which resolves like the worker loader (no directory barrels).
 import type { DatabaseHandle } from "../db/client";
+import { getLatestAnalysisForJob, getLatestTailorAttempt } from "../db/tailoring";
 import { applications, jobNotes, workflowEvents } from "../db/schema/workflow";
 import { intakeItems } from "../db/schema/intake";
 import {
@@ -21,6 +22,7 @@ import {
   parseWorkflowEventMetadata,
   type WorkflowEventMetadataV1,
 } from "../domain/workflow";
+import { selectTopKeywords } from "../tailoring/keywords";
 
 /**
  * Board and card-detail read models. Plain synchronous SELECTs; no
@@ -106,6 +108,9 @@ export interface BoardCardView {
   location: string | null;
   arrangement: string | null;
   salaryText: string | null;
+  salaryCurrency: string | null;
+  salaryMinMinor: number | null;
+  salaryMaxMinor: number | null;
   scrapeState: string;
   scrapeReasonCode: string | null;
   tailoringState: string;
@@ -198,6 +203,9 @@ export function getBoardView(
         location: jobs.location,
         arrangement: jobs.arrangement,
         salaryText: jobs.salaryText,
+        salaryCurrency: jobs.salaryCurrency,
+        salaryMinMinor: jobs.salaryMinMinor,
+        salaryMaxMinor: jobs.salaryMaxMinor,
         scrapeState: jobs.scrapeState,
         scrapeReasonCode: jobs.scrapeReasonCode,
         tailoringState: jobs.tailoringState,
@@ -243,6 +251,9 @@ export function getBoardView(
         location: row.location,
         arrangement: row.arrangement,
         salaryText: row.salaryText,
+        salaryCurrency: row.salaryCurrency,
+        salaryMinMinor: row.salaryMinMinor,
+        salaryMaxMinor: row.salaryMaxMinor,
         scrapeState: row.scrapeState,
         scrapeReasonCode: row.scrapeReasonCode,
         tailoringState: row.tailoringState,
@@ -392,9 +403,25 @@ export interface JobDetailView {
   };
   source: CardSourceView | null;
   attempts: ScrapeAttemptView[];
+  /**
+   * Latest TAILOR queue attempt, or null when no run was ever recorded.
+   * Carries the actionable failure detail (rate limit, timeout, render
+   * error) behind the drawer's tailoring-error card and retry control.
+   */
+  tailoringAttempt: {
+    result: string;
+    errorCode: string | null;
+    errorDetail: string | null;
+    startedAt: string;
+    finishedAt: string | null;
+  } | null;
   /** Evidence across all attempts; bytes resolve by id via /api/evidence. */
   artifacts: SourceArtifactView[];
   extraction: ExtractionView | null;
+  /** AI-backfilled extras beyond base salary; empty when none reported. */
+  compensationHighlights: string[];
+  /** Top-5 ATS keywords from the latest analysis; empty when unanalyzed. */
+  topKeywords: Array<{ keyword: string; evidenced: boolean }>;
   resumes: ResumeVersionView[];
   notes: JobNoteView[];
   application: ApplicationView | null;
@@ -486,6 +513,23 @@ export function getJobDetail(
 
   const extracted =
     extraction === undefined ? null : parseJsonObject(extraction.extractedJson);
+  const tailorAttempt = getLatestTailorAttempt(handle, jobId);
+  const analysisDoc = getLatestAnalysisForJob(handle, jobId);
+  let drawerKeywords: JobDetailView["topKeywords"] = [];
+  if (analysisDoc !== null) {
+    try {
+      const requirementsDoc = parseJsonObject(analysisDoc.requirementsJson);
+      const gapsDoc = parseJsonObject(analysisDoc.gapsJson);
+      const requirements = requirementsDoc?.["requirements"];
+      const gaps = gapsDoc?.["gaps"];
+      drawerKeywords = selectTopKeywords([
+        ...(Array.isArray(requirements) ? requirements : []),
+        ...(Array.isArray(gaps) ? gaps : []),
+      ]).map((entry) => ({ keyword: entry.keyword, evidenced: entry.evidenced }));
+    } catch {
+      drawerKeywords = [];
+    }
+  }
 
   return {
     job: {
@@ -533,6 +577,16 @@ export function getJobDetail(
       adapter: attempt.adapter,
       createdAt: attempt.createdAt,
     })),
+    tailoringAttempt:
+      tailorAttempt === null
+        ? null
+        : {
+          result: tailorAttempt.result,
+          errorCode: tailorAttempt.errorCode,
+          errorDetail: tailorAttempt.errorDetail,
+          startedAt: tailorAttempt.startedAt,
+          finishedAt: tailorAttempt.finishedAt,
+        },
     artifacts,
     extraction:
       extraction === undefined
@@ -560,6 +614,8 @@ export function getJobDetail(
               ? (extracted.provenance as Record<string, unknown>)
               : null,
         },
+    compensationHighlights: parseStringArray(job.compensationHighlightsJson),
+    topKeywords: drawerKeywords,
     resumes: versions.map((version) => {
       const versionArtifacts = handle.db
         .select({
