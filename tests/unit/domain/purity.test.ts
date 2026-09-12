@@ -67,6 +67,65 @@ describe("domain purity", () => {
   });
 });
 
+describe("resumes purity", () => {
+  // Pure subset: view model, projections, template, config, checks,
+  // artifact metadata. They may use Zod, siblings, shared domain and
+  // tailoring contracts, node:crypto, and the pure HTML parser — but
+  // never touch the filesystem, network, browser, or document SDKs.
+  const PURE_RESUMES_FILES = [
+    "viewModel.ts",
+    "markdown.ts",
+    "template.ts",
+    "config.ts",
+    "checks.ts",
+    "artifacts.ts",
+  ];
+
+  it("keeps the pure subset free of IO and document SDKs", () => {
+    const pure = moduleImports("resumes").filter(({ file }) => PURE_RESUMES_FILES.includes(file));
+    expect(pure.length).toBeGreaterThan(0);
+    const violations = pure.filter(
+      ({ specifier }) =>
+        specifier !== "zod" &&
+        specifier !== "zod/v4" &&
+        specifier !== "node:crypto" &&
+        specifier !== "node-html-parser" &&
+        !specifier.startsWith("./") &&
+        !specifier.startsWith("../domain/") &&
+        !specifier.startsWith("../tailoring/"),
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it("never imports frameworks, drivers, or provider SDKs", () => {
+    // Playwright is the sanctioned PDF renderer (AGENTS.md); everything
+    // else on the forbidden list stays banned.
+    const hits = moduleImports("resumes").filter(
+      ({ specifier }) =>
+        specifier !== "playwright" &&
+        FORBIDDEN_IMPORTS.some(
+          (banned) => specifier === banned || specifier.startsWith(`${banned}/`),
+        ),
+    );
+    expect(hits).toEqual([]);
+  });
+
+  it("confines browser access to the PDF renderer", () => {
+    const hits = moduleImports("resumes").filter(
+      ({ file, specifier }) => specifier === "playwright" && file !== "pdf.ts",
+    );
+    expect(hits).toEqual([]);
+  });
+
+  it("confines filesystem access to the template/DOCX loaders", () => {
+    const hits = moduleImports("resumes").filter(
+      ({ file, specifier }) =>
+        (specifier === "node:fs" || specifier === "node:url") && file !== "docx.ts",
+    );
+    expect(hits).toEqual([]);
+  });
+});
+
 describe("tailoring purity", () => {
   it("imports only zod, siblings, shared domain primitives, and node:crypto", () => {
     const violations = moduleImports("tailoring").filter(

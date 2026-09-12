@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import IntakeForm from "../../../components/IntakeForm";
 
@@ -47,7 +47,9 @@ describe("IntakeForm", () => {
     expect(screen.getByText("Queued")).toBeInTheDocument();
     expect(screen.getByText("Invalid")).toBeInTheDocument();
     expect(screen.getByText(/unsupported scheme/)).toBeInTheDocument();
-    expect(document.activeElement?.textContent).toBe("Validation preview");
+    await waitFor(() => {
+      expect(document.activeElement?.textContent).toBe("Validation preview");
+    });
     expect(
       screen.getByRole("button", { name: /queue batch/i }),
     ).toBeInTheDocument();
