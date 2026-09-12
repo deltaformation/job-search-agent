@@ -8,6 +8,13 @@
       "when": 1789141994302,
       "tag": "0000_freezing_wild_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789171979861,
+      "tag": "0003_analysis_attempt",
+      "breakpoints": true
     }
   ]
 }

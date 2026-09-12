@@ -61,6 +61,7 @@ export const jobAnalyses = sqliteTable(
     inputHash: text("input_hash"),
     proposalHash: text("proposal_hash"),
     rationale: text("rationale"),
+    attemptJson: text("attempt_json"),
     createdAt: createdAt(),
   },
   (t) => [index("job_analyses_job_id").on(t.jobId)],

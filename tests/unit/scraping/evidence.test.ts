@@ -12,6 +12,7 @@ import {
   jobs,
   scrapeAttempts,
   sourceArtifacts,
+  workItems,
   type DatabaseHandle,
   type TestDatabase,
 } from "../../../src/db";
@@ -343,6 +344,100 @@ describe("fetch persistence", () => {
         .where(eq(jobSources.jobId, shell.jobId))
         .get();
       expect(source?.applyUrl).toBe("https://example.com/jobs/10/apply");
+    });
+  });
+
+  it("requests tailoring exactly once per new extraction", () => {
+    withEvidence((t, evidenceDir) => {
+      const payload = payloadFor(13);
+      const shell = ensureFetchShell(t.handle, { payload, now: T0 });
+      if (!shell.ok) {
+        throw new Error("unreachable");
+      }
+      const result = persistFetchOutcome(t.handle, {
+        payload,
+        jobId: shell.jobId,
+        intakeItemId: null,
+        workerId: "worker-a",
+        startedAt: T0,
+        finishedAt: T0,
+        finalUrl: payload.canonicalUrl,
+        httpStatus: 200,
+        outcome: "SUCCEEDED",
+        reasonCode: null,
+        detail: null,
+        artifacts: [],
+        evidenceDir,
+        extraction: {
+          fields: {
+            title: "Engineer",
+            company: "Acme",
+            location: "Remote",
+            arrangement: "REMOTE",
+            salaryText: null,
+            salaryCurrency: null,
+            salaryMinMinor: null,
+            salaryMaxMinor: null,
+            descriptionText: "Build things.",
+            postedAt: null,
+            applyUrl: null,
+          },
+          provenance: {},
+          adapterId: "generic",
+          adapterVersion: "1",
+          confidence: 0.7,
+          missingFields: [],
+          contentHash: "e".repeat(64),
+        },
+        now: T0,
+      });
+      const items = t.handle.db
+        .select()
+        .from(workItems)
+        .where(eq(workItems.kind, "TAILOR"))
+        .all();
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        jobId: shell.jobId,
+        idempotencyKey: `tailor:v1:${shell.jobId}:${result.extractionId}`,
+      });
+      expect(JSON.parse(items[0]?.payloadJson as string)).toEqual({
+        schemaVersion: "tailor-queue/v1",
+        jobId: shell.jobId,
+        extractionId: result.extractionId,
+      });
+    });
+  });
+
+  it("requests no tailoring without a new extraction", () => {
+    withEvidence((t, evidenceDir) => {
+      const payload = payloadFor(14);
+      const shell = ensureFetchShell(t.handle, { payload, now: T0 });
+      if (!shell.ok) {
+        throw new Error("unreachable");
+      }
+      persistFetchOutcome(t.handle, {
+        payload,
+        jobId: shell.jobId,
+        intakeItemId: null,
+        workerId: "worker-a",
+        startedAt: T0,
+        finishedAt: T0,
+        finalUrl: payload.canonicalUrl,
+        httpStatus: 403,
+        outcome: "BLOCKED",
+        reasonCode: "ACCESS_DENIED",
+        detail: "server refused the page (HTTP 403)",
+        artifacts: [],
+        evidenceDir,
+        now: T0,
+      });
+      const items = t.handle.db
+        .select()
+        .from(workItems)
+        .where(eq(workItems.kind, "TAILOR"))
+        .all();
+      expect(items).toEqual([]);
     });
   });
 

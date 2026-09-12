@@ -61,6 +61,7 @@ const ENUM_CASES: ReadonlyArray<{
       "PROFILE_REQUIRED",
       "PROVIDER_UNAVAILABLE",
       "STALE_INPUT",
+      "RENDER_FAILED",
     ],
   },
 ];

@@ -1,19 +1,20 @@
 /**
  * Worker entrypoint. Opens the supervised database, verifies migrations
- * ran, runs the R2-B dispatch loop, then drains it cleanly when
- * SIGINT/SIGTERM arrives. Lifecycle and signal behavior stay here; the
- * handler registry is filled in by later milestones (R2-C: SCRAPE,
- * R4: TAILOR) and stays empty until then.
+ * ran, runs the dispatch loop, then drains it cleanly when SIGINT/SIGTERM
+ * arrives. Lifecycle and signal behavior stay here; the handler registry
+ * holds SCRAPE (R2-C) and TAILOR (R4-E).
  *
  * Run from the repository root with the TS resolve hook, e.g.:
  * `node --import ./scripts/ts-register.mjs ./src/worker/main.ts`
  */
 import { openDatabase, type SqliteConnection } from "../db/client";
 import { runDispatcher } from "../queue/dispatch";
-import { closeSharedBrowser } from "../scraping/browser";
+import { closeSharedBrowser, getSharedBrowser } from "../scraping/browser";
 import { createScrapeHandler } from "../scraping/handler";
 import { OriginThrottle } from "../scraping/throttle";
 import { createLogger, flushStdio } from "../security/logger";
+import { CommandProvider } from "../tailoring/commandAdapter";
+import { createTailorHandler } from "../tailoring/handler";
 import { resolveWorkerConfig } from "./config";
 
 const log = createLogger("worker");
@@ -70,14 +71,32 @@ export async function main(): Promise<void> {
     // explicit environment value.
     process.env.PLAYWRIGHT_BROWSERS_PATH ??= config.playwrightBrowsersPath;
     const throttle = new OriginThrottle();
+    const tailorProvider =
+      config.tailorProvider === null
+        ? null
+        : new CommandProvider({
+            argv: config.tailorProvider.argv,
+            timeoutMs: config.tailorProvider.timeoutMs,
+            maxOutputBytes: config.tailorProvider.maxOutputBytes,
+            model: config.tailorProvider.model,
+          });
+    if (tailorProvider === null) {
+      log.info("no tailoring provider configured; TAILOR runs will report BLOCKED", {
+        workerId: config.workerId,
+      });
+    }
     const dispatching = runDispatcher({
       handle,
       workerId: config.workerId,
-      // R2-C registers SCRAPE; R4 registers TAILOR.
       handlers: {
         SCRAPE: createScrapeHandler({
           evidenceDir: config.evidenceDir,
           throttle,
+        }),
+        TAILOR: createTailorHandler({
+          artifactsDir: config.artifactsDir,
+          provider: tailorProvider,
+          browser: getSharedBrowser,
         }),
       },
       leaseDurationMs: config.leaseDurationMs,

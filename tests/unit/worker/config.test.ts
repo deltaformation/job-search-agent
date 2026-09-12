@@ -70,4 +70,79 @@ describe("worker configuration", () => {
       resolveWorkerConfig({ WORKER_POLL_MS: "-5" }, "/repo", 1),
     ).toThrow(/WORKER_POLL_MS/);
   });
+
+  it("leaves the tailoring provider unconfigured by default", () => {
+    expect(resolveWorkerConfig({}, "/repo", 1).tailorProvider).toBeNull();
+    expect(
+      resolveWorkerConfig({ TAILOR_PROVIDER_ARGV: "  " }, "/repo", 1).tailorProvider,
+    ).toBeNull();
+  });
+
+  it("parses the tailoring provider command and limits", () => {
+    const config = resolveWorkerConfig(
+      {
+        TAILOR_PROVIDER_ARGV: JSON.stringify(["/usr/local/bin/tailor", "--mode", "propose"]),
+        TAILOR_PROVIDER_TIMEOUT_MS: "60000",
+        TAILOR_PROVIDER_MAX_OUTPUT_BYTES: "65536",
+        TAILOR_PROVIDER_MODEL: "local-1",
+      },
+      "/repo",
+      1,
+    );
+    expect(config.tailorProvider).toEqual({
+      argv: ["/usr/local/bin/tailor", "--mode", "propose"],
+      timeoutMs: 60_000,
+      maxOutputBytes: 65_536,
+      model: "local-1",
+    });
+  });
+
+  it("defaults provider limits and model", () => {
+    const config = resolveWorkerConfig(
+      { TAILOR_PROVIDER_ARGV: JSON.stringify(["/bin/agent"]) },
+      "/repo",
+      1,
+    );
+    expect(config.tailorProvider).toEqual({
+      argv: ["/bin/agent"],
+      timeoutMs: 120_000,
+      maxOutputBytes: 262_144,
+      model: null,
+    });
+  });
+
+  it("rejects invalid provider configuration", () => {
+    expect(() =>
+      resolveWorkerConfig({ TAILOR_PROVIDER_ARGV: "not-json" }, "/repo", 1),
+    ).toThrow(/TAILOR_PROVIDER_ARGV/);
+    expect(() =>
+      resolveWorkerConfig({ TAILOR_PROVIDER_ARGV: JSON.stringify({ exe: "x" }) }, "/repo", 1),
+    ).toThrow(/TAILOR_PROVIDER_ARGV/);
+    expect(() =>
+      resolveWorkerConfig({ TAILOR_PROVIDER_ARGV: JSON.stringify([]) }, "/repo", 1),
+    ).toThrow(/TAILOR_PROVIDER_ARGV/);
+    expect(() =>
+      resolveWorkerConfig({ TAILOR_PROVIDER_ARGV: JSON.stringify(["ok", 7]) }, "/repo", 1),
+    ).toThrow(/TAILOR_PROVIDER_ARGV/);
+    expect(() =>
+      resolveWorkerConfig(
+        {
+          TAILOR_PROVIDER_ARGV: JSON.stringify(["/bin/agent"]),
+          TAILOR_PROVIDER_TIMEOUT_MS: "0",
+        },
+        "/repo",
+        1,
+      ),
+    ).toThrow(/TAILOR_PROVIDER_TIMEOUT_MS/);
+    expect(() =>
+      resolveWorkerConfig(
+        {
+          TAILOR_PROVIDER_ARGV: JSON.stringify(["/bin/agent"]),
+          TAILOR_PROVIDER_MAX_OUTPUT_BYTES: "512",
+        },
+        "/repo",
+        1,
+      ),
+    ).toThrow(/TAILOR_PROVIDER_MAX_OUTPUT_BYTES/);
+  });
 });

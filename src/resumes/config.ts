@@ -9,6 +9,8 @@ import { z } from "zod";
  * 5/3/14 experience bullets, 3 detailed roles, 2-page budget.
  */
 
+export const RENDER_CONFIG_VERSION = "render-config/v1";
+
 export const ResumeConfig = z
   .object({
     defaultTemplate: z.string(),

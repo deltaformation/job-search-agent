@@ -104,5 +104,8 @@ export const ReasonCode = z.enum([
   "PROFILE_REQUIRED",
   "PROVIDER_UNAVAILABLE",
   "STALE_INPUT",
+  // R4-E: deterministic document rendering failed (page budget, minimum
+  // text, or cross-format containment). Widening only; stored codes stay valid.
+  "RENDER_FAILED",
 ]);
 export type ReasonCode = z.infer<typeof ReasonCode>;

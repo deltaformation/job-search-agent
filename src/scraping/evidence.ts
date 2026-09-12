@@ -18,6 +18,7 @@ import type { ReasonCode, ScrapeState } from "../domain/enums";
 import { planScrapeTransition } from "../domain/scrape";
 import { resolveArtifactPath } from "../security/paths";
 import type { ScrapePayloadV1 } from "../server/intake";
+import { requestTailoring } from "../tailoring/enqueue";
 import {
   JOB_EXTRACTION_VERSION,
   type FieldProvenance,
@@ -410,6 +411,12 @@ export function persistFetchOutcome(
           sha256: ref.sha256,
         })
         .run();
+    }
+    if (createdExtraction !== null) {
+      // Every successful new extraction idempotently requests
+      // tailoring in the same transaction: no loss window between the
+      // extraction row and its tailor request.
+      requestTailoring(handle, { jobId: input.jobId, extractionId: createdExtraction });
     }
     return { attemptId: created, extractionId: createdExtraction };
   });

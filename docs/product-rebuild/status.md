@@ -7,8 +7,8 @@ Last updated: 2026-09-11
 - Current milestone: **R4 — Truthful tailoring and resume artifacts** (R1, R2, and R3 completed and accepted)
 - Product runtime: **legacy Python/PostgreSQL remains operational source code**
 - Target runtime: **Milestones 1, 2, & 3 complete on `rebuild/r1-platform` (supervisor, Next.js, worker, SQLite, security layer, URL intake, Playwright fetcher, extraction adapters, queue dispatcher, attempt visibility UI, workflow state machine, board projections, and Kanban UI)**
-- Next implementation work: **R4-E — Local agent adapter and tailoring
-  orchestration** (R4-A through R4-D accepted; R4-E ready to implement).
+- Next implementation work: **R4-F — Resume review and approval
+  UI/service** (R4-A through R4-E accepted; R4-F ready to implement).
 
 Do not report target commands, Kanban, or DOCX generation as
 available yet. SQLite migrations exist and execute automatically on startup.
@@ -36,7 +36,8 @@ available yet. SQLite migrations exist and execute automatically on startup.
 | R4-B Shared parity fixtures | accepted | `r4b-handoff.md`; 79 JSON cases recorded from the oracle, harness, pytest, envelope schema + TS test |
 | R4-C TypeScript truthfulness core | accepted | `r4c-handoff.md`; 10 pure modules, 71 parity + 31 adversarial tests green, tsc/eslint clean on Node 24 |
 | R4-D Canonical view model and renderers | accepted | `r4d-handoff.md`; 8 view-model parity + 49 renderer/parity/golden/browser-PDF tests green, tsc/eslint clean on Node 24 |
-| R4-E through R5-D | ready / blocked by dependency | R4-E integrates R4-C/D; R4-F and R5 follow in sequence |
+| R4-E Local agent adapter and orchestration | accepted | `r4e-handoff.md`; provider contract + command/test adapters, deterministic orchestration, fenced TAILOR handler, 0003 migration, 59 new tests green, tsc/eslint clean on Node 24 |
+| R4-F through R5-D | ready / blocked by dependency | R4-F builds review/approval on R4-E content + audit; R5 follows in sequence |
 
 Allowed status values are `ready`, `in progress`, `needs review`, `blocked by
 dependency`, and `accepted`. Avoid percentages: evidence and remaining gates are

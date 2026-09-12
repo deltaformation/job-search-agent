@@ -127,11 +127,36 @@ describe("resumes purity", () => {
 });
 
 describe("tailoring purity", () => {
-  it("imports only zod, siblings, shared domain primitives, and node:crypto", () => {
-    const violations = moduleImports("tailoring").filter(
+  // R4-C core plus R4-E deterministic modules stay pure. The R4-E
+  // orchestration edge (commandAdapter, enqueue, handler, orchestrate,
+  // persist, publish) is the sanctioned IO boundary, confined below.
+  const PURE_TAILORING_FILES = [
+    "adapt.ts",
+    "audit.ts",
+    "contract.ts",
+    "draft.ts",
+    "hash.ts",
+    "keywords.ts",
+    "primitives.ts",
+    "ranking.ts",
+    "schemas.ts",
+    "staleness.ts",
+    "summary.ts",
+    "testProvider.ts",
+    "text.ts",
+    "validator.ts",
+  ];
+
+  it("keeps the pure subset free of IO and services", () => {
+    const pure = moduleImports("tailoring").filter(({ file }) =>
+      PURE_TAILORING_FILES.includes(file),
+    );
+    expect(pure.length).toBeGreaterThan(0);
+    const violations = pure.filter(
       ({ specifier }) =>
         specifier !== "zod" &&
         specifier !== "zod/v4" &&
+        specifier !== "../resumes/config" &&
         !specifier.startsWith("./") &&
         !specifier.startsWith("../domain/") &&
         !specifier.startsWith("node:"),
@@ -148,9 +173,26 @@ describe("tailoring purity", () => {
     expect(hits).toEqual([]);
   });
 
-  it("never touches the filesystem, network, or subprocesses", () => {
+  it("confines subprocess use to the command adapter", () => {
+    const hits = moduleImports("tailoring").filter(
+      ({ file, specifier }) =>
+        (specifier === "node:child_process" || specifier.startsWith("node:child_process/")) &&
+        file !== "commandAdapter.ts",
+    );
+    expect(hits).toEqual([]);
+  });
+
+  it("confines filesystem use to artifact publishing", () => {
+    const hits = moduleImports("tailoring").filter(
+      ({ file, specifier }) =>
+        (specifier === "node:fs" || specifier.startsWith("node:fs/")) && file !== "publish.ts",
+    );
+    expect(hits).toEqual([]);
+  });
+
+  it("never touches the network or worker threads", () => {
     const hits = moduleImports("tailoring").filter(({ specifier }) =>
-      ["node:fs", "node:net", "node:http", "node:child_process", "node:worker_threads"].some(
+      ["node:net", "node:http", "node:worker_threads"].some(
         (banned) => specifier === banned || specifier.startsWith(`${banned}/`),
       ),
     );

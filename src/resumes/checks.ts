@@ -17,6 +17,11 @@ export function normalizeForComparison(text: string): string {
   return text.replace(/\s+/g, "").toLowerCase();
 }
 
+/** Remove Markdown emphasis markers (presentation, not content) before comparison. */
+export function stripMarkdownEmphasis(markdown: string): string {
+  return markdown.replace(/[*#]/g, "");
+}
+
 /**
  * Body text fragments of rendered HTML (port of `BodyTextParser`:
  * stripped non-empty text nodes inside `<body>`).
