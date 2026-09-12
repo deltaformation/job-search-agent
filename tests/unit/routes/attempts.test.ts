@@ -94,7 +94,9 @@ describe("attempt reads and retry", () => {
       routeParams(failed),
     );
     const workItem = (await readJson(after))["workItem"] as Record<string, unknown>;
-    expect(workItem).toMatchObject({ state: "QUEUED", attemptCount: 0 });
+    // Human retry preserves the recorded attempt counter and extends the
+    // budget instead of restarting the counter into kept history.
+    expect(workItem).toMatchObject({ state: "QUEUED", attemptCount: 1, maxAttempts: 4 });
 
     const queued = insertWorkItem("QUEUED");
     const retryQueued = await retry(

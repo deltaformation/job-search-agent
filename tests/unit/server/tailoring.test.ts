@@ -144,6 +144,14 @@ describe("retryTailoring", () => {
       const { jobId, extractionId } = seedJob(t.handle);
       const enqueued = requestTailoring(t.handle, { jobId, extractionId });
       setItemState(t.handle, enqueued.workItemId, "FAILED");
+      // Simulate an exhausted queue item: the retry must preserve the
+      // recorded counter (attempt history is append-only) and extend the
+      // budget instead of restarting the counter into kept history.
+      t.handle.db
+        .update(workItems)
+        .set({ attemptCount: 3, maxAttempts: 3 })
+        .where(eq(workItems.id, enqueued.workItemId))
+        .run();
       // Simulate the worker's terminal job marker: the retry must not clear it.
       t.handle.db
         .update(jobs)
@@ -153,11 +161,15 @@ describe("retryTailoring", () => {
       const result = retryTailoring(t.handle, jobId);
       expect(result).toEqual({ ok: true, workItemId: enqueued.workItemId, action: "requeued" });
       const item = t.handle.db
-        .select({ state: workItems.state, attemptCount: workItems.attemptCount })
+        .select({
+          state: workItems.state,
+          attemptCount: workItems.attemptCount,
+          maxAttempts: workItems.maxAttempts,
+        })
         .from(workItems)
         .where(eq(workItems.id, enqueued.workItemId))
         .get();
-      expect(item).toEqual({ state: "QUEUED", attemptCount: 0 });
+      expect(item).toEqual({ state: "QUEUED", attemptCount: 3, maxAttempts: 6 });
       const job = t.handle.db
         .select({ tailoringState: jobs.tailoringState })
         .from(jobs)

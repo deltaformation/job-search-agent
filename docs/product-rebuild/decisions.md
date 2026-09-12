@@ -96,6 +96,18 @@ is added. Cross-format extracted-text and claim-inventory tests prevent content
 drift; byte-identical DOCX/PDF files are not required when renderer metadata is
 nondeterministic.
 
+## R-ADR-011 — Queue attempt history is append-only; retries extend budget
+
+**Status:** accepted, 2026-09-12
+
+`work_attempts` rows are never deleted or rewritten, and `work_items.attempt_count`
+never decreases: it is the next attempt's number under the unique
+`(work_item_id, attempt_number)` key. A human retry of a FAILED item therefore
+grants its fresh bounded budget by extending `max_attempts`
+(`attempt_count + 3`), never by resetting the counter — resetting collided with
+kept history on the next completion or stale-lease recovery and crash-looped
+`npm run dev` (fixed 2026-09-12 in `src/queue/leases.ts`, uncommitted).
+
 ## R-ADR-010 — Automatic preparation stops at review
 
 **Status:** accepted, 2026-09-11

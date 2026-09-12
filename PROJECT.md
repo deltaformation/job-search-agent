@@ -21,9 +21,9 @@ This is the human and coding-agent entrypoint for project state.
 
 ## Current reality
 
-The target Node/Next.js/SQLite application is not implemented yet. The existing
-Python/PostgreSQL code remains a temporary migration source and behavioral
-oracle. Never advertise planned functionality as available.
+The local Node.js/Next.js/SQLite application is the active product runtime.
+Milestones R1 through R5-B are complete; legacy Python and PostgreSQL
+runtimes have been retired and removed from the active tree.
 
 ## Project truth order
 

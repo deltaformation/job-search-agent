@@ -1,8 +1,13 @@
 /**
  * Side-effectful registration for the repository TypeScript resolve hook.
  * Scripts that (transitively) import `./src/*.ts` statically import this
- * module first, then dynamic-import TypeScript freely.
+ * module first (or pass it via `--import`), then import TypeScript freely.
+ *
+ * Uses `module.registerHooks` (in-thread hooks, Node 22.15+/24+) instead of
+ * the deprecated `module.register` loader thread (DEP0205 on Node 26).
  */
-import { register } from "node:module";
+import { registerHooks } from "node:module";
 
-register("./ts-loader.mjs", import.meta.url);
+import { resolve } from "./ts-loader.mjs";
+
+registerHooks({ resolve });

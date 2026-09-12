@@ -1,53 +1,89 @@
 # Local Job Application Tracker
 
-This repository is being rebuilt as a single-user, local-first application for
-preparing and manually tracking job applications.
+Single-user, local-first web app for preparing and manually tracking job
+applications. Everything runs on your machine: a Next.js UI, a background
+worker, SQLite storage, and Playwright for public job pages and PDF output.
 
 ```text
-paste public job URLs
-  → scrape and normalize
-  → review a truthful tailored resume
-  → approve the exact resume version
+clip a job in the browser (or paste URLs)
+  → normalize → New
+  → generate and review a fact-grounded resume → Tailored
   → apply manually on the original site
   → manually track Applied / Interviewed / Rejected
 ```
 
-## Current state
+## Quick start
 
-The rebuild specification and project harness are complete enough to begin the
-foundation milestone. The target Node/Next.js/SQLite application is **not yet
-implemented**. Existing Python/PostgreSQL source remains temporarily as a
-behavioral oracle and read-only migration source; its documentation is isolated
-under [`docs/legacy/`](docs/legacy/).
+Prerequisites: Node.js 24 (see `.nvmrc`) and npm.
 
-Start with [`PROJECT.md`](PROJECT.md) for current status, reading order, and the
-next ready work order.
+```sh
+npm install
+npx playwright install chromium
+npm run dev
+```
 
-## MVP commitments
+Then open <http://127.0.0.1:3000>. One command starts the web app and the
+worker together, applies pending SQLite migrations, and shuts both down
+cleanly on Ctrl-C.
 
-- One multiline intake for user-supplied public job URLs.
-- Public-page scraping with adapter-first extraction and a guarded Playwright
-  fallback.
-- Separate raw evidence, normalized job data, and structured agent output.
-- Exactly five persisted board columns: `New`, `Tailored`, `Applied`,
-  `Interviewed`, and `Rejected`.
-- Automatic resume preparation after a successful scrape when profile/provider
-  prerequisites exist.
-- Immutable, fact-grounded Markdown, DOCX, and PDF resume versions.
-- Explicit human approval before a card becomes `Tailored`.
-- Manual application, manual post-application status movement, and complete
-  event history.
-- SQLite plus local filesystem storage, with backup/restore as one integrity
-  unit.
-- One root command for the web process and worker after one-time setup.
+## Configuration
 
-## Explicitly outside MVP
+Copy the settings you need into `.env.local` (never committed):
 
-- Searching job boards, alerts, scheduled discovery, or morning briefings.
-- Login automation, CAPTCHAs, stealth, proxies, or protection bypasses.
-- ATS form filling, protected screening answers, uploads, or final submission.
-- Cloud sync, required hosted services, teams, or multi-user permissions.
-- Arbitrary AI-authored candidate claims or autonomous resume approval.
+```sh
+# Required for AI resume tailoring and connection diagnostics.
+OPENROUTER_API_KEY=your-key-here
+```
+
+Without a key the app still runs: intake, scraping, the board, and
+backup/restore all work, while tailoring runs report
+`PROVIDER_UNAVAILABLE` until a key is configured. Active models are shown
+in Settings.
+
+## Everyday commands
+
+```text
+npm run dev              develop: web + worker with graceful shutdown
+npm run start            production web + worker (runs migrations first)
+npm run build            production build
+npm test                 unit and integration suite
+npm run test:e2e         Playwright product acceptance suite
+npm run db:migrate       apply pending SQLite migrations
+npm run candidate:import -- <file> [--activate]   import a reviewed
+                         candidate master-resume JSON as a new profile version
+```
+
+## Backup, restore, and reset
+
+Open Settings (gear icon in the header):
+
+- **Download Full Backup** exports a timestamped `.tar.gz` with the SQLite
+  database (checkpointed first), generated resume artifacts, and the
+  candidate profile. It never includes `.env.local`.
+- **Restore Backup** uploads an archive, saves an automatic pre-restore
+  safety copy, verifies the staged database, then swaps it in.
+- **Clear All Jobs** wipes jobs and tailoring history after a typed
+  confirmation, while keeping the candidate profile and schema.
+
+## Where data lives
+
+All product data stays under ignored local directories:
+
+- `data/rebuild/job-tracker.sqlite` — jobs, board, queue, reviews
+- `data/rebuild/evidence/` — raw fetched page evidence
+- `data/rebuild/artifacts/` — immutable generated resume versions
+- `data/candidate/master-resume.json` — reviewed candidate source file
+
+## Safety boundary
+
+- The app never fills or submits application forms. You open the retained
+  job URL, apply yourself, and record the outcome.
+- Every resume claim traces to reviewed candidate facts; unsupported job
+  requirements stay visible gaps and never enter a resume.
+- Only an explicit human approval moves a job to `Tailored`, binding the
+  exact reviewed resume version and artifact hashes.
+- Only public job pages you supply are fetched; logins, CAPTCHAs, and
+  restricted pages stop with a reason code instead of a bypass.
 
 ## Documentation
 
@@ -58,20 +94,3 @@ next ready work order.
 - [Active decisions](docs/product-rebuild/decisions.md)
 - [Reuse and decommission map](docs/product-rebuild/reuse-map.md)
 - [Current status](docs/product-rebuild/status.md)
-
-## Available command today
-
-```text
-node scripts/check-project-context.mjs
-```
-
-The future `npm run setup`, `npm run dev`, `npm run build`, and `npm run start`
-commands become supported only when milestone R1 records passing acceptance
-evidence.
-
-## Non-negotiable safety boundary
-
-Every resume statement must come from reviewed candidate data with immutable
-provenance. Unsupported job requirements remain visible gaps. Agents and workers
-cannot approve resumes or apply to jobs. The human reviews the exact artifacts,
-opens the retained source URL, submits manually, and records the outcome.

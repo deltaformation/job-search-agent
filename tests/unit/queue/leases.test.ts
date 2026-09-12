@@ -564,8 +564,97 @@ describe("queue requeue", () => {
       expect(result).toEqual({ ok: true, state: "QUEUED" });
       expect(getItem(t.handle, id)).toMatchObject({
         state: "QUEUED",
-        attemptCount: 0,
+        // The counter is append-only history: it keeps climbing so the
+        // next completion cannot collide with kept attempt rows. The
+        // fresh budget lands on maxAttempts instead.
+        attemptCount: 3,
+        maxAttempts: 6,
         nextRunAt: plus(T0, 1000),
+      });
+    });
+  });
+
+  it("requeue then claim then complete appends without colliding with history", () => {
+    withDatabase((t) => {
+      // Reproduces the `npm run dev` crash: an exhausted item keeps
+      // three attempt rows, a human retries it, and the next attempt
+      // must record as number 4 — never re-insert number 1.
+      const id = seedItem(t.handle, {
+        state: "FAILED",
+        attemptCount: 3,
+        maxAttempts: 3,
+      });
+      for (const attemptNumber of [1, 2, 3]) {
+        t.handle.db
+          .insert(workAttempts)
+          .values({
+            id: newId(),
+            workItemId: id,
+            attemptNumber,
+            workerId: "worker-a",
+            startedAt: T0,
+            finishedAt: plus(T0, attemptNumber * 1000),
+            result: "FAILED",
+            errorCode: "PROVIDER_UNAVAILABLE",
+          })
+          .run();
+      }
+      expect(
+        requeueWorkItem(t.handle, { workItemId: id, now: plus(T0, 9000) }).ok,
+      ).toBe(true);
+      const claimed = claimNextWorkItem(t.handle, {
+        workerId: "worker-b",
+        kinds: ["SCRAPE"],
+        leaseDurationMs: 60_000,
+        now: plus(T0, 10_000),
+      });
+      expect(claimed?.attemptCount).toBe(4);
+      const completed = completeWorkItem(
+        t.handle,
+        {
+          workItemId: id,
+          leaseToken: claimed?.leaseToken ?? "",
+          result: "FAILED",
+          errorCode: "PROVIDER_UNAVAILABLE",
+        },
+        { now: plus(T0, 11_000), backoff: { baseMs: 0 } },
+      );
+      expect(completed).toMatchObject({
+        ok: true,
+        state: "QUEUED",
+        attemptNumber: 4,
+      });
+      expect(attemptsFor(t.handle, id)).toHaveLength(4);
+      // Stale recovery on the re-driven lease also appends cleanly.
+      const reclaimed = claimNextWorkItem(t.handle, {
+        workerId: "worker-b",
+        kinds: ["SCRAPE"],
+        leaseDurationMs: 1000,
+        now: plus(T0, 12_000),
+      });
+      expect(reclaimed?.attemptCount).toBe(5);
+      const recovered = recoverStaleLeases(t.handle, {
+        now: plus(T0, 20_000),
+      });
+      expect(recovered).toEqual({ recovered: 1, requeued: 1, failed: 0 });
+      expect(attemptsFor(t.handle, id)).toHaveLength(5);
+    });
+  });
+
+  it("never shrinks a larger surviving budget on requeue", () => {
+    withDatabase((t) => {
+      // A BLOCKED item finishes FAILED early with budget left; the
+      // requeue extends from the recorded attempts without shrinking.
+      const id = seedItem(t.handle, {
+        state: "FAILED",
+        attemptCount: 1,
+        maxAttempts: 10,
+      });
+      expect(requeueWorkItem(t.handle, { workItemId: id }).ok).toBe(true);
+      expect(getItem(t.handle, id)).toMatchObject({
+        state: "QUEUED",
+        attemptCount: 1,
+        maxAttempts: 10,
       });
     });
   });

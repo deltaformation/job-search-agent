@@ -31,6 +31,11 @@ import { computeBackoffMs, type BackoffOptions } from "./backoff";
 export const DEFAULT_LEASE_DURATION_MS = 300_000;
 export const DEFAULT_STALE_RECOVERY_LIMIT = 100;
 export const MAX_STALE_RECOVERY_LIMIT = 1000;
+/**
+ * Attempts granted by one human requeue, on top of the attempts already
+ * recorded. Matches the default enqueue budget.
+ */
+export const DEFAULT_REQUEUE_ATTEMPTS = 3;
 
 /** `work_attempts.error_code` for leases reclaimed after expiry. */
 export const LEASE_EXPIRED = "LEASE_EXPIRED";
@@ -415,8 +420,12 @@ export function recoverStaleLeases(
 /**
  * Human-initiated retry of a finished FAILED item. Only FAILED items are
  * eligible; SUCCEEDED/CANCELLED history is never rewritten and RUNNING
- * leases are never yanked. The attempt counter restarts because a human
- * requeue grants a fresh bounded budget; attempt rows are untouched.
+ * leases are never yanked. The attempt counter is never reset because
+ * `work_attempts` rows are append-only under a unique
+ * (work_item_id, attempt_number) key — restarting the counter would
+ * collide with kept history on the next completion or stale-lease
+ * recovery. Instead a human requeue grants a fresh bounded budget by
+ * extending `max_attempts` past the attempts already recorded.
  */
 export function requeueWorkItem(
   handle: DatabaseHandle,
@@ -428,7 +437,11 @@ export function requeueWorkItem(
   const nowIso = resolveNow(input.now);
   return withTransaction(handle.sqlite, () => {
     const current = handle.db
-      .select({ state: workItems.state })
+      .select({
+        state: workItems.state,
+        attemptCount: workItems.attemptCount,
+        maxAttempts: workItems.maxAttempts,
+      })
       .from(workItems)
       .where(eq(workItems.id, input.workItemId))
       .get();
@@ -438,11 +451,15 @@ export function requeueWorkItem(
     if (current.state !== "FAILED") {
       return { ok: false, error: "not-failed" } as const;
     }
+    const maxAttempts = Math.max(
+      current.maxAttempts,
+      current.attemptCount + DEFAULT_REQUEUE_ATTEMPTS,
+    );
     const changed = handle.db
       .update(workItems)
       .set({
         state: "QUEUED",
-        attemptCount: 0,
+        maxAttempts,
         nextRunAt: nowIso,
         updatedAt: nowIso,
       })

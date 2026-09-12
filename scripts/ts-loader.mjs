@@ -7,13 +7,16 @@
  * Only extensionless relative specifiers that fail normal resolution are
  * retried with `.ts`; bare package imports and explicit extensions pass
  * through untouched.
+ *
+ * Must stay synchronous: `module.registerHooks` runs hooks on the main
+ * thread and does not await async hook results.
  */
 import { existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-export async function resolve(specifier, context, next) {
+export function resolve(specifier, context, next) {
   try {
-    return await next(specifier, context);
+    return next(specifier, context);
   } catch (error) {
     // Retry extensionless relative imports as sibling `.ts` files, including
     // the case where a same-named directory shadows the file (bundlers also
