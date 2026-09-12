@@ -273,8 +273,8 @@ export default function CardDrawer({
             <span>Compensation highlights</span>
           </h3>
           <ul className="flex flex-wrap gap-1.5">
-            {v.compensationHighlights.map((highlight) => (
-              <li key={highlight}>
+            {v.compensationHighlights.map((highlight, idx) => (
+              <li key={`${highlight}-${idx}`}>
                 <Badge variant="secondary" className="text-xs font-medium">
                   {highlight}
                 </Badge>
@@ -302,8 +302,8 @@ export default function CardDrawer({
               <ul className="flex flex-wrap gap-1.5">
                 {v.topKeywords
                   .filter((entry) => entry.evidenced)
-                  .map((entry) => (
-                    <li key={entry.keyword}>
+                  .map((entry, idx) => (
+                    <li key={`${entry.keyword}-${idx}`}>
                       <Badge variant="success" className="text-xs font-medium">
                         {entry.keyword}
                       </Badge>
@@ -320,8 +320,8 @@ export default function CardDrawer({
               <ul className="flex flex-wrap gap-1.5">
                 {v.topKeywords
                   .filter((entry) => !entry.evidenced)
-                  .map((entry) => (
-                    <li key={entry.keyword}>
+                  .map((entry, idx) => (
+                    <li key={`${entry.keyword}-${idx}`}>
                       <Badge variant="outline" className="text-xs font-medium">
                         {entry.keyword}
                       </Badge>

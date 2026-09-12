@@ -154,6 +154,18 @@ describe("selectTopKeywords", () => {
       },
     ]);
   });
+
+  it("deduplicates multiple entries with the same requirementId or quote", () => {
+    const requirements = [
+      requirement("req_003", "Python API development", { importance: "required", match_status: "gap" }),
+      requirement("req_003", "Python API development", { importance: "required", match_status: "gap" }),
+      requirement("req_004", "python api development", { importance: "required", match_status: "gap" }),
+      requirement("req_005", "Docker containerization", { importance: "preferred", match_status: "matched" }),
+    ];
+    const top = selectTopKeywords(requirements);
+    expect(top).toHaveLength(2);
+    expect(top.map((e) => e.requirementId)).toEqual(["req_003", "req_005"]);
+  });
 });
 
 describe("keyword placement audit", () => {

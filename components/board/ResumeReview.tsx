@@ -260,8 +260,8 @@ export default function ResumeReview({
                 </p>
                 {view.content.changeSummary.addedBullets.length > 0 && (
                   <ul className="mt-2 space-y-1 pl-4 list-disc text-emerald-800 dark:text-emerald-300">
-                    {view.content.changeSummary.addedBullets.map((line) => (
-                      <li key={line}>{line}</li>
+                    {view.content.changeSummary.addedBullets.map((line, idx) => (
+                      <li key={`${line}-${idx}`}>{line}</li>
                     ))}
                   </ul>
                 )}
@@ -269,8 +269,8 @@ export default function ResumeReview({
                   <div className="mt-2">
                     <p className="font-semibold text-muted-foreground">Removed</p>
                     <ul className="mt-1 space-y-1 pl-4 list-disc text-destructive line-through">
-                      {view.content.changeSummary.removedBullets.map((line) => (
-                        <li key={line}>{line}</li>
+                      {view.content.changeSummary.removedBullets.map((line, idx) => (
+                        <li key={`${line}-${idx}`}>{line}</li>
                       ))}
                     </ul>
                   </div>
@@ -397,8 +397,8 @@ export default function ResumeReview({
           </CardHeader>
           <CardContent>
             <ul className="space-y-2.5 text-sm">
-              {view.topKeywords.map((entry) => (
-                <li key={entry.requirementId} className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-1">
+              {view.topKeywords.map((entry, index) => (
+                <li key={`${entry.requirementId}-${entry.keyword}-${index}`} className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-1">
                   <p className="font-medium text-foreground italic">“{entry.keyword}”</p>
                   <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                     <Badge variant="outline" className="text-[10px]">
@@ -459,8 +459,8 @@ export default function ResumeReview({
             <p className="text-muted-foreground leading-relaxed">{view.content.audit.rationale}</p>
             {view.content.audit.questions.length > 0 && (
               <ul className="list-disc pl-4 space-y-1 text-muted-foreground">
-                {view.content.audit.questions.map((question) => (
-                  <li key={question}>{question}</li>
+                {view.content.audit.questions.map((question, idx) => (
+                  <li key={`${question}-${idx}`}>{question}</li>
                 ))}
               </ul>
             )}

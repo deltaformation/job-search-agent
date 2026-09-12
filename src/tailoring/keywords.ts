@@ -360,7 +360,22 @@ export function selectTopKeywords(
       left.matchRank - right.matchRank ||
       left.order - right.order,
   );
-  return scored.slice(0, Math.max(0, limit)).map((entry) => ({
+  const unique: typeof scored = [];
+  const seenRequirementIds = new Set<string>();
+  const seenKeywords = new Set<string>();
+  for (const item of scored) {
+    const normQuote = item.keyword.trim().toLowerCase();
+    if (seenRequirementIds.has(item.requirementId) || seenKeywords.has(normQuote)) {
+      continue;
+    }
+    seenRequirementIds.add(item.requirementId);
+    seenKeywords.add(normQuote);
+    unique.push(item);
+    if (unique.length >= limit) {
+      break;
+    }
+  }
+  return unique.map((entry) => ({
     keyword: entry.keyword,
     requirementId: entry.requirementId,
     category: entry.category,
