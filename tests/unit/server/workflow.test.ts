@@ -735,6 +735,8 @@ describe("approveTailored", () => {
         reviewId,
       });
       expect(readJob(t.handle, jobId)?.status).toBe("TAILORED");
+      // R4-F: the same compare-and-swap flips tailoring to APPROVED.
+      expect(readJob(t.handle, jobId)?.tailoringState).toBe("APPROVED");
       const events = readEvents(t.handle, jobId);
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({

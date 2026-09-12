@@ -7,6 +7,7 @@ import { apiGet, errorMessage } from "../api";
 import AddNoteForm from "./AddNoteForm";
 import Dialog from "./dialog";
 import { postJobMutation } from "./mutate";
+import ResumeReview from "./ResumeReview";
 
 /**
  * Card detail drawer: facts, source links, attempts, missing fields,
@@ -312,24 +313,22 @@ export default function CardDrawer({
               <p className="mt-1 text-sm">No tailored resume yet.</p>
             )}
             {view.resumes.map((resume) => (
-              <div key={resume.id} className="mt-2 border-t pt-1 text-sm">
-                <p className="font-semibold">
+              <details
+                key={resume.id}
+                open={resume.id === view.job.activeResumeVersionId}
+                className="mt-2 border-t pt-1 text-sm"
+              >
+                <summary className="cursor-pointer font-semibold">
                   Version {resume.version} · {pretty(resume.reviewState)}
-                </p>
-                {resume.artifacts.length > 0 && (
-                  <p>
-                    Files:{" "}
-                    {resume.artifacts.map((file) => `${file.kind} (${formatBytes(file.byteSize)})`).join(", ")}
-                    {" "}(downloads arrive with resume review)
-                  </p>
-                )}
-                {resume.reviews.map((review) => (
-                  <p key={review.id}>
-                    {review.action} by {review.actor} · {review.createdAt}
-                    {review.note !== null ? ` — ${review.note}` : ""}
-                  </p>
-                ))}
-              </div>
+                  {resume.id === view.job.activeResumeVersionId ? " (active)" : ""}
+                </summary>
+                <ResumeReview
+                  versionId={resume.id}
+                  refreshToken={refreshToken}
+                  onChanged={onChanged}
+                  onReviewed={() => void refreshDetail()}
+                />
+              </details>
             ))}
           </section>
 

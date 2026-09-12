@@ -508,7 +508,10 @@ export function recordApplication(
  * makes the review rows it just wrote visible to the binding checks below.
  * The gate verifies the job's active pointer, the version's APPROVED state,
  * and a human APPROVED review binding the version's content hash — hash
- * re-computation itself stays R4-F's job, before this call.
+ * re-computation itself stays R4-F's job, before this call. The single
+ * compare-and-swap also flips tailoring to APPROVED: one logical approval,
+ * one row_version bump. If this gate rejects after R4-F wrote review rows,
+ * the caller must roll the transaction back (a throw does that).
  */
 export function approveTailored(
   handle: DatabaseHandle,
@@ -594,12 +597,15 @@ export function approveTailored(
       );
     }
     // Approval is not a positioning gesture: the card keeps its rank and
-    // the user reorders it in TAILORED afterwards.
+    // the user reorders it in TAILORED afterwards. The tailoring flip rides
+    // in the same compare-and-swap so the two states can never diverge.
     const updated = casUpdateJobBoard(handle, {
       jobId: input.jobId,
       expectedVersion: input.observedRowVersion,
       status: "TAILORED",
       rank: job.rank,
+      tailoringState: "APPROVED",
+      tailoringReasonCode: null,
       now,
     });
     if (updated === null) {

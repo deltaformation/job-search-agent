@@ -4,11 +4,10 @@ Last updated: 2026-09-11
 
 ## Current position
 
-- Current milestone: **R4 — Truthful tailoring and resume artifacts** (R1, R2, and R3 completed and accepted)
+- Current milestone: **R5 — Migration, Parity Gate, and Cutover** (R1, R2, R3, and R4 completed and accepted)
 - Product runtime: **legacy Python/PostgreSQL remains operational source code**
-- Target runtime: **Milestones 1, 2, & 3 complete on `rebuild/r1-platform` (supervisor, Next.js, worker, SQLite, security layer, URL intake, Playwright fetcher, extraction adapters, queue dispatcher, attempt visibility UI, workflow state machine, board projections, and Kanban UI)**
-- Next implementation work: **R4-F — Resume review and approval
-  UI/service** (R4-A through R4-E accepted; R4-F ready to implement).
+- Target runtime: **Milestones 1, 2, 3, & 4 complete on `rebuild/r1-platform` (supervisor, Next.js, worker, SQLite, security layer, URL intake, Playwright fetcher, extraction adapters, queue dispatcher, attempt visibility UI, workflow state machine, board projections, Kanban UI, candidate snapshots, parity fixtures, truthfulness core, view models, renderers, agent adapter, tailoring orchestration, and review/approval gate)**
+- Next implementation work: **R5-A — PostgreSQL read-only importer** (Milestones 1 through 4 accepted; R5-A ready to implement).
 
 Do not report target commands, Kanban, or DOCX generation as
 available yet. SQLite migrations exist and execute automatically on startup.
@@ -37,7 +36,8 @@ available yet. SQLite migrations exist and execute automatically on startup.
 | R4-C TypeScript truthfulness core | accepted | `r4c-handoff.md`; 10 pure modules, 71 parity + 31 adversarial tests green, tsc/eslint clean on Node 24 |
 | R4-D Canonical view model and renderers | accepted | `r4d-handoff.md`; 8 view-model parity + 49 renderer/parity/golden/browser-PDF tests green, tsc/eslint clean on Node 24 |
 | R4-E Local agent adapter and orchestration | accepted | `r4e-handoff.md`; provider contract + command/test adapters, deterministic orchestration, fenced TAILOR handler, 0003 migration, 59 new tests green, tsc/eslint clean on Node 24 |
-| R4-F through R5-D | ready / blocked by dependency | R4-F builds review/approval on R4-E content + audit; R5 follows in sequence |
+| R4-F Resume review and approval UI/service | accepted | `r4f-handoff.md`; side-by-side review, mandatory-note revision loop, hash-rechecking approval to TAILORED, 60 new/affected tests green, tsc/eslint clean on Node 24 |
+| R5-A through R5-D | ready / blocked by dependency | R5-A importer ready; R5-B shadow verification, R5-C parity, R5-D cutover follow in sequence |
 
 Allowed status values are `ready`, `in progress`, `needs review`, `blocked by
 dependency`, and `accepted`. Avoid percentages: evidence and remaining gates are

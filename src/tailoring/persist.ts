@@ -228,7 +228,19 @@ export function attachResumeVersion(
     }
     const info = templateInfo();
     const existing = getResumeVersionByContentHash(handle, job.id, input.result.contentHash);
-    if (existing !== null) {
+    // Dedupe converges only onto the job's live active version. A rerun
+    // whose identical output matches a terminally reviewed version
+    // (REVISION_REQUESTED, APPROVED, FAILED) — or a live version that is
+    // no longer active — must mint a new child: the attach below never
+    // moves the active pointer on the dedupe path, so converging anywhere
+    // else would leave the job pointing at a version the review machine
+    // can never advance. The child records the rerun honestly (new
+    // analysis, parent link, new attempt) even when its bytes match.
+    if (
+      existing !== null &&
+      existing.reviewState === "AWAITING_REVIEW" &&
+      existing.id === job.activeResumeVersionId
+    ) {
       const moved = casJobTailoringState(handle, {
         jobId: job.id,
         rowVersion: job.rowVersion,

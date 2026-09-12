@@ -25,6 +25,19 @@ export function tailorIdempotencyKey(jobId: string, extractionId: string): strin
   return `tailor:v1:${jobId}:${extractionId}`;
 }
 
+/**
+ * Revision-run idempotency key. A revision request must cause a follow-up
+ * run even though the original `tailor:v1:{job}:{extraction}` item already
+ * succeeded — reusing that key would dedupe and no new version would ever
+ * exist. Binding the parent version keeps the key stable across retries
+ * of the same revision command (a version is revised at most once: the
+ * review state is terminal afterwards) while remaining distinct per
+ * revision round.
+ */
+export function tailorRevisionIdempotencyKey(jobId: string, parentVersionId: string): string {
+  return `tailor-rev:v1:${jobId}:${parentVersionId}`;
+}
+
 export interface RequestTailoringResult {
   workItemId: string;
   deduped: boolean;
@@ -65,6 +78,50 @@ export function requestTailoring(
   const raced = getWorkItemByIdempotencyKey(handle, idempotencyKey);
   if (raced === null) {
     throw new Error("tailor enqueue is not readable after insert");
+  }
+  return { workItemId: raced.id, deduped: raced.id !== id };
+}
+
+/**
+ * Enqueue the follow-up run for a human revision request. Same TAILOR
+ * payload shape (the handler needs no changes: REVISION_REQUESTED runs
+ * are an allowed transition), but the revision-scoped idempotency key
+ * so the request is not swallowed by the original run's key. Joins the
+ * caller's transaction like `requestTailoring`, so the review rows and
+ * the follow-up run commit atomically.
+ */
+export function requestRevisionRun(
+  handle: DatabaseHandle,
+  rawInput: { jobId: string; extractionId: string; parentVersionId: string; maxAttempts?: number },
+): RequestTailoringResult {
+  const input = z
+    .object({
+      jobId: EntityId,
+      extractionId: EntityId,
+      parentVersionId: EntityId,
+      maxAttempts: z.number().int().min(1).max(10).optional(),
+    })
+    .strict()
+    .parse(rawInput);
+  const idempotencyKey = tailorRevisionIdempotencyKey(input.jobId, input.parentVersionId);
+  const existing = getWorkItemByIdempotencyKey(handle, idempotencyKey);
+  if (existing !== null) {
+    return { workItemId: existing.id, deduped: true };
+  }
+  const payload = TailorPayloadV1.parse({
+    schemaVersion: TAILOR_PAYLOAD_VERSION,
+    jobId: input.jobId,
+    extractionId: input.extractionId,
+  });
+  const id = insertTailorWorkItem(handle, {
+    idempotencyKey,
+    jobId: input.jobId,
+    payloadJson: JSON.stringify(payload),
+    maxAttempts: input.maxAttempts ?? 3,
+  });
+  const raced = getWorkItemByIdempotencyKey(handle, idempotencyKey);
+  if (raced === null) {
+    throw new Error("revision enqueue is not readable after insert");
   }
   return { workItemId: raced.id, deduped: raced.id !== id };
 }

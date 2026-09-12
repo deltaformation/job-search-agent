@@ -7,30 +7,30 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createTestDatabase,
   jobAnalyses,
-  jobExtractions,
   jobs,
   newId,
   resumeArtifacts,
   resumeClaimFacts,
   resumeClaims,
   resumeVersions,
-  scrapeAttempts,
-  utcNow,
   workItems,
   type TestDatabase,
 } from "../../../src/db";
 import { eq } from "drizzle-orm";
-import type { WorkHandlerContext } from "../../../src/queue/dispatch";
-import {
-  activateProfileVersion,
-  importCandidate,
-  resolveCurrentSnapshots,
-} from "../../../src/server/candidates";
+import { resolveCurrentSnapshots } from "../../../src/server/candidates";
 import { ResumeContentV1 } from "../../../src/tailoring/contract";
 import { requestTailoring } from "../../../src/tailoring/enqueue";
 import { createTailorHandler } from "../../../src/tailoring/handler";
 import { TestProvider } from "../../../src/tailoring/testProvider";
-import { E2E_JD_TEXT, e2eProposal, stubRenderPdf } from "./support";
+import {
+  E2E_JD_TEXT,
+  addExtraction,
+  e2eProposal,
+  handlerContext,
+  importTestProfile,
+  seedJob,
+  stubRenderPdf,
+} from "./support";
 
 /**
  * TAILOR handler integration: seeded database plus isolated artifact
@@ -56,188 +56,6 @@ function setup(): { t: TestDatabase; artifactsDir: string } {
   const artifactsDir = mkdtempSync(join(tmpdir(), "tailor-artifacts-"));
   tempDirs.push(artifactsDir);
   return { t, artifactsDir };
-}
-
-function importTestProfile(t: TestDatabase): string {
-  const imported = importCandidate(t.handle, {
-    document: {
-      schemaVersion: "candidate-import/v1",
-      identity: {
-        fullName: "Orchestration Candidate",
-        headline: "Backend Engineer",
-        email: "orchestration@example.com",
-        phone: "+1-555-0100",
-        location: "Toronto, ON",
-      },
-      targetTitles: ["Backend Engineer"],
-      employment: [
-        {
-          id: "emp-1",
-          company: "Acme",
-          role: "Engineer",
-          location: "Toronto, ON",
-          startDate: "2020-01-15",
-          endDate: "2022-06-30",
-          isCurrent: false,
-        },
-        {
-          id: "emp-2",
-          company: "Beta",
-          role: "Senior Engineer",
-          location: "Remote",
-          startDate: "2022-07-01",
-          isCurrent: true,
-        },
-      ],
-      achievements: [
-        {
-          factId: "f_api",
-          employmentId: "emp-2",
-          category: "experience",
-          text: "Led the public API migration to TypeScript serving ten million daily requests.",
-          technologies: ["TypeScript"],
-          metrics: ["10M daily requests"],
-          verification: "APPROVED",
-        },
-        {
-          factId: "f_auth",
-          employmentId: "emp-2",
-          category: "experience",
-          text: "Shipped single sign-on with SAML for forty enterprise tenants.",
-          technologies: ["SAML"],
-          metrics: ["40 tenants"],
-          verification: "APPROVED",
-        },
-        {
-          factId: "f_scale",
-          employmentId: "emp-1",
-          category: "experience",
-          text: "Reduced API latency by forty percent with caching and connection pooling.",
-          technologies: ["Redis"],
-          metrics: ["40% lower latency"],
-          verification: "APPROVED",
-        },
-        {
-          factId: "f_team",
-          employmentId: "emp-1",
-          category: "experience",
-          text: "Mentored four engineers and established incident review practices.",
-          technologies: [],
-          metrics: ["4 engineers"],
-          verification: "APPROVED",
-        },
-      ],
-      skills: [
-        { name: "TypeScript", verified: true },
-        { name: "SAML", verified: true },
-        { name: "COBOL", verified: true },
-        { name: "Rust", verified: false },
-      ],
-      education: [
-        {
-          degree: "B.Sc.",
-          fieldOfStudy: "Computer Science",
-          institution: "Test University",
-          startDate: "2014-09-01",
-          endDate: "2018-05-31",
-        },
-      ],
-    },
-    actor: "human",
-  });
-  if (!imported.ok) {
-    throw new Error(`profile import failed: ${imported.error}`);
-  }
-  const activated = activateProfileVersion(t.handle, { versionId: imported.versionId, actor: "human" });
-  if (!activated.ok) {
-    throw new Error("profile activation failed");
-  }
-  return imported.versionId;
-}
-
-function seedJob(t: TestDatabase, descriptionText: string): { jobId: string; extractionId: string } {
-  const jobId = newId();
-  t.handle.db
-    .insert(jobs)
-    .values({ id: jobId, title: "Backend Engineer", company: "Acme", status: "NEW" })
-    .run();
-  const attemptId = newId();
-  t.handle.db
-    .insert(scrapeAttempts)
-    .values({
-      id: attemptId,
-      jobId,
-      canonicalUrl: "https://example.com/jobs/1",
-      startedAt: utcNow(),
-      finishedAt: utcNow(),
-      outcome: "SUCCEEDED",
-    })
-    .run();
-  const extractionId = newId();
-  t.handle.db
-    .insert(jobExtractions)
-    .values({
-      id: extractionId,
-      jobId,
-      scrapeAttemptId: attemptId,
-      version: 1,
-      schemaVersion: "job-extraction-v1",
-      adapter: "test",
-      extractedJson: "{}",
-    })
-    .run();
-  t.handle.db
-    .update(jobs)
-    .set({ descriptionText, activeExtractionId: extractionId })
-    .where(eq(jobs.id, jobId))
-    .run();
-  return { jobId, extractionId };
-}
-
-function addExtraction(t: TestDatabase, jobId: string): string {
-  const attemptId = newId();
-  t.handle.db
-    .insert(scrapeAttempts)
-    .values({
-      id: attemptId,
-      jobId,
-      canonicalUrl: "https://example.com/jobs/1",
-      startedAt: utcNow(),
-      finishedAt: utcNow(),
-      outcome: "SUCCEEDED",
-    })
-    .run();
-  const extractionId = newId();
-  t.handle.db
-    .insert(jobExtractions)
-    .values({
-      id: extractionId,
-      jobId,
-      scrapeAttemptId: attemptId,
-      version: 2,
-      schemaVersion: "job-extraction-v1",
-      adapter: "test",
-      extractedJson: "{}",
-    })
-    .run();
-  t.handle.db
-    .update(jobs)
-    .set({ activeExtractionId: extractionId })
-    .where(eq(jobs.id, jobId))
-    .run();
-  return extractionId;
-}
-
-function handlerContext(
-  t: TestDatabase,
-  workItemId: string,
-  heartbeat: () => boolean = () => true,
-): WorkHandlerContext {
-  const item = t.handle.db.select().from(workItems).where(eq(workItems.id, workItemId)).get();
-  if (item === undefined) {
-    throw new Error("work item missing");
-  }
-  return { handle: t.handle, item: { ...item, leaseToken: "test-lease" }, workerId: "test-worker", heartbeat };
 }
 
 describe("TAILOR handler", () => {

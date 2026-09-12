@@ -131,14 +131,23 @@ export function getLatestResumeVersion(
   return row ?? null;
 }
 
-/** Content-hash dedupe: an identical version makes reruns idempotent. */
+/**
+ * Content-hash dedupe lookup: an identical version lets reruns converge.
+ * The caller also needs the target's review state — converging onto a
+ * terminally reviewed version would strand the job, so dedupe only
+ * applies to live (AWAITING_REVIEW) targets.
+ */
 export function getResumeVersionByContentHash(
   handle: DatabaseHandle,
   jobId: string,
   contentHash: string,
-): LatestResumeVersion | null {
+): (LatestResumeVersion & { reviewState: string }) | null {
   const row = handle.db
-    .select({ id: resumeVersions.id, version: resumeVersions.version })
+    .select({
+      id: resumeVersions.id,
+      version: resumeVersions.version,
+      reviewState: resumeVersions.reviewState,
+    })
     .from(resumeVersions)
     .where(and(eq(resumeVersions.jobId, jobId), eq(resumeVersions.contentHash, contentHash)))
     .get();

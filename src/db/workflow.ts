@@ -58,6 +58,14 @@ export interface CasUpdateJobBoardInput {
   status: BoardStatus;
   rank: number;
   now: string;
+  /**
+   * Optional tailoring columns for the R4-F approval transaction: the
+   * board move to TAILORED and the tailoring flip to APPROVED must land
+   * in one compare-and-swap so concurrent writers fence each other.
+   * Omitted by ordinary moves, which never touch tailoring state.
+   */
+  tailoringState?: string;
+  tailoringReasonCode?: string | null;
 }
 
 /**
@@ -76,6 +84,12 @@ export function casUpdateJobBoard(
       rank: input.rank,
       rowVersion: input.expectedVersion + 1,
       updatedAt: input.now,
+      ...(input.tailoringState === undefined
+        ? {}
+        : {
+          tailoringState: input.tailoringState,
+          tailoringReasonCode: input.tailoringReasonCode ?? null,
+        }),
     })
     .where(
       and(eq(jobs.id, input.jobId), eq(jobs.rowVersion, input.expectedVersion)),
