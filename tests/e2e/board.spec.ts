@@ -155,3 +155,69 @@ test("blocks tailored drags with an approval notice", async ({ page }) => {
   const titles = await columnCardTitles(page, "NEW");
   expect(titles.some((text) => text.includes("Gamma"))).toBe(true);
 });
+
+test("audits requirements, approves resume to TAILORED, and moves to APPLIED", async ({ page }) => {
+  await page.goto("/board");
+  // Open details for E2E Gamma Tester (which is in NEW with AWAITING_REVIEW resume)
+  await page.getByRole("button", { name: /open details for e2e gamma tester/i }).click();
+
+  const drawer = page.getByRole("dialog");
+  await expect(drawer.getByText("Resumes (1)")).toBeVisible();
+  await expect(drawer.getByText(/Version 1 · Awaiting review/i)).toBeVisible();
+
+  // Audit view: requirement quote and explicit gap
+  await expect(drawer.getByText(/TypeScript testing experience/i).first()).toBeVisible();
+  await expect(drawer.getByText(/Kubernetes cluster management/i).first()).toBeVisible();
+
+  // Test human approval (2-step gesture: open confirmation, then confirm)
+  await drawer.getByRole("button", { name: /approve version 1/i }).click();
+  await drawer.getByRole("button", { name: /confirm approval/i }).click();
+
+  // Notice should state version approved and card moved to Tailored
+  await expect(drawer.getByText(/approved — the card moved to tailored/i)).toBeVisible();
+
+  // Close drawer
+  await drawer.getByRole("button", { name: /^close$/i }).click();
+
+  // Gamma should now be in TAILORED column
+  await expect(page.getByRole("heading", { name: /tailored \(1 of 1\)/i })).toBeVisible();
+  await expect(
+    page.locator('section[aria-labelledby="column-heading-TAILORED"] li').getByText("E2E Gamma Tester"),
+  ).toBeVisible();
+
+  // Record application on Gamma
+  await page.getByRole("button", { name: /open details for e2e gamma tester/i }).click();
+  await page.getByLabel("Move to").selectOption("APPLIED");
+  await page.getByRole("button", { name: /^move$/i }).click();
+  await page.getByLabel(/confirmation number/i).fill("CONF-GAMMA-777");
+  await page.getByRole("button", { name: /record application/i }).click();
+
+  // Total applied is now 2 (Tailored Analyst from test 4 + Gamma Tester)
+  await expect(page.getByRole("heading", { name: /applied \(2 of 2\)/i })).toBeVisible();
+});
+
+test("submits URL intake, previews validation, and tracks batch progress", async ({ page }) => {
+  await page.goto("/intake");
+  await expect(page.getByRole("heading", { name: /add job urls/i })).toBeVisible();
+
+  // Paste a valid URL and an invalid URL
+  await page.getByLabel(/one per line/i).fill("https://example.com/jobs/intake-smoke\nnot-a-valid-url");
+
+  // Click Validate
+  await page.getByRole("button", { name: /validate/i }).click();
+
+  // Expect validation preview table
+  await expect(page.getByText("Validation preview")).toBeVisible();
+  await expect(page.getByText("Queued", { exact: true })).toBeVisible();
+  await expect(page.getByText("Invalid", { exact: true })).toBeVisible();
+  await expect(page.getByText(/not a parseable absolute URL/i)).toBeVisible();
+
+  // Queue batch
+  await page.getByRole("button", { name: /queue batch/i }).click();
+
+  // Should navigate to /intake/batches/:id
+  await expect(page).toHaveURL(/\/intake\/batches\/[0-9a-f-]+/);
+  await expect(page.getByText(/batch progress/i)).toBeVisible();
+  await expect(page.getByText(/1 queued, 0 duplicate, 1 invalid, 0 blocked, of 2 pasted lines/i)).toBeVisible();
+});
+
