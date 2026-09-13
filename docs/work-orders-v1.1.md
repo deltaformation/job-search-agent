@@ -502,5 +502,131 @@ Safety/human checkpoint:
   - version/fact/snapshot immutability triggers and snapshot FK guards untouched and re-proven post-rebuild; profile identity (id, name, created_at) frozen by new guard trigger, deletes still forbidden; preferences are steering metadata only — never resume-claim sources, never auto-answers (domain boundary comment updated to restate this); no approval/application flow touched.
 ```
 
+---
+
+## Record 7: Direct Cloud Providers (Google AI Studio & Meta Muse)
+
+**Work Order ID:** `WO-1.1-F`  
+**Phase:** Phase 2.2  
+**Commit:** `edc1172`  
+
+### Prompt Given to Agent
+```markdown
+You are working on the Local Job Tracker repository on branch `release/v1.0`.
+We are implementing Phase 2.2 of `docs/roadmap-v1.1.md` (Direct Cloud Providers: Google AI Studio & Meta Muse).
+
+### Mandatory Context & Rules
+1. Inspect before modifying:
+   - `scripts/openrouter-client.mjs` (existing provider implementation pattern, timeout, failover)
+   - `src/server/settings.ts` (`getSettingsSnapshot`, `switchModels`, `pingOpenRouter`)
+   - `components/settings/SettingsModal.tsx` (Models tab, ping button, model input)
+   - `src/tailoring/orchestrate.ts` and `src/tailoring/provider.ts` (how tailoring invokes the model)
+2. Follow `AGENTS.md` and `PROJECT.md`.
+3. Never persist API keys in SQLite or Git; store only in `.env.local`. Never return raw API keys in client snapshots (use fingerprints or configured booleans only).
+4. Output schema contract must remain `ResumeProposalV1` (provider-agnostic schema validation).
+5. Run `node scripts/check-project-context.mjs` before and after.
+
+---
+
+### Work Order Scope: Phase 2.2 Direct Cloud Providers
+
+#### 1. Provider Clients (`src/providers/` or `scripts/`)
+- Implement Google AI Studio client:
+  - Endpoint: `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}`
+  - Supports `GEMINI_API_KEY`. Structured JSON output mode (`responseMimeType: "application/json"`).
+  - Default primary: `gemini-2.5-pro`; fallback: `gemini-2.5-flash`.
+- Implement Meta Muse client:
+  - Endpoint: `https://api.meta.ai/v1/responses`
+  - Supports `META_API_KEY` (Bearer auth). Structured JSON output mode (`response_format: { type: "json_object" }`).
+  - Default model: `meta-muse` (user configurable).
+- Normalize client responses into the standard `{ model: string, content: string }` envelope.
+
+#### 2. Settings Backend (`src/server/settings.ts`)
+- Update `SettingsSnapshot`:
+  - `activeProvider`: `'openrouter' | 'google' | 'meta'`
+  - Status/fingerprint for each provider (`configured: boolean, fingerprint: string | null`)
+  - Provider-specific model chains.
+- Update `switchModels` / add provider configuration switcher:
+  - Supports switching active provider and editing model IDs in `.env.local` (`ACTIVE_AI_PROVIDER`, `GEMINI_MODEL`, `META_MODEL`, etc.).
+- Add unified diagnostic ping:
+  - `pingProvider(provider, env)` testing authentication, latency, and valid JSON response for the selected provider.
+
+#### 3. Settings UI (`components/settings/SettingsModal.tsx`)
+- In Models tab:
+  - Provider selection tabs or radio cards: `OpenRouter`, `Google AI Studio`, `Meta Muse`.
+  - Configured status pill per provider (`Connected` vs `Key Missing in .env.local`).
+  - Editable model input fields with clear placeholder examples.
+  - "Test Connection" button testing the active provider and displaying latency (e.g. `✓ Connected (342 ms, gemini-2.5-pro)` or actionable error).
+
+#### 4. Automated Verification & Tests
+- Add unit tests for Google AI Studio & Meta Muse adapters with mocked HTTP responses:
+  - Successful JSON completion parsing.
+  - Authentication failure (401/403) handling.
+  - Timeout and network error handling.
+  - Ping diagnostic tests for each provider.
+- Test Settings backend model/provider switcher.
+- Run full non-browser vitest suite (`npx vitest run --exclude '**/browser/**'`).
+- Run `npm run typecheck`, `npm run lint`, and `node scripts/check-project-context.mjs`.
+
+---
+
+### Expected Handoff Output
+Provide the completed handoff block required by `AGENTS.md`:
+
+Task: Phase 2.2 direct cloud providers (Google AI Studio & Meta Muse)
+Outcome:
+Status: implemented | needs-review | blocked
+Files changed:
+Migrations/data effects:
+Verification performed and exact result:
+Acceptance criteria not yet proven:
+Decisions or deviations:
+Safety/human checkpoint:
+```
+
+### Official Handoff
+```text
+Task: Phase 2.2 direct cloud providers (Google AI Studio & Meta Muse)
+Outcome: New scripts/google-client.mjs (generateContent + ?key=, JSON mode, gemini-2.5-pro/flash chain) and scripts/meta-client.mjs (Responses API, Bearer, meta-muse default, tolerant output parsing), both normalizing to {model, content} with OpenRouter-identical failover semantics; new scripts/ai-provider.mjs selector (ACTIVE_AI_PROVIDER) consumed by tailor-provider, salary-facts, and settings ping. Settings backend gained activeProvider + per-provider snapshot (chain, configured, fingerprint), provider/model switching in .env.local, and unified pingProvider (legacy pingOpenRouter kept as wrapper). AI tab rebuilt with provider radio cards, status pills, per-provider model inputs with example placeholders, and Test Connection with ✓ Connected (ms, model) output.
+Status: implemented
+Files changed:
+  - scripts/google-client.mjs (new)
+  - scripts/meta-client.mjs (new)
+  - scripts/ai-provider.mjs (new)
+  - scripts/tailor-provider.mjs
+  - scripts/extract-salary-facts.mjs
+  - src/server/settings.ts
+  - app/api/settings/ai-test/route.ts
+  - components/settings/SettingsModal.tsx
+  - tests/unit/scripts/google-client.test.ts (new)
+  - tests/unit/scripts/meta-client.test.ts (new)
+  - tests/unit/scripts/ai-provider.test.ts (new)
+  - tests/unit/server/settings.test.ts
+  - tests/unit/server/data-routes.test.ts
+  - tests/unit/components/settings/SettingsModal.test.tsx
+Migrations/data effects: none; env-file keys only (ACTIVE_AI_PROVIDER, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, META_MODEL, META_FALLBACK_MODEL)
+Verification performed and exact result:
+  - Provider client suites 48/48 (chain, failover matrix, body/endpoint shapes, 401 fast-fail, timeout/network, blocked-prompt, tolerant parsing).
+  - Settings focused files 35/35 (snapshot per-provider, switch incl. provider + clears, ping per provider incl. auth/payload failures, route body validation).
+  - Full non-browser suite: 115 files / 881 tests pass.
+  - npm run typecheck: 0 errors.
+  - npm run lint: 0 warnings.
+  - node scripts/check-project-context.mjs: 11/11 before and after.
+  - CLI smoke: google/meta no-key paths exit 0 with correct key names and valid resume-proposal/v1 / salary-facts/v1 envelopes.
+Acceptance criteria not yet proven:
+  - Live calls to Google/Meta endpoints (all HTTP mocked; needs real keys + network).
+  - Meta response-shape tolerance beyond the three coded shapes (documented in client header).
+Decisions or deviations:
+  - Clients live in scripts/*.mjs (not src/providers/) so the plain-node CLIs import them without a TS loader, matching the established pattern; TS consumes them as the existing untyped precedent does.
+  - Salary-facts wired to the selector too (worker-driven — leaving it OpenRouter-only would silently split provider behavior).
+  - Meta has no default fallback (single-model chain unless META_FALLBACK_MODEL set).
+  - Provider errors branch on {kind,status} shape, not instanceof, keeping one exit-code contract.
+  - switchModels response gained activeProvider (one exact-equality test updated).
+  - Snapshot keeps legacy models (active chain) + openRouter fields untouched.
+Safety/human checkpoint:
+  - Keys stay in .env.local/process env only — never written by the switcher, never in snapshots (fingerprints/booleans; asserted key-absent in JSON), never in diagnostics; ResumeProposalV1 contract, exit codes, validation, and deterministic fallback unchanged; provider switch applies on restart like model switches.
+```
+
+
 
 
