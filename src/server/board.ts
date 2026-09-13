@@ -169,6 +169,13 @@ function searchFilter(q: string | undefined) {
  * Five-column board projection. Every column always appears (empty ones
  * carry `total: 0`); search/pagination apply per column so column totals
  * stay meaningful under load-more.
+ *
+ * Bounded-query design (v1.1 Phase 1.1): one grouped count for all column
+ * totals plus one paginated row query per column (6 SQLite statements
+ * regardless of card count). Active resume versions resolve through a
+ * `LEFT JOIN` on `jobs.activeResumeVersionId` and note counts through a
+ * correlated scalar subquery, so card mapping is pure projection with no
+ * per-card lookups.
  */
 export function getBoardView(
   handle: DatabaseHandle,
@@ -183,15 +190,21 @@ export function getBoardView(
   const filter = searchFilter(query.q);
   const order = boardOrder(sort);
 
+  const totalsRows = handle.db
+    .select({ status: jobs.status, total: sql<number>`count(*)` })
+    .from(jobs)
+    .where(filter)
+    .groupBy(jobs.status)
+    .all();
+  const totalsByStatus = new Map<string, number>();
+  for (const row of totalsRows) {
+    totalsByStatus.set(row.status, row.total);
+  }
+
   const columns: BoardColumnView[] = BOARD_STATUSES.map((status) => {
     const where = filter === undefined
       ? eq(jobs.status, status)
       : and(eq(jobs.status, status), filter);
-    const totalRow = handle.db
-      .select({ total: sql<number>`count(*)` })
-      .from(jobs)
-      .where(where)
-      .get();
     const rows = handle.db
       .select({
         id: jobs.id,
@@ -214,9 +227,14 @@ export function getBoardView(
         createdAt: jobs.createdAt,
         updatedAt: jobs.updatedAt,
         submittedUrl: jobSources.submittedUrl,
+        resumeVersionId: resumeVersions.id,
+        resumeVersion: resumeVersions.version,
+        resumeReviewState: resumeVersions.reviewState,
+        notesCount: sql<number>`(select count(*) from ${jobNotes} where ${jobNotes.jobId} = ${jobs.id})`,
       })
       .from(jobs)
       .leftJoin(jobSources, eq(jobSources.jobId, jobs.id))
+      .leftJoin(resumeVersions, eq(resumeVersions.id, jobs.activeResumeVersionId))
       .where(where)
       .orderBy(...order)
       .limit(limit)
@@ -224,23 +242,19 @@ export function getBoardView(
       .all();
 
     const cards: BoardCardView[] = rows.map((row) => {
-      const resumeVersion =
-        row.activeResumeVersionId === null
-          ? undefined
-          : handle.db
-            .select({
-              id: resumeVersions.id,
-              version: resumeVersions.version,
-              reviewState: resumeVersions.reviewState,
-            })
-            .from(resumeVersions)
-            .where(eq(resumeVersions.id, row.activeResumeVersionId))
-            .get();
-      const notesRow = handle.db
-        .select({ total: sql<number>`count(*)` })
-        .from(jobNotes)
-        .where(eq(jobNotes.jobId, row.id))
-        .get();
+      // A dangling active pointer is impossible (a database trigger rejects
+      // versions that do not belong to the job); any partial null degrades
+      // to the ordinary "no resume yet" state, as before.
+      const resume =
+        row.resumeVersionId === null ||
+        row.resumeVersion === null ||
+        row.resumeReviewState === null
+          ? null
+          : {
+            versionId: row.resumeVersionId,
+            version: row.resumeVersion,
+            reviewState: row.resumeReviewState,
+          };
       return {
         id: row.id,
         status: row.status as BoardStatus,
@@ -258,21 +272,14 @@ export function getBoardView(
         scrapeReasonCode: row.scrapeReasonCode,
         tailoringState: row.tailoringState,
         tailoringReasonCode: row.tailoringReasonCode,
-        resume:
-          resumeVersion === undefined
-            ? null
-            : {
-              versionId: resumeVersion.id,
-              version: resumeVersion.version,
-              reviewState: resumeVersion.reviewState,
-            },
-        notesCount: notesRow?.total ?? 0,
+        resume,
+        notesCount: row.notesCount,
         sourceUrl: safeHttpUrl(row.submittedUrl),
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       };
     });
-    return { status, total: totalRow?.total ?? 0, cards };
+    return { status, total: totalsByStatus.get(status) ?? 0, cards };
   });
   return { columns };
 }
