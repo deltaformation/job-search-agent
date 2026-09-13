@@ -38,7 +38,8 @@ and removed from the active tree.
 - State the one bounded task and verify its scope before editing.
 - Inspect the working tree before editing; preserve unrelated changes.
 - Use a branch/worktree when parallel changes could overlap.
-- Finish with the handoff format in `AGENTS.md` and exact verification results.
+- Finish with the handoff format in `AGENTS.md` and append the task record,
+  prompt, and verification results to [`docs/work-orders-v1.1.md`](docs/work-orders-v1.1.md).
 
 Validate the active project context with:
 

@@ -31,7 +31,8 @@ intent; code, migrations, data, artifacts, tests, and commits prove reality.
 ## Collaboration contract
 
 - Own one bounded task per session; say what it is before starting.
-- Record the task in the handoff or pull request.
+- Record the task prompt, outcome, implementation changes, and official handoff
+  block by appending an entry to the active execution log (`docs/work-orders-v1.1.md`).
 - Use a separate branch/worktree for concurrent work that might overlap.
 - Do not let two agents edit `package.json`, the lockfile, one migration, or the
   same generated artifact at the same time.
