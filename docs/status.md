@@ -11,8 +11,12 @@ Last updated: 2026-09-13. Branch: `release/v1.0`. Package version: 1.0.0.
   macOS desktop launcher (`npm run desktop:app`).
 - Rebuild milestones R0–R6 accepted and committed; legacy Python/PostgreSQL
   removed. Frozen work record: [`archive/v1.0/`](archive/v1.0/).
-- Verification at v1.0: typecheck clean, eslint clean, unit suite 109 files
-  / 802 tests green.
+- Active v1.1 progression underway: roadmap in [`roadmap-v1.1.md`](roadmap-v1.1.md)
+  and execution log in [`work-orders-v1.1.md`](work-orders-v1.1.md).
+  Completed: `WO-1.1-A` (bounded O(1) queries in `b2fc150`), `WO-1.1-B` (frame-1
+  initial render + INP de-janking in `1d24ac0`).
+- Verification at current HEAD: typecheck clean, eslint clean, unit suite 110 files
+  / 805 tests green.
 
 ## Known items
 
