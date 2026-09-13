@@ -371,4 +371,136 @@ Safety/human checkpoint:
   - exact 5 columns and all DnD/keyboard mechanics untouched (only widths and the view toggle changed); all nav links, aria labels, and button behaviors preserved; no approval, application, or data flow touched.
 ```
 
+---
+
+## Record 6: Multi-Profile Schema and Repository
+
+**Work Order ID:** `WO-1.1-E`  
+**Phase:** Phase 2.1  
+**Commit:** `3ee857e`  
+
+### Prompt Given to Agent
+```markdown
+You are working on the Local Job Tracker repository on branch `release/v1.0`.
+We are implementing Phase 2.1 of `docs/roadmap-v1.1.md` (R-ADR-012 Multi-Profile Schema & Repository).
+
+### Mandatory Context & Rules
+1. Inspect before modifying:
+   - `src/db/schema/candidates.ts` (current `candidateProfiles` and constraints)
+   - `drizzle/0000_freezing_wild_pack.sql` & `drizzle/0001_trigger_guards.sql` (inspect constraints and triggers on `candidate_profiles`)
+   - `src/db/candidates.ts` (`LOCAL_PROFILE_ID`, `ensureLocalProfile`, `insertProfileVersion`, `listProfileVersions`)
+   - `src/domain/candidate.ts` (Zod schemas for candidate profile payload and import)
+2. Follow `AGENTS.md` and `PROJECT.md`.
+3. Keep transactions synchronous and short; do not break immutable fact citations or snapshot foreign keys.
+4. Existing tests must remain green; add focused tests for multi-profile repository operations.
+5. Run `node scripts/check-project-context.mjs` before and after.
+
+---
+
+### Work Order Scope: Phase 2.1 Multi-Profile Schema & Repository
+
+#### 1. Ordered Migration (`drizzle/0005_multi_candidate_profiles.sql`)
+- Remove the single-row check constraint (`id = 'local'`) on `candidate_profiles`.
+- Add structured profile fields:
+  - `name`: TEXT (unique slug identifier, e.g. 'staff-engineer', 'lead-architect')
+  - `display_name`: TEXT NOT NULL
+  - `is_default`: INTEGER NOT NULL DEFAULT 0 (with partial unique index on `is_default = 1` or trigger ensuring exactly one default profile)
+  - `work_preferences_json`: TEXT (JSON object for work authorization, work mode, visa sponsorship, relocation, YOE, salary expectations, target titles/locations)
+  - `executive_narrative`: TEXT
+  - `updated_at`: TEXT
+- Backfill existing `'local'` profile row with default name `'default'`, display name `'Primary Profile'`, and `is_default = 1`.
+- Update triggers in `drizzle/` if necessary to permit updating profile metadata (`display_name`, `work_preferences_json`, `executive_narrative`) while strictly preserving `candidate_profile_versions` and `candidate_facts` immutability.
+
+#### 2. Schema & Domain Definitions
+- In `src/db/schema/candidates.ts`:
+  - Update `candidateProfiles` Drizzle schema matching the migration.
+  - Export typed interfaces.
+- In `src/domain/candidate.ts`:
+  - Define `WorkPreferencesV1` Zod schema:
+    - `workAuthorization`: string array or enum
+    - `workMode`: array of 'REMOTE' | 'HYBRID' | 'ONSITE'
+    - `sponsorshipRequired`: boolean
+    - `willingToRelocate`: boolean
+    - `yearsOfExperience`: number
+    - `salaryExpectation`: object with optional `min`, `target`, `currency`
+    - `targetTitles`: string array
+    - `targetLocations`: string array
+  - Define `CareerProfileV1` schema incorporating `id`, `name`, `displayName`, `isDefault`, `workPreferences`, `executiveNarrative`.
+
+#### 3. Repository Layer
+- In `src/db/candidates.ts`:
+  - Add `listProfiles(handle)`, `getProfile(handle, idOrName)`, `getDefaultProfile(handle)`.
+  - Add `createProfile(handle, input)`, `updateProfile(handle, id, input)`, `setDefaultProfile(handle, id)`.
+  - Ensure all version, snapshot, and fact queries support passing a target `profileId`, defaulting to the active default profile for backwards compatibility.
+
+#### 4. Automated Verification & Tests
+- Add unit tests in `tests/unit/db/multi-profile.test.ts`:
+  - Migration runs cleanly on fresh and existing databases.
+  - Creation of multiple distinct profiles.
+  - Default profile switching and single-default invariant enforcement.
+  - Profile versioning and fact snapshots linked to specific profile IDs.
+  - Immutability of versions and approved facts preserved across profiles.
+- Run full non-browser test suite: `npx vitest run --exclude '**/browser/**'`
+- Run `npm run typecheck`, `npm run lint`, and `node scripts/check-project-context.mjs`.
+
+---
+
+### Expected Handoff Output
+Provide the completed handoff block required by `AGENTS.md`:
+
+Task: Phase 2.1 multi-profile schema and repository
+Outcome:
+Status: implemented | needs-review | blocked
+Files changed:
+Migrations/data effects:
+Verification performed and exact result:
+Acceptance criteria not yet proven:
+Decisions or deviations:
+Safety/human checkpoint:
+```
+
+### Official Handoff
+```text
+Task: Phase 2.1 multi-profile schema and repository
+Outcome: Migration 0005 rebuilds candidate_profiles (drops the id='local' CHECK; adds name unique, display_name, is_default, work_preferences_json, executive_narrative, updated_at; backfills local→default/Primary Profile/default=1; replaces the no-update trigger with a metadata-only guard; partial unique index for one default). Drizzle schema, WorkPreferencesV1/CareerProfileV1/input Zod schemas, and repository CRUD (list/get/getDefault/create/update/setDefault) plus optional-profileId threading through all version helpers (default-resolving, activation scoped to the target's profile) added. Service callers unchanged via backwards-compatible defaults.
+Status: implemented
+Files changed:
+  - drizzle/0005_multi_candidate_profiles.sql (new)
+  - src/db/schema/candidates.ts
+  - src/domain/candidate.ts
+  - src/db/candidates.ts
+  - src/db/migrate.ts
+  - tests/unit/db/multi-profile.test.ts (new)
+  - tests/unit/db/helpers.ts
+  - tests/unit/db/migrate.test.ts
+  - tests/unit/db/startup.test.ts
+  - tests/unit/db/constraints-enums.test.ts
+  - tests/unit/server/board.test.ts
+  - tests/unit/server/board-perf.test.ts
+  - tests/unit/server/workflow.test.ts
+  - tests/unit/server/review.test.ts
+  - tests/unit/server/backup.test.ts
+  - tests/unit/routes/resume-review.test.ts
+  - tests/e2e/global-setup.ts
+Migrations/data effects: 0005 rebuilds candidate_profiles with backfill (no version/fact/snapshot row changes); runner now disables FK enforcement around each file's transaction with a pre-commit foreign_key_check (SQLite's documented procedure — proven necessary: parent DROP fails even with deferred FKs). Existing DBs upgrade with lineage intact (proven by test).
+Verification performed and exact result:
+  - New suite 8/8 (legacy-upgrade with populated DB, multi-create, default switching + DB-level uniqueness, per-profile versioning/activation, fact/snapshot binding, identity freeze vs metadata updates, input validation, legacy ensure).
+  - Full non-browser suite: 112 files / 821 tests pass.
+  - npm run typecheck: 0 errors.
+  - npm run lint: 0 warnings.
+  - node scripts/check-project-context.mjs: 11/11 before and after.
+  - The one queries.test.ts batch-ordering failure seen mid-run is the documented timing flake — passes in isolation, untouched code path.
+Acceptance criteria not yet proven:
+  - production-DB upgrade run (only exercised on synthetic legacy DBs); end-to-end Settings multi-profile UI (Phase 2.2 consumer, not in scope).
+Decisions or deviations:
+  - at-most-one default via partial unique index, exactly-one maintained by repo (first/explicit default) — a trigger forbidding zero-default states deadlocks the swap (proven in analysis), so no zero-default trigger.
+  - activateProfileVersion deactivation re-scoped from hardcoded local to the target's profile (required for per-profile activation; behavior-identical when single-profile).
+  - listProfiles orders by unique name (same-millisecond createdAt ties made creation order nondeterministic).
+  - duplicate paste-style outcomes n/a here.
+  - Preferences stored canonical-JSON, stamped work-preferences/v1, validated on every write; reads parse strictly (fail loud on corruption, writes are validated).
+Safety/human checkpoint:
+  - version/fact/snapshot immutability triggers and snapshot FK guards untouched and re-proven post-rebuild; profile identity (id, name, created_at) frozen by new guard trigger, deletes still forbidden; preferences are steering metadata only — never resume-claim sources, never auto-answers (domain boundary comment updated to restate this); no approval/application flow touched.
+```
+
+
 
