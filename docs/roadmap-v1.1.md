@@ -11,6 +11,8 @@ Version 1.1 improves the existing job-preparation and review workflow without ex
 The release succeeds when:
 
 - The board loads with bounded database queries ($O(1)$), zero empty loading spinners, and snappy main-thread responsiveness (INP $\le 100$ ms on Apple Silicon).
+- The Kanban view is more intuitive with larger, more readable cards; default viewport comfortably fits the core 3 buckets (`New`, `Tailored`, `Applied`), while dragging/scrolling smoothly reveals `Interviewed` and `Rejected`.
+- Headers are optimized across 13"/14" laptop screens and 4K displays: `Home > Board` breadcrumbs removed, navigation buttons docked next to the logo on the left, and the active profile pill moved next to `Settings` on the right.
 - The board header is simplified to a pure Kanban view (Kanban/Stacked toggle removed), prioritizing search, sorting, and active status.
 - Users can interactively guide tailoring with clickable Top 10 ATS keywords extracted from the JD, 3 sample directive chips, and selectable career profiles.
 - Settings supports multiple career profiles with complete work preferences, executive narrative, and master resume upload/preview/download while strictly preserving visual template styles.
@@ -158,22 +160,29 @@ Release Target: Eliminate main-thread jank; reduce INP from 2,448 ms to $\le 100
     - **Proposed Changes & Summary Narrative**
     - **Action Bar**: Approve / Revise controls.
 
-### 3.2 Simplified Board Header (Pure Kanban View)
+### 3.2 Intuitive Kanban Viewport & Card Sizing
+- **Larger, More Readable Cards**:
+  - Increase card and column width (e.g. `min-w-[340px]`, `w-[360px]`, `xl:w-[400px]`) with comfortable internal padding, tabular compensation numbers, and prominent metadata.
+- **3-Bucket Focus Viewport (`New`, `Tailored`, `Applied`)**:
+  - Default viewport naturally frames the core 3 active stages of an application: `New`, `Tailored`, and `Applied`.
+  - The remaining 2 downstream buckets (`Interviewed` and `Rejected`) are revealed smoothly by horizontal dragging, scrolling, or column navigation.
+  - Scales gracefully from compact 13"/14" laptop displays up to large 4K monitors.
 - **Remove Kanban / Stacked View Switcher**:
-  - Permanently lock the board into the pure Kanban view.
-  - Eliminates the toggle component, simplifying the layout and avoiding view-state divergence.
-- **Optimized Header Space**:
-  - Reclaims horizontal space for:
-    - **Active Status Indicator** (quiet, non-pulsing worker/tailoring state).
-    - **Search Cards Input** (instant filtering by company, title, location).
-    - **Sort Control** (Rank / Created / Updated).
-    - **Fast Status Filters**.
+  - Permanently lock the board into the pure Kanban view, removing the view toggle to simplify the header and avoid diverging view states.
 
-### 3.3 Derived Follow-Up Indicators
+### 3.3 Clean Header & Navigation Ergonomics
+- **Eliminate Breadcrumbs**:
+  - Remove redundant `Home > Board` breadcrumbs on `/board/page.tsx` to recover vertical viewing height.
+- **Header Layout Restructuring**:
+  - **Left**: Brand logo (`Job Tracker`) immediately adjacent to primary navigation buttons (`Board`, `Intake`) for natural eye-flow.
+  - **Right**: Move `Mouad Atfi / Profile Active` pill directly next to `Settings` and `Add Job`, grouping profile and settings actions together.
+- Ensures the board header remains compact, functional, and responsive on both small laptops and 4K displays.
+
+### 3.4 Derived Follow-Up Indicators
 - Cards in the `Applied` column gain a subtle, clean badge if 7, 14, or 30 days have elapsed since application without recorded status change (*"Follow-up recommended"*).
 - Derived purely on the client from the human-recorded application timestamp. No background jobs, calendar syncs, or automated emails.
 
-### 3.4 De-Scoped Items (per user directive)
+### 3.5 De-Scoped Items (per user directive)
 - Embedded in-app document viewer: de-scoped (new-tab preview via artifact ID is approved).
 - 3-way theme toggle: de-scoped (current theme is approved).
 - Job archiving: de-scoped (5-column board preserved as-is).
