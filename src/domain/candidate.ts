@@ -256,6 +256,10 @@ export const WORK_PREFERENCES_SCHEMA_VERSION = "work-preferences/v1";
 export const CAREER_PROFILE_SCHEMA_VERSION = "career-profile/v1";
 
 /** Unique slug identifier for a career profile (`staff-engineer`). */
+/** Profile row id: UUIDs for created profiles, `"local"` for the legacy root. */
+export const ProfileId = z.string().trim().min(1).max(64);
+export type ProfileId = z.infer<typeof ProfileId>;
+
 export const ProfileSlug = z
   .string()
   .trim()

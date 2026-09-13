@@ -14,11 +14,19 @@ import type { DatabaseHandle } from "../db/client";
 import {
   CANDIDATE_PROFILE_SCHEMA_VERSION,
   CandidateProfilePayloadV1,
+  type WorkPreferencesV1,
 } from "../domain/candidate";
 import { canonicalJson } from "../domain/canonical";
 import { sha256HexUtf8 } from "../tailoring/hash";
 import type { DataRootPaths } from "../security/data-root";
-import { getActiveProfileVersion } from "../db/candidates";
+import {
+  ensureLocalProfile,
+  getActiveProfileVersion,
+  getDefaultProfile,
+  getProfile,
+  listProfileVersions,
+  listProfiles,
+} from "../db/candidates";
 import { activateProfileVersion, importCandidate } from "./candidates";
 import {
   activeProviderId as activeProviderIdFromEnv,
@@ -98,6 +106,7 @@ export interface SettingsSnapshot {
   openRouter: { configured: boolean; fingerprint: string | null };
   profile: {
     activeVersion: number;
+    activeVersionAt: string;
     displayName: string | null;
     approvedFacts: number;
     verifiedSkills: number;
@@ -215,6 +224,7 @@ export function getSettingsSnapshot(
     ).count;
     profile = {
       activeVersion: active.version,
+      activeVersionAt: active.createdAt,
       displayName,
       approvedFacts,
       verifiedSkills,
@@ -465,22 +475,109 @@ export async function pingOpenRouter(
   return pingProvider("openrouter", env, timeoutMs);
 }
 
+/**
+ * One career profile with its version ledger position for the Settings
+ * UI. `approvedFacts` counts the achievements (approved by construction)
+ * in the profile's latest version payload, or 0 when it has no versions
+ * or the payload no longer parses.
+ */
+export interface ProfileSummary {
+  id: string;
+  name: string;
+  displayName: string;
+  isDefault: boolean;
+  workPreferences: WorkPreferencesV1 | null;
+  executiveNarrative: string | null;
+  versionCount: number;
+  latestVersion: number | null;
+  latestVersionAt: string | null;
+  activeVersion: number | null;
+  approvedFacts: number;
+}
+
+export function listProfileSummaries(handle: DatabaseHandle): ProfileSummary[] {
+  const profiles = listProfiles(handle);
+  return profiles.map((profile) => {
+    const versions = listProfileVersions(handle, profile.id);
+    const latest = versions.length === 0 ? null : versions[versions.length - 1];
+    const active = getActiveProfileVersion(handle, profile.id);
+    let approvedFacts = 0;
+    if (latest !== null && latest !== undefined) {
+      try {
+        const payload = CandidateProfilePayloadV1.parse(
+          JSON.parse(latest.payloadJson) as unknown,
+        );
+        approvedFacts = payload.achievements.length;
+      } catch {
+        approvedFacts = 0;
+      }
+    }
+    return {
+      id: profile.id,
+      name: profile.name,
+      displayName: profile.displayName,
+      isDefault: profile.isDefault,
+      workPreferences: profile.workPreferences,
+      executiveNarrative: profile.executiveNarrative,
+      versionCount: versions.length,
+      latestVersion: latest?.version ?? null,
+      latestVersionAt: latest?.createdAt ?? null,
+      activeVersion: active?.version ?? null,
+      approvedFacts,
+    };
+  });
+}
+
 export type ResyncResult =
   | { ok: true; versionId: string; version: number; activated: boolean; alreadyCurrent: boolean }
   | { ok: false; error: string; detail?: string };
 
+export type ParsedMasterResume =
+  | { ok: true; payloadHash: string }
+  | { ok: false; error: "master-resume-invalid"; detail: string };
+
 /**
- * Re-sync the candidate profile from `master-resume.json`: import as a new
- * immutable version (no-op when the canonical payload hash matches the
- * latest version) and activate it. Never edits or deletes versions.
+ * Validate one master-resume document against the profile payload schema
+ * and return its canonical hash. Shared by file re-sync and JSON upload
+ * so both accept exactly the same documents.
+ */
+export function parseMasterResumeDocument(document: unknown): ParsedMasterResume {
+  try {
+    const payload = CandidateProfilePayloadV1.parse({
+      ...((document ?? {}) as Record<string, unknown>),
+      schemaVersion: CANDIDATE_PROFILE_SCHEMA_VERSION,
+    });
+    return { ok: true, payloadHash: sha256HexUtf8(canonicalJson(payload)) };
+  } catch (error: unknown) {
+    return { ok: false, error: "master-resume-invalid", detail: (error as Error).message };
+  }
+}
+
+/**
+ * Re-sync one career profile from `master-resume.json`: import as a new
+ * immutable version (no-op when the canonical payload hash matches that
+ * profile's latest version) and activate it. Defaults to the default
+ * profile. Never edits or deletes versions.
  */
 export function resyncMasterResume(
   handle: DatabaseHandle,
   masterPath: string,
+  options: { profileId?: string } = {},
 ): ResyncResult {
   // Human-initiated from the Settings modal; the candidates service only
   // accepts the literal human actor.
   const actor = "human" as const;
+  // An explicit target wins; otherwise the default profile; the legacy
+  // local profile only when no default exists yet (fresh database).
+  const profileId =
+    options.profileId ?? getDefaultProfile(handle)?.id ?? ensureLocalProfile(handle);
+  if (options.profileId !== undefined && getProfile(handle, options.profileId) === null) {
+    return {
+      ok: false,
+      error: "profile-not-found",
+      detail: `unknown profile '${options.profileId}'`,
+    };
+  }
   let raw: string;
   try {
     raw = readFileSync(masterPath, "utf8");
@@ -500,21 +597,17 @@ export function resyncMasterResume(
   } catch {
     return { ok: false, error: "master-resume-invalid", detail: "file is not valid JSON" };
   }
-  let payloadHash: string;
-  try {
-    const payload = CandidateProfilePayloadV1.parse({
-      ...(document as Record<string, unknown>),
-      schemaVersion: CANDIDATE_PROFILE_SCHEMA_VERSION,
-    });
-    payloadHash = sha256HexUtf8(canonicalJson(payload));
-  } catch (error: unknown) {
-    return { ok: false, error: "master-resume-invalid", detail: (error as Error).message };
+  const parsed = parseMasterResumeDocument(document);
+  if (!parsed.ok) {
+    return parsed;
   }
   const latestRow = handle.sqlite
-    .prepare("SELECT id AS id, payload_hash AS payloadHash FROM candidate_profile_versions ORDER BY version DESC LIMIT 1")
-    .get() as { id: string; payloadHash: string } | undefined;
-  if (latestRow !== undefined && latestRow.payloadHash === payloadHash) {
-    const active = getActiveProfileVersion(handle);
+    .prepare(
+      "SELECT id AS id, payload_hash AS payloadHash FROM candidate_profile_versions WHERE profile_id = ? ORDER BY version DESC LIMIT 1",
+    )
+    .get(profileId) as { id: string; payloadHash: string } | undefined;
+  if (latestRow !== undefined && latestRow.payloadHash === parsed.payloadHash) {
+    const active = getActiveProfileVersion(handle, profileId);
     if (active !== null && active.id === latestRow.id) {
       return {
         ok: true,
@@ -536,7 +629,7 @@ export function resyncMasterResume(
       alreadyCurrent: true,
     };
   }
-  const imported = importCandidate(handle, { document, actor });
+  const imported = importCandidate(handle, { document, actor, profileId });
   if (!imported.ok) {
     return {
       ok: false,

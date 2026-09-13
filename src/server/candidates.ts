@@ -6,6 +6,7 @@ import {
   CandidateProfilePayloadV1,
   CandidateSnapshotV1,
   FactEvidenceV1,
+  ProfileId,
   type SnapshotFactV1,
 } from "../domain/candidate";
 import { canonicalJson, canonicalText } from "../domain/canonical";
@@ -21,6 +22,7 @@ import {
   getFact,
   getJdSnapshotByHash,
   getJobDescriptionPointer,
+  getProfile,
   getProfileVersion,
   getProfileVersionByNumber,
   insertCandidateSnapshot,
@@ -53,6 +55,7 @@ export const ImportCandidateInput = z
     document: z.unknown(),
     actor: HumanActor,
     now: IsoUtcDateTime.optional(),
+    profileId: ProfileId.optional(),
   })
   .strict();
 export type ImportCandidateInput = z.infer<typeof ImportCandidateInput>;
@@ -66,7 +69,8 @@ export type ImportCandidateResult =
       reusedFacts: string[];
     }
   | { ok: false; error: "fact-id-conflict"; factId: string; detail: string }
-  | { ok: false; error: "version-conflict"; detail: string };
+  | { ok: false; error: "version-conflict"; detail: string }
+  | { ok: false; error: "profile-not-found"; detail: string };
 
 export const ActivateProfileVersionInput = z
   .object({
@@ -161,10 +165,13 @@ export function importCandidate(
   });
   const payloadJson = canonicalJson(payload);
   const payloadHash = sha256HexUtf8(payloadJson);
+  if (input.profileId !== undefined && getProfile(handle, input.profileId) === null) {
+    return { ok: false, error: "profile-not-found", detail: `unknown profile '${input.profileId}'` };
+  }
 
   try {
     return withTransaction(handle.sqlite, () => {
-      return importCandidateInto(handle, payload, payloadJson, payloadHash);
+      return importCandidateInto(handle, payload, payloadJson, payloadHash, input.profileId);
     });
   } catch (error: unknown) {
     if (error instanceof FactRaceError) {
@@ -185,9 +192,12 @@ function importCandidateInto(
   payload: z.infer<typeof CandidateProfilePayloadV1>,
   payloadJson: string,
   payloadHash: string,
+  profileId: string | undefined,
 ): ImportCandidateResult {
   return withTransaction(handle.sqlite, () => {
-    ensureLocalProfile(handle);
+    if (profileId === undefined) {
+      ensureLocalProfile(handle);
+    }
     // Pre-check every achievement before inserting anything: a conflict must
     // reject with zero writes, not commit a version missing its facts.
     const prepared = payload.achievements.map((achievement) => {
@@ -221,7 +231,7 @@ function importCandidateInto(
       }
     }
 
-    const version = nextProfileVersionNumber(handle);
+    const version = nextProfileVersionNumber(handle, profileId);
     let versionRow;
     try {
       versionRow = insertProfileVersion(handle, {
@@ -229,6 +239,7 @@ function importCandidateInto(
         payloadJson,
         payloadHash,
         schemaVersion: CANDIDATE_PROFILE_SCHEMA_VERSION,
+        profileId,
       });
     } catch (error: unknown) {
       if (isUniqueViolation(error, "candidate_profile_versions")) {
