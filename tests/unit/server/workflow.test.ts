@@ -135,7 +135,7 @@ function seedApprovalChain(
     .run();
   handle.db
     .insert(candidateProfiles)
-    .values({ id: "local" })
+    .values({ id: "local", name: "default", displayName: "Primary Profile", isDefault: true })
     .onConflictDoNothing()
     .run();
   const profileVersionId = newId();

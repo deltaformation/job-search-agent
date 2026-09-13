@@ -8,26 +8,37 @@ import {
   text,
   unique,
 } from "drizzle-orm/sqlite-core";
-import { createdAt } from "./columns";
+import { createdAt, updatedAt } from "./columns";
 
 /**
  * Candidate profile root, reviewed versions, verified facts, and immutable
  * generation snapshots.
  *
- * The profile table holds exactly one row (`id = 'local'`). Versions carry an
+ * R-ADR-012: the profile table holds one row per named career profile with
+ * user-managed metadata; a partial unique index keeps at most one default
+ * row and a guard trigger freezes identity columns (`id`, `name`,
+ * `created_at`) while allowing metadata updates. Versions carry an
  * immutable typed payload; only `activated_at` may change after insert, and a
- * partial unique index plus a guard trigger keep exactly one version active.
- * Facts become immutable once approved. Snapshot membership is relational
- * (`candidate_snapshot_facts`) so resume claims can be foreign-keyed to the
- * exact bound snapshot.
+ * partial unique index plus a guard trigger keep exactly one version active
+ * per profile. Facts become immutable once approved. Snapshot membership is
+ * relational (`candidate_snapshot_facts`) so resume claims can be
+ * foreign-keyed to the exact bound snapshot.
  */
 export const candidateProfiles = sqliteTable(
   "candidate_profiles",
   {
     id: text("id").primaryKey(),
+    name: text("name").notNull().unique("candidate_profiles_name_unique"),
+    displayName: text("display_name").notNull(),
+    isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
+    workPreferencesJson: text("work_preferences_json"),
+    executiveNarrative: text("executive_narrative"),
     createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
-  (t) => [check("candidate_profiles_single_row", sql`${t.id} = 'local'`)],
+  (t) => [
+    check("candidate_profiles_is_default", sql`${t.isDefault} IN (0, 1)`),
+  ],
 );
 
 export const candidateProfileVersions = sqliteTable(

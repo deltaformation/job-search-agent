@@ -51,6 +51,12 @@ export function discoverMigrationFiles(migrationsDir: string): MigrationFile[] {
  * Apply pending migrations, one synchronous transaction per file. Re-running is
  * a no-op when every file matches its recorded hash; a changed applied file is
  * drift and aborts instead of silently diverging databases.
+ *
+ * Each file runs with FK enforcement off (SQLite's documented
+ * schema-change procedure: table rebuilds drop referenced parents
+ * mid-file, which enforcement forbids even when deferred) and a
+ * `foreign_key_check` inside the transaction before commit, so a file
+ * that genuinely breaks references still fails and rolls back.
  */
 export function migrate(
   sqlite: SqliteConnection,
@@ -75,16 +81,28 @@ export function migrate(
   for (const file of files) {
     const expected = known.get(file.version);
     if (expected === undefined) {
-      const apply = sqlite.transaction(() => {
-        sqlite.exec(file.sql);
-        insert.run(file.version, file.sha256);
-      });
+      // PRAGMA foreign_keys only toggles outside a transaction.
+      sqlite.exec("PRAGMA foreign_keys=OFF");
       try {
-        apply();
-      } catch (error) {
-        throw new Error(`SQLite migration ${file.version} failed`, {
-          cause: error,
+        const apply = sqlite.transaction(() => {
+          sqlite.exec(file.sql);
+          const violations = sqlite.prepare("PRAGMA foreign_key_check").all();
+          if (violations.length > 0) {
+            throw new Error(
+              `SQLite migration ${file.version} breaks ${violations.length} foreign key(s)`,
+            );
+          }
+          insert.run(file.version, file.sha256);
         });
+        try {
+          apply();
+        } catch (error) {
+          throw new Error(`SQLite migration ${file.version} failed`, {
+            cause: error,
+          });
+        }
+      } finally {
+        sqlite.exec("PRAGMA foreign_keys=ON");
       }
       result.applied.push(file.version);
     } else if (expected !== file.sha256) {

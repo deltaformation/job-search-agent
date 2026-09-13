@@ -96,7 +96,10 @@ export default async function globalSetup(): Promise<void> {
       .run();
 
     // Profile and snapshot
-    handle.db.insert(candidateProfiles).values({ id: "local" }).run();
+    handle.db
+      .insert(candidateProfiles)
+      .values({ id: "local", name: "default", displayName: "Primary Profile", isDefault: true })
+      .run();
     const profileVersionId = newId();
     handle.db
       .insert(candidateProfileVersions)

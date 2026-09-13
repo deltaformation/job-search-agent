@@ -78,7 +78,10 @@ describe("resume review routes", () => {
         .insert(jobs)
         .values({ id: jobId, status: "NEW", rank: 0, rowVersion: 1, tailoringState: "AWAITING_REVIEW" })
         .run();
-      handle.db.insert(candidateProfiles).values({ id: "local" }).run();
+      handle.db
+        .insert(candidateProfiles)
+        .values({ id: "local", name: "default", displayName: "Primary Profile", isDefault: true })
+        .run();
       const profileVersionId = newId();
       handle.db
         .insert(candidateProfileVersions)

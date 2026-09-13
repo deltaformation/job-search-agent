@@ -294,7 +294,7 @@ describe("restoreArchive", () => {
     expect(jobs.map((row) => row.id)).toEqual(["job-1"]);
     expect(
       reopened.sqlite.prepare("SELECT version AS version FROM _schema_migrations").all(),
-    ).toHaveLength(5);
+    ).toHaveLength(6);
     const { readFileSync: read } = await import("node:fs");
     expect(read(join(candidateDir, "master-resume.json"), "utf8")).toBe('{"v":1}');
     expect(read(join(paths.evidenceDir, "abc123"), "utf8")).toBe("<html>raw</html>");
@@ -314,7 +314,11 @@ describe("resetBoardData", () => {
     seedFiles(paths);
     const handle = openDatabase({ path: paths.databasePath });
     handles.push(handle);
-    handle.sqlite.prepare("INSERT INTO candidate_profiles (id) VALUES ('local')").run();
+    handle.sqlite
+      .prepare(
+        "INSERT INTO candidate_profiles (id, name, display_name, is_default) VALUES ('local', 'default', 'Primary Profile', 1)",
+      )
+      .run();
     const versionId = "version-1";
     handle.sqlite
       .prepare(

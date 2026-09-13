@@ -172,7 +172,10 @@ function seedReviewable(t: TestDatabase, artifactsDir: string, overrides: SeedOp
       tailoringState: overrides.tailoringState ?? "AWAITING_REVIEW",
     })
     .run();
-  t.handle.db.insert(candidateProfiles).values({ id: "local" }).run();
+  t.handle.db
+    .insert(candidateProfiles)
+    .values({ id: "local", name: "default", displayName: "Primary Profile", isDefault: true })
+    .run();
   const profileVersionId = newId();
   t.handle.db
     .insert(candidateProfileVersions)

@@ -56,7 +56,10 @@ function withDatabase(fn: (t: TestDatabase) => void): void {
 
 /** Shared candidate profile/version/snapshot every analysis binds to. */
 function seedSharedCandidate(handle: DatabaseHandle): string {
-  handle.db.insert(candidateProfiles).values({ id: "local" }).run();
+  handle.db
+    .insert(candidateProfiles)
+    .values({ id: "local", name: "default", displayName: "Primary Profile", isDefault: true })
+    .run();
   const profileVersionId = newId();
   handle.db
     .insert(candidateProfileVersions)

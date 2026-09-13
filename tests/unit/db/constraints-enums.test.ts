@@ -245,11 +245,29 @@ describe("enum and range CHECK constraints", () => {
     });
   });
 
-  it("keeps exactly one local candidate profile row", () => {
+  it("allows multiple career profiles with unique names and one default", () => {
     runWithTestDb((t) => {
+      // The legacy single-row CHECK is gone: a second profile inserts cleanly.
+      t.handle.db
+        .insert(candidateProfiles)
+        .values({ id: "local", name: "default", displayName: "Primary Profile", isDefault: true })
+        .run();
+      t.handle.db
+        .insert(candidateProfiles)
+        .values({ id: "em", name: "eng-manager", displayName: "EM", isDefault: false })
+        .run();
       expect(() =>
-        t.handle.db.insert(candidateProfiles).values({ id: "second" }).run(),
-      ).toThrow(/CHECK constraint/i);
+        t.handle.db
+          .insert(candidateProfiles)
+          .values({ id: "x", name: "eng-manager", displayName: "X", isDefault: false })
+          .run(),
+      ).toThrow(/UNIQUE constraint failed/i);
+      expect(() =>
+        t.handle.db
+          .insert(candidateProfiles)
+          .values({ id: "y", name: "other", displayName: "Y", isDefault: true })
+          .run(),
+      ).toThrow(/UNIQUE constraint failed/i);
     });
   });
 

@@ -115,7 +115,9 @@ export function seedResumeChain(t: TestDatabase): ResumeChain {
     })
     .run();
 
-  db.insert(candidateProfiles).values({ id: "local" }).run();
+  db.insert(candidateProfiles)
+    .values({ id: "local", name: "default", displayName: "Primary Profile", isDefault: true })
+    .run();
   db.insert(candidateProfileVersions)
     .values({
       id: chain.profileVersionId,

@@ -341,7 +341,10 @@ function seedRichJob(handle: DatabaseHandle): string {
     .set({ activeExtractionId: extractionId })
     .where(eq(jobs.id, jobId))
     .run();
-  handle.db.insert(candidateProfiles).values({ id: "local" }).run();
+  handle.db
+    .insert(candidateProfiles)
+    .values({ id: "local", name: "default", displayName: "Primary Profile", isDefault: true })
+    .run();
   const profileVersionId = newId();
   handle.db
     .insert(candidateProfileVersions)
@@ -539,7 +542,10 @@ describe("getJobDetail", () => {
           missingFieldsJson: JSON.stringify([]),
         })
         .run();
-      t.handle.db.insert(candidateProfiles).values({ id: "local" }).run();
+      t.handle.db
+        .insert(candidateProfiles)
+        .values({ id: "local", name: "default", displayName: "Primary Profile", isDefault: true })
+        .run();
       const profileVersionId = newId();
       t.handle.db
         .insert(candidateProfileVersions)

@@ -32,7 +32,7 @@ describe("database startup", () => {
         const recorded = second.sqlite
           .prepare("SELECT version FROM _schema_migrations")
           .all() as Array<{ version: string }>;
-        expect(recorded).toHaveLength(5);
+        expect(recorded).toHaveLength(6);
         const rows = second.sqlite
           .prepare("SELECT id, title FROM jobs WHERE id = ?")
           .all(jobId) as Array<{ id: string; title: string }>;

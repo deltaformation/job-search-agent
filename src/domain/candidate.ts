@@ -9,10 +9,13 @@ import { EntityId } from "./fields";
  * each profile version; `CandidateSnapshotV1` is the self-contained
  * generation input bound to resume work.
  *
- * Deliberately excluded from every shape: preferences, standard answers,
- * work-authorization/salary responses, and application-session state. The MVP
- * never auto-answers legal, authorization, compensation, or
- * self-identification questions, so the importer refuses to carry them.
+ * R-ADR-012 adds per-profile career metadata (`WorkPreferencesV1`,
+ * `CareerProfileV1`): user-managed settings owned by each named profile,
+ * stored as versioned JSON beside — never inside — immutable versions and
+ * snapshots. The boundary stands: profile preferences never become resume
+ * claims, and the app never auto-answers legal, authorization,
+ * compensation, or self-identification questions, so the importer still
+ * refuses to carry standard answers or application-session state.
  */
 
 export const CANDIDATE_IMPORT_SCHEMA_VERSION = "candidate-import/v1";
@@ -248,3 +251,89 @@ export const CandidateSnapshotV1 = z
     }
   });
 export type CandidateSnapshotV1 = z.infer<typeof CandidateSnapshotV1>;
+
+export const WORK_PREFERENCES_SCHEMA_VERSION = "work-preferences/v1";
+export const CAREER_PROFILE_SCHEMA_VERSION = "career-profile/v1";
+
+/** Unique slug identifier for a career profile (`staff-engineer`). */
+export const ProfileSlug = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9][a-z0-9-]*$/, {
+    message: "profile name must be a lowercase slug ([a-z0-9-])",
+  });
+export type ProfileSlug = z.infer<typeof ProfileSlug>;
+
+export const ProfileDisplayName = TrimmedText(200);
+export type ProfileDisplayName = z.infer<typeof ProfileDisplayName>;
+
+const WorkModeV1 = z.enum(["REMOTE", "HYBRID", "ONSITE"]);
+
+/**
+ * User-managed work preferences stored as JSON on a career profile row.
+ * Steering metadata only: never a resume claim source and never an answer
+ * to authorization, compensation, or self-identification questions.
+ */
+export const WorkPreferencesV1 = z
+  .object({
+    schemaVersion: z.literal(WORK_PREFERENCES_SCHEMA_VERSION),
+    workAuthorization: z.array(TrimmedText(120)).max(20).default([]),
+    workMode: z.array(WorkModeV1).max(3).default([]),
+    sponsorshipRequired: z.boolean().default(false),
+    willingToRelocate: z.boolean().default(false),
+    yearsOfExperience: z.number().finite().min(0).max(80).optional(),
+    salaryExpectation: z
+      .object({
+        min: z.number().finite().min(0).optional(),
+        target: z.number().finite().min(0).optional(),
+        currency: TrimmedText(8).optional(),
+      })
+      .strict()
+      .optional(),
+    targetTitles: z.array(TrimmedText(200)).max(30).default([]),
+    targetLocations: z.array(TrimmedText(200)).max(30).default([]),
+  })
+  .strict();
+export type WorkPreferencesV1 = z.infer<typeof WorkPreferencesV1>;
+
+/** Caller input: preferences without the stamped envelope version. */
+export const WorkPreferencesInputV1 = WorkPreferencesV1.omit({ schemaVersion: true });
+export type WorkPreferencesInputV1 = z.infer<typeof WorkPreferencesInputV1>;
+
+/** One named career profile: identity row plus parsed preferences. */
+export const CareerProfileV1 = z
+  .object({
+    schemaVersion: z.literal(CAREER_PROFILE_SCHEMA_VERSION),
+    id: z.string().trim().min(1).max(64),
+    name: ProfileSlug,
+    displayName: ProfileDisplayName,
+    isDefault: z.boolean(),
+    workPreferences: WorkPreferencesV1.nullable(),
+    executiveNarrative: z.string().trim().max(2000).nullable(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+export type CareerProfileV1 = z.infer<typeof CareerProfileV1>;
+
+export const CreateCareerProfileInputV1 = z
+  .object({
+    name: ProfileSlug,
+    displayName: ProfileDisplayName,
+    workPreferences: WorkPreferencesInputV1.optional(),
+    executiveNarrative: z.string().trim().max(2000).optional(),
+    isDefault: z.boolean().optional(),
+  })
+  .strict();
+export type CreateCareerProfileInputV1 = z.infer<typeof CreateCareerProfileInputV1>;
+
+export const UpdateCareerProfileInputV1 = z
+  .object({
+    displayName: ProfileDisplayName.optional(),
+    workPreferences: WorkPreferencesInputV1.nullable().optional(),
+    executiveNarrative: z.string().trim().max(2000).nullable().optional(),
+  })
+  .strict();
+export type UpdateCareerProfileInputV1 = z.infer<typeof UpdateCareerProfileInputV1>;

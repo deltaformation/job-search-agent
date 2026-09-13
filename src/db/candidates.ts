@@ -1,4 +1,15 @@
 import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
+import type { z } from "zod";
+import {
+  CAREER_PROFILE_SCHEMA_VERSION,
+  CareerProfileV1,
+  CreateCareerProfileInputV1,
+  UpdateCareerProfileInputV1,
+  WORK_PREFERENCES_SCHEMA_VERSION,
+  WorkPreferencesInputV1,
+  WorkPreferencesV1,
+} from "../domain/candidate";
+import { canonicalJson } from "../domain/canonical";
 import type { DatabaseHandle } from "./client";
 import {
   candidateFacts,
@@ -13,13 +24,21 @@ import {
 import { newId } from "./utils";
 
 /**
- * Candidate repositories: thin synchronous row operations for the local
- * profile root, reviewed versions, verified facts, and immutable
- * candidate/JD snapshots. Transaction-agnostic — callers (the R4-A command
- * service) own the short transaction via `withTransaction`.
+ * Candidate repositories: thin synchronous row operations for career
+ * profiles, reviewed versions, verified facts, and immutable
+ * candidate/JD snapshots. Transaction-agnostic — callers own the short
+ * transaction via `withTransaction`.
+ *
+ * R-ADR-012: many named profiles share this table, each with its own
+ * version lineage and at most one active version; one profile is the
+ * default. Version helpers accept an optional `profileId` and resolve to
+ * the default profile when omitted, so single-profile callers behave
+ * exactly as before.
  */
 
 export const LOCAL_PROFILE_ID = "local";
+export const DEFAULT_PROFILE_NAME = "default";
+export const DEFAULT_PROFILE_DISPLAY_NAME = "Primary Profile";
 
 export interface ProfileVersionRow {
   id: string;
@@ -61,22 +80,244 @@ export interface JdSnapshotRow {
   createdAt: string;
 }
 
-/** Ensure the single local profile root exists; returns its id. */
+/**
+ * Ensure the legacy local profile root exists; returns its id. Backwards
+ * compatibility for single-profile flows: the row carries the same
+ * name/display/default the 0005 migration backfills.
+ */
 export function ensureLocalProfile(handle: DatabaseHandle): string {
   handle.db
     .insert(candidateProfiles)
-    .values({ id: LOCAL_PROFILE_ID })
+    .values({
+      id: LOCAL_PROFILE_ID,
+      name: DEFAULT_PROFILE_NAME,
+      displayName: DEFAULT_PROFILE_DISPLAY_NAME,
+      isDefault: true,
+    })
     .onConflictDoNothing()
     .run();
   return LOCAL_PROFILE_ID;
 }
 
-/** Next version number for the profile (max + 1 inside the caller's transaction). */
-export function nextProfileVersionNumber(handle: DatabaseHandle): number {
+export interface ProfileRow {
+  id: string;
+  name: string;
+  displayName: string;
+  isDefault: boolean;
+  workPreferencesJson: string | null;
+  executiveNarrative: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateProfileInput {
+  name: string;
+  displayName: string;
+  workPreferences?: z.input<typeof WorkPreferencesInputV1>;
+  executiveNarrative?: string;
+  isDefault?: boolean;
+}
+
+export interface UpdateProfileInput {
+  displayName?: string;
+  workPreferences?: z.input<typeof WorkPreferencesInputV1> | null;
+  executiveNarrative?: string | null;
+}
+
+function stampPreferencesJson(input: z.input<typeof WorkPreferencesInputV1>): string {
+  const validated = WorkPreferencesV1.parse({
+    ...WorkPreferencesInputV1.parse(input),
+    schemaVersion: WORK_PREFERENCES_SCHEMA_VERSION,
+  });
+  return canonicalJson(validated);
+}
+
+/** Compose the validated profile view; throws on corrupt stored JSON. */
+function toCareerProfile(row: ProfileRow): z.infer<typeof CareerProfileV1> {
+  const workPreferences =
+    row.workPreferencesJson === null
+      ? null
+      : WorkPreferencesV1.parse(JSON.parse(row.workPreferencesJson) as unknown);
+  return CareerProfileV1.parse({
+    schemaVersion: CAREER_PROFILE_SCHEMA_VERSION,
+    id: row.id,
+    name: row.name,
+    displayName: row.displayName,
+    isDefault: row.isDefault,
+    workPreferences,
+    executiveNarrative: row.executiveNarrative,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  });
+}
+
+function getProfileRow(handle: DatabaseHandle, id: string): ProfileRow | null {
+  const row = handle.db
+    .select()
+    .from(candidateProfiles)
+    .where(eq(candidateProfiles.id, id))
+    .get();
+  return (row ?? null) as ProfileRow | null;
+}
+
+function getProfileRowByName(handle: DatabaseHandle, name: string): ProfileRow | null {
+  const row = handle.db
+    .select()
+    .from(candidateProfiles)
+    .where(eq(candidateProfiles.name, name))
+    .get();
+  return (row ?? null) as ProfileRow | null;
+}
+
+/** Every career profile, alphabetical by unique name (total, stable order). */
+export function listProfiles(handle: DatabaseHandle): z.infer<typeof CareerProfileV1>[] {
+  return handle.db
+    .select()
+    .from(candidateProfiles)
+    .orderBy(asc(candidateProfiles.name))
+    .all()
+    .map((row) => toCareerProfile(row as ProfileRow));
+}
+
+/**
+ * One profile by id, falling back to an exact name match when no id
+ * matches. Ids (UUIDs) and slugs cannot collide in practice; the id
+ * lookup wins by construction.
+ */
+export function getProfile(
+  handle: DatabaseHandle,
+  idOrName: string,
+): z.infer<typeof CareerProfileV1> | null {
+  const byId = getProfileRow(handle, idOrName);
+  if (byId !== null) {
+    return toCareerProfile(byId);
+  }
+  const byName = getProfileRowByName(handle, idOrName);
+  return byName === null ? null : toCareerProfile(byName);
+}
+
+/** The default profile, or null when none is set. */
+export function getDefaultProfile(handle: DatabaseHandle): z.infer<typeof CareerProfileV1> | null {
+  const row = handle.db
+    .select()
+    .from(candidateProfiles)
+    .where(eq(candidateProfiles.isDefault, true))
+    .get();
+  return row === undefined ? null : toCareerProfile(row as ProfileRow);
+}
+
+/** Explicit profile id, else the default profile, else the legacy root. */
+function resolveProfileId(handle: DatabaseHandle, profileId?: string): string {
+  if (profileId !== undefined) {
+    return profileId;
+  }
+  return getDefaultProfile(handle)?.id ?? LOCAL_PROFILE_ID;
+}
+
+/**
+ * Create a career profile. The first profile (or an explicit `isDefault`)
+ * becomes the default, clearing any previous one. Throws `ZodError` on
+ * invalid input and a UNIQUE violation on a duplicate name.
+ */
+export function createProfile(
+  handle: DatabaseHandle,
+  rawInput: CreateProfileInput,
+): z.infer<typeof CareerProfileV1> {
+  const input = CreateCareerProfileInputV1.parse(rawInput);
+  const makeDefault = input.isDefault ?? getDefaultProfile(handle) === null;
+  if (makeDefault) {
+    handle.db
+      .update(candidateProfiles)
+      .set({ isDefault: false })
+      .where(eq(candidateProfiles.isDefault, true))
+      .run();
+  }
+  const id = newId();
+  handle.db
+    .insert(candidateProfiles)
+    .values({
+      id,
+      name: input.name,
+      displayName: input.displayName,
+      isDefault: makeDefault,
+      workPreferencesJson:
+        input.workPreferences === undefined ? null : stampPreferencesJson(input.workPreferences),
+      executiveNarrative: input.executiveNarrative ?? null,
+    })
+    .run();
+  const created = getProfileRow(handle, id);
+  if (created === null) {
+    throw new Error("inserted career profile is not readable");
+  }
+  return toCareerProfile(created);
+}
+
+/**
+ * Update mutable profile metadata (`updated_at` always advances on write).
+ * Identity (`id`, `name`) is frozen by trigger. Returns null for unknown
+ * ids; a field set to null clears it.
+ */
+export function updateProfile(
+  handle: DatabaseHandle,
+  id: string,
+  rawInput: UpdateProfileInput,
+  now: string,
+): z.infer<typeof CareerProfileV1> | null {
+  const existing = getProfileRow(handle, id);
+  if (existing === null) {
+    return null;
+  }
+  const input = UpdateCareerProfileInputV1.parse(rawInput);
+  const patch: Partial<ProfileRow> & { updatedAt: string } = { updatedAt: now };
+  if (input.displayName !== undefined) {
+    patch.displayName = input.displayName;
+  }
+  if (input.workPreferences !== undefined) {
+    patch.workPreferencesJson =
+      input.workPreferences === null ? null : stampPreferencesJson(input.workPreferences);
+  }
+  if (input.executiveNarrative !== undefined) {
+    patch.executiveNarrative = input.executiveNarrative;
+  }
+  handle.db
+    .update(candidateProfiles)
+    .set(patch)
+    .where(eq(candidateProfiles.id, id))
+    .run();
+  const updated = getProfileRow(handle, id);
+  if (updated === null) {
+    throw new Error("updated career profile is not readable");
+  }
+  return toCareerProfile(updated);
+}
+
+/**
+ * Move the default marker to one profile. Returns false when the id is
+ * unknown; the partial unique index keeps this race-safe.
+ */
+export function setDefaultProfile(handle: DatabaseHandle, id: string): boolean {
+  if (getProfileRow(handle, id) === null) {
+    return false;
+  }
+  handle.db
+    .update(candidateProfiles)
+    .set({ isDefault: false })
+    .where(eq(candidateProfiles.isDefault, true))
+    .run();
+  handle.db
+    .update(candidateProfiles)
+    .set({ isDefault: true })
+    .where(eq(candidateProfiles.id, id))
+    .run();
+  return true;
+}
+
+/** Next version number for one profile (max + 1 inside the caller's transaction). */
+export function nextProfileVersionNumber(handle: DatabaseHandle, profileId?: string): number {
   const row = handle.db
     .select({ maxVersion: sql<number | null>`max(${candidateProfileVersions.version})` })
     .from(candidateProfileVersions)
-    .where(eq(candidateProfileVersions.profileId, LOCAL_PROFILE_ID))
+    .where(eq(candidateProfileVersions.profileId, resolveProfileId(handle, profileId)))
     .get();
   return (row?.maxVersion ?? 0) + 1;
 }
@@ -88,6 +329,7 @@ export function insertProfileVersion(
     payloadJson: string;
     payloadHash: string;
     schemaVersion: string;
+    profileId?: string;
   },
 ): ProfileVersionRow {
   const id = newId();
@@ -95,7 +337,7 @@ export function insertProfileVersion(
     .insert(candidateProfileVersions)
     .values({
       id,
-      profileId: LOCAL_PROFILE_ID,
+      profileId: resolveProfileId(handle, input.profileId),
       version: input.version,
       payloadJson: input.payloadJson,
       payloadHash: input.payloadHash,
@@ -124,13 +366,14 @@ export function getProfileVersion(
 export function getProfileVersionByNumber(
   handle: DatabaseHandle,
   version: number,
+  profileId?: string,
 ): ProfileVersionRow | null {
   const row = handle.db
     .select()
     .from(candidateProfileVersions)
     .where(
       and(
-        eq(candidateProfileVersions.profileId, LOCAL_PROFILE_ID),
+        eq(candidateProfileVersions.profileId, resolveProfileId(handle, profileId)),
         eq(candidateProfileVersions.version, version),
       ),
     )
@@ -138,22 +381,28 @@ export function getProfileVersionByNumber(
   return row ?? null;
 }
 
-export function listProfileVersions(handle: DatabaseHandle): ProfileVersionRow[] {
+export function listProfileVersions(
+  handle: DatabaseHandle,
+  profileId?: string,
+): ProfileVersionRow[] {
   return handle.db
     .select()
     .from(candidateProfileVersions)
-    .where(eq(candidateProfileVersions.profileId, LOCAL_PROFILE_ID))
+    .where(eq(candidateProfileVersions.profileId, resolveProfileId(handle, profileId)))
     .orderBy(asc(candidateProfileVersions.version))
     .all();
 }
 
-export function getActiveProfileVersion(handle: DatabaseHandle): ProfileVersionRow | null {
+export function getActiveProfileVersion(
+  handle: DatabaseHandle,
+  profileId?: string,
+): ProfileVersionRow | null {
   const row = handle.db
     .select()
     .from(candidateProfileVersions)
     .where(
       and(
-        eq(candidateProfileVersions.profileId, LOCAL_PROFILE_ID),
+        eq(candidateProfileVersions.profileId, resolveProfileId(handle, profileId)),
         isNotNull(candidateProfileVersions.activatedAt),
       ),
     )
@@ -179,7 +428,7 @@ export function activateProfileVersion(
     .set({ activatedAt: null })
     .where(
       and(
-        eq(candidateProfileVersions.profileId, LOCAL_PROFILE_ID),
+        eq(candidateProfileVersions.profileId, target.profileId),
         isNotNull(candidateProfileVersions.activatedAt),
       ),
     )
