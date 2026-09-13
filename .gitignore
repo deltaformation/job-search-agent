@@ -10,6 +10,7 @@ node_modules/
 npm-debug.log*
 .next/
 out/
+dist/
 coverage/
 playwright-report/
 test-results/
