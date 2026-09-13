@@ -76,7 +76,7 @@ export default function Dialog({ labelledBy, onClose, position, children }: Dial
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end"
+      className="fixed inset-0 z-50 bg-black/60 flex justify-end"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();

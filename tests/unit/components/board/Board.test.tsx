@@ -231,6 +231,18 @@ describe("Board", () => {
     }
   });
 
+  it("paints initial server data on frame 1 without a loading state", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okJson(boardView()));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<Board initialData={boardView()} />);
+    expect(screen.getByText("Staff Engineer")).toBeInTheDocument();
+    expect(screen.getByText("Designer")).toBeInTheDocument();
+    expect(screen.queryByText("Loading board…")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("does not poll when nothing is running", async () => {
     vi.useFakeTimers();
     try {

@@ -325,7 +325,7 @@ export default function SettingsModal({
             <TabsTrigger value="profile">Candidate Profile</TabsTrigger>
           </TabsList>
           <div ref={sectionScrollRef} className="settings-scroll min-h-0 flex-1 overflow-y-auto">
-            <TabsContent value="data" forceMount className="workspace-tab mt-0 min-h-[400px] space-y-6 data-[state=inactive]:hidden">
+            <TabsContent value="data" className="workspace-tab mt-0 min-h-[400px] space-y-6">
           <Section title="Backup & Restore">
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" onClick={() => void downloadBackup()} disabled={busy !== null}>
@@ -457,7 +457,7 @@ export default function SettingsModal({
           </Section>
               </div>
             </TabsContent>
-            <TabsContent value="ai" forceMount className="workspace-tab mt-0 min-h-[400px] data-[state=inactive]:hidden">
+            <TabsContent value="ai" className="workspace-tab mt-0 min-h-[400px]">
           <Section title="AI & OpenRouter">
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
               <dt className="text-muted-foreground">Primary</dt>
@@ -528,7 +528,7 @@ export default function SettingsModal({
             </p>
           </Section>
             </TabsContent>
-            <TabsContent value="profile" forceMount className="workspace-tab mt-0 min-h-[400px] data-[state=inactive]:hidden">
+            <TabsContent value="profile" className="workspace-tab mt-0 min-h-[400px]">
           <Section title="Candidate Profile">
             {snapshot?.profile === null || snapshot?.profile === undefined ? (
               <p className="text-xs text-muted-foreground">

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -42,7 +43,7 @@ interface JobCardProps {
   onOpen: (jobId: string) => void;
 }
 
-export default function JobCard({ card, onOpen }: JobCardProps) {
+function JobCard({ card, onOpen }: JobCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: card.id });
 
@@ -200,3 +201,16 @@ export default function JobCard({ card, onOpen }: JobCardProps) {
     </li>
   );
 }
+
+/**
+ * Reference-equality memo: Board re-renders on every search keystroke,
+ * drawer open/close, and notice change without replacing card objects, so
+ * memo skips all 50+ cards on those paths. Fresh fetches (polling,
+ * mutations, sort/search commits) replace card objects and re-render as
+ * normal; drag state flows through useSortable's own context subscription
+ * and is unaffected by memo.
+ */
+export default memo(
+  JobCard,
+  (prev, next) => prev.card === next.card && prev.onOpen === next.onOpen,
+);

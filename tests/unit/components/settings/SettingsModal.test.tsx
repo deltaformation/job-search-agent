@@ -26,9 +26,10 @@ function selectTab(name: string) {
 
 it("preserves draft inputs across settings tabs without submitting anything", async () => {
   const { fetchMock } = setup();
-  await waitFor(() => expect(screen.getByLabelText("Primary model")).toHaveValue("provider/primary"));
+  // Inactive panels mount on selection, so navigate before asserting fields.
   expect(screen.getByRole("tab", { name: "Data & Backup" })).toHaveAttribute("aria-selected", "true");
   selectTab("AI & Models");
+  await waitFor(() => expect(screen.getByLabelText("Primary model")).toHaveValue("provider/primary"));
   fireEvent.change(screen.getByLabelText("Primary model"), { target: { value: "provider/draft" } });
   selectTab("Candidate Profile");
   expect(screen.getByText("Test candidate")).toBeVisible();

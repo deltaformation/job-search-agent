@@ -594,7 +594,7 @@ export default function ResumeReview({
       {/* Compact sticky trigger bar: the primary decision stays reachable
           while reading, without covering the audit it governs. */}
       {view.actions.canApprove && !confirming && (
-        <div className="sticky bottom-0 z-10 flex items-center justify-end gap-3 rounded-xl border border-border/80 bg-background/95 p-3 shadow-sm backdrop-blur">
+        <div className="sticky bottom-0 z-10 flex items-center justify-end gap-3 rounded-xl border border-border/80 bg-background p-3 shadow-sm">
           <p className="mr-auto hidden text-xs text-muted-foreground sm:block">
             Version {view.version.version} ·{" "}
             <span className="font-mono tabular-nums">{view.artifacts.length}</span>{" "}

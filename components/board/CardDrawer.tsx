@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -121,8 +121,10 @@ export default function CardDrawer({
   }
 
   function onTabChange(value: string): void {
-    setActiveTab(value);
     resetSectionScroll();
+    // Mounting a tab (resume audit, history) is the heavy part; the click
+    // itself paints first and the panel follows.
+    startTransition(() => setActiveTab(value));
   }
 
   const refreshDetail = useCallback(async (): Promise<void> => {
@@ -239,6 +241,11 @@ export default function CardDrawer({
   }
 
   const view = detail;
+
+  // Single source for the controlled tab: only the active panel's render
+  // function runs, so opening the drawer never builds the two hidden trees.
+  const currentTab =
+    activeTab ?? (view !== null && view.resumes.length > 0 ? "resumes" : "overview");
 
   const renderOverview = (v: JobDetailView) => (
     <div className="space-y-4">
@@ -666,7 +673,7 @@ export default function CardDrawer({
 
       {view !== null && (
         <Tabs
-          value={activeTab ?? (view.resumes.length > 0 ? "resumes" : "overview")}
+          value={currentTab}
           onValueChange={onTabChange}
           className="flex min-h-0 flex-1 flex-col gap-6"
         >
@@ -697,9 +704,9 @@ export default function CardDrawer({
 
           <div ref={centerScrollRef} className="workspace-center grid min-h-0 flex-1 grid-cols-1 items-start gap-6 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
             <div ref={mainScrollRef} className="workspace-main min-w-0 lg:h-full lg:overflow-y-auto lg:pr-2">
-              <TabsContent value="resumes" className="workspace-tab min-h-[400px] mt-0">{renderResumes(view)}</TabsContent>
-              <TabsContent value="overview" className="workspace-tab min-h-[400px] mt-0">{renderOverview(view)}</TabsContent>
-              <TabsContent value="notes" className="workspace-tab min-h-[400px] mt-0">{renderNotesAndHistory(view)}</TabsContent>
+              <TabsContent value="resumes" className="workspace-tab min-h-[400px] mt-0">{currentTab === "resumes" ? renderResumes(view) : null}</TabsContent>
+              <TabsContent value="overview" className="workspace-tab min-h-[400px] mt-0">{currentTab === "overview" ? renderOverview(view) : null}</TabsContent>
+              <TabsContent value="notes" className="workspace-tab min-h-[400px] mt-0">{currentTab === "notes" ? renderNotesAndHistory(view) : null}</TabsContent>
             </div>
             {/* Two-pane scroll is intentional: five context cards (~800px) cannot
                 fit a ~500px drawer viewport, and the grid clips overflow, so

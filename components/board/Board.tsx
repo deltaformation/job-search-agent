@@ -13,7 +13,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BoardStatus } from "@/src/domain/enums";
 import type { BoardCardView, BoardView } from "@/src/server/board";
 import { apiGet, errorMessage } from "../api";
@@ -62,9 +62,9 @@ function findCard(board: BoardView, cardId: string): BoardCardView | null {
   return null;
 }
 
-export default function Board() {
-  const [board, setBoard] = useState<BoardView | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function Board({ initialData = null }: { initialData?: BoardView | null }) {
+  const [board, setBoard] = useState<BoardView | null>(initialData);
+  const [loading, setLoading] = useState(initialData === null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -97,6 +97,19 @@ export default function Board() {
     (status: BoardStatus): number => limits[status] ?? PAGE_SIZE,
     [limits],
   );
+
+  // Heavy synchronous renders (drawer mount, full-column re-layout) run as
+  // transitions so the click paints first and the tree follows. Stable
+  // references keep memoized cards from re-rendering on unrelated updates.
+  const handleOpenJob = useCallback((jobId: string) => {
+    startTransition(() => setOpenJobId(jobId));
+  }, []);
+  const handleCloseJob = useCallback(() => {
+    startTransition(() => setOpenJobId(null));
+  }, []);
+  const handleViewMode = useCallback((mode: "kanban" | "stacked") => {
+    startTransition(() => setViewMode(mode));
+  }, []);
 
   const refresh = useCallback(async (): Promise<BoardView | null> => {
     const params = new URLSearchParams();
@@ -309,7 +322,7 @@ export default function Board() {
           <div role="group" aria-label="Board view" className="flex rounded-lg bg-muted p-1">
             {(["kanban", "stacked"] as const).map((mode) => (
               <button key={mode} type="button" aria-pressed={viewMode === mode}
-                onClick={() => setViewMode(mode)}
+                onClick={() => handleViewMode(mode)}
                 className={`rounded-md px-3 py-2 text-sm transition-opacity duration-150 ${viewMode === mode ? "bg-background shadow-sm" : "text-muted-foreground"}`}>
                 {mode === "kanban" ? "Kanban" : "Stacked"}
               </button>
@@ -380,7 +393,7 @@ export default function Board() {
                 status={column.status}
                 total={column.total}
                 cards={column.cards.slice(0, limitFor(column.status))}
-                onOpen={setOpenJobId}
+                onOpen={handleOpenJob}
                 onShowMore={(status) => void showMore(status)}
                 loadingMore={loadingMore}
               />
@@ -406,7 +419,7 @@ export default function Board() {
           key={openJobId}
           jobId={openJobId}
           refreshToken={drawerToken}
-          onClose={() => setOpenJobId(null)}
+          onClose={handleCloseJob}
           onChanged={() => void refresh()}
           onCorrect={(card) => setDialog({ kind: "correct", card })}
           onApplied={(card, rank) => setDialog({ kind: "applied", card, rank })}
