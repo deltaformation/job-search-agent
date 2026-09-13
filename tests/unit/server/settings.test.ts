@@ -1,13 +1,14 @@
 // @vitest-environment node
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestDatabase } from "../../../src/db/testing";
 import type { DataRootPaths } from "../../../src/security/data-root";
 import {
   getSettingsSnapshot,
   masterResumePath,
   pingOpenRouter,
+  pingProvider,
   resyncMasterResume,
   switchModels,
 } from "../../../src/server/settings";
@@ -71,6 +72,43 @@ describe("getSettingsSnapshot", () => {
       expect(snapshot.openRouter).toEqual({ configured: false, fingerprint: null });
     });
   });
+
+  it("reports the active provider plus per-provider chains and key status", () => {
+    withDatabase((t) => {
+      const snapshot = getSettingsSnapshot(t.handle, {
+        paths: pathsFor(t),
+        env: {
+          ACTIVE_AI_PROVIDER: "google",
+          GEMINI_API_KEY: "g-key",
+          GEMINI_MODEL: "gemini-custom",
+          META_API_KEY: "m-key",
+        },
+      });
+      expect(snapshot.activeProvider).toBe("google");
+      expect(snapshot.models).toEqual({ primary: "gemini-custom", fallback: "gemini-2.5-flash" });
+      expect(snapshot.providers.google.configured).toBe(true);
+      expect(snapshot.providers.google.fingerprint).toMatch(/^[0-9a-f]{8}$/);
+      expect(snapshot.providers.meta).toMatchObject({
+        configured: true,
+        models: { primary: "meta-muse", fallback: "meta-muse" },
+      });
+      expect(snapshot.providers.openrouter.configured).toBe(false);
+      expect(snapshot.openRouter.configured).toBe(false);
+      expect(JSON.stringify(snapshot)).not.toContain("g-key");
+      expect(JSON.stringify(snapshot)).not.toContain("m-key");
+    });
+  });
+
+  it("falls back to openrouter for an unknown active provider", () => {
+    withDatabase((t) => {
+      const snapshot = getSettingsSnapshot(t.handle, {
+        paths: pathsFor(t),
+        env: { ACTIVE_AI_PROVIDER: "anthropic" },
+      });
+      expect(snapshot.activeProvider).toBe("openrouter");
+      expect(snapshot.models.primary).toBe("google/gemma-4-26b-a4b-it:free");
+    });
+  });
 });
 
 describe("switchModels", () => {
@@ -82,6 +120,7 @@ describe("switchModels", () => {
       expect(result).toEqual({
         primary: "new-model",
         fallback: "fb-model",
+        activeProvider: "openrouter",
         restartRequired: true,
       });
       const content = readFileSync(envFile, "utf8");
@@ -116,6 +155,45 @@ describe("switchModels", () => {
       expect(() => switchModels(envFile, { primary: "x; rm -rf /" })).toThrow();
     });
   });
+
+  it("switches the active provider and per-provider model chains", () => {
+    withDatabase((t) => {
+      const envFile = join(t.dir, ".env.local");
+      writeFileSync(envFile, "OPENROUTER_MODEL=old\n");
+      const result = switchModels(envFile, {
+        provider: "google",
+        googleModel: "gemini-2.5-pro",
+        googleFallbackModel: "gemini-2.5-flash",
+        metaModel: "meta-muse",
+      });
+      expect(result).toEqual({
+        primary: "gemini-2.5-pro",
+        fallback: "gemini-2.5-flash",
+        activeProvider: "google",
+        restartRequired: true,
+      });
+      const content = readFileSync(envFile, "utf8");
+      expect(content).toContain("ACTIVE_AI_PROVIDER=google");
+      expect(content).toContain("GEMINI_MODEL=gemini-2.5-pro");
+      expect(content).toContain("GEMINI_FALLBACK_MODEL=gemini-2.5-flash");
+      expect(content).toContain("META_MODEL=meta-muse");
+      expect(content).toContain("OPENROUTER_MODEL=old");
+    });
+  });
+
+  it("clears a provider fallback back to its default", () => {
+    withDatabase((t) => {
+      const envFile = join(t.dir, ".env.local");
+      writeFileSync(
+        envFile,
+        "ACTIVE_AI_PROVIDER=meta\nMETA_FALLBACK_MODEL=stale\n",
+      );
+      const result = switchModels(envFile, { clearMetaFallback: true });
+      expect(result.activeProvider).toBe("meta");
+      expect(result.fallback).toBe("meta-muse");
+      expect(readFileSync(envFile, "utf8")).toContain("# META_FALLBACK_MODEL removed by Settings");
+    });
+  });
 });
 
 describe("pingOpenRouter", () => {
@@ -127,6 +205,82 @@ describe("pingOpenRouter", () => {
       latencyMs: 0,
       error: "OPENROUTER_API_KEY is not configured",
     });
+  });
+});
+
+describe("pingProvider", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("reports each missing key without touching the network", async () => {
+    await expect(pingProvider("google", {})).resolves.toMatchObject({
+      ok: false,
+      model: null,
+      error: "GEMINI_API_KEY is not configured",
+    });
+    await expect(pingProvider("meta", {})).resolves.toMatchObject({
+      ok: false,
+      model: null,
+      error: "META_API_KEY is not configured",
+    });
+  });
+
+  it("rejects unknown providers", async () => {
+    await expect(
+      pingProvider("anthropic" as "google", { META_API_KEY: "k" }),
+    ).rejects.toThrow("unknown AI provider");
+  });
+
+  it("pings Google through generateContent and validates the payload", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: '{"ping":"ok"}' }] } }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await pingProvider("google", { GEMINI_API_KEY: "k" });
+    expect(result.ok).toBe(true);
+    expect(result.model).toBe("gemini-2.5-pro");
+    expect(result.latencyMs).toBeGreaterThanOrEqual(0);
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toContain("gemini-2.5-pro:generateContent");
+  });
+
+  it("pings Meta through the Responses endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ output_text: '{"ping":"ok"}' }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await pingProvider("meta", { META_API_KEY: "k", META_MODEL: "custom" });
+    expect(result.ok).toBe(true);
+    expect(result.model).toBe("custom");
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toBe("https://api.meta.ai/v1/responses");
+  });
+
+  it("fails closed on auth errors and unexpected payloads", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 401, text: async () => "bad key" }),
+    );
+    const auth = await pingProvider("google", { GEMINI_API_KEY: "bad" });
+    expect(auth.ok).toBe(false);
+    expect(auth.model).toBe("gemini-2.5-pro");
+    expect(auth.error).toContain("401");
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ output_text: '{"ping":"nope"}' }),
+    }));
+    const payload = await pingProvider("meta", { META_API_KEY: "k" });
+    expect(payload).toMatchObject({ ok: false, model: "meta-muse" });
+    expect(payload.error).toContain("expected ping payload");
   });
 });
 

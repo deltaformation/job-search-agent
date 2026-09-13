@@ -227,4 +227,68 @@ describe("POST /api/settings/ai-test", () => {
     expect(body.ok).toBe(false);
     expect(body.error).toBe("OPENROUTER_API_KEY is not configured");
   });
+
+  it("pings the selected provider and validates the body", async () => {
+    makeRoot();
+    const savedGemini = process.env.GEMINI_API_KEY;
+    const savedMeta = process.env.META_API_KEY;
+    const savedActive = process.env.ACTIVE_AI_PROVIDER;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.META_API_KEY;
+    delete process.env.ACTIVE_AI_PROVIDER;
+    try {
+      const google = await aiTestPOST(
+        localPost("/api/settings/ai-test", {
+          body: JSON.stringify({ provider: "google" }),
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      expect(google.status).toBe(200);
+      expect((await google.json()) as { error: string }).toMatchObject({
+        ok: false,
+        error: "GEMINI_API_KEY is not configured",
+      });
+      const emptyObject = await aiTestPOST(
+        localPost("/api/settings/ai-test", {
+          body: JSON.stringify({}),
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      expect(emptyObject.status).toBe(200);
+      expect((await emptyObject.json()) as { error: string }).toMatchObject({
+        ok: false,
+        error: "OPENROUTER_API_KEY is not configured",
+      });
+      const unknown = await aiTestPOST(
+        localPost("/api/settings/ai-test", {
+          body: JSON.stringify({ provider: "nope" }),
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      expect(unknown.status).toBe(400);
+      const malformed = await aiTestPOST(
+        localPost("/api/settings/ai-test", {
+          body: "{oops",
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      expect(malformed.status).toBe(400);
+    } finally {
+      if (savedGemini === undefined) {
+        delete process.env.GEMINI_API_KEY;
+      } else {
+        process.env.GEMINI_API_KEY = savedGemini;
+      }
+      if (savedMeta === undefined) {
+        delete process.env.META_API_KEY;
+      } else {
+        process.env.META_API_KEY = savedMeta;
+      }
+      if (savedActive === undefined) {
+        delete process.env.ACTIVE_AI_PROVIDER;
+      } else {
+        process.env.ACTIVE_AI_PROVIDER = savedActive;
+      }
+    }
+  });
 });

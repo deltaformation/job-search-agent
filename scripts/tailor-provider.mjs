@@ -2,8 +2,9 @@
 /**
  * Tailoring Provider CLI Adapter for Local Job Tracker.
  * Reads `TailoringInputV1` from stdin and writes `ResumeProposalV1` to stdout.
- * Uses OpenRouter with user-selected model (default: google/gemma-4-26b-a4b-it:free)
- * with robust post-validation and deterministic fallback.
+ * Uses the active AI provider (`ACTIVE_AI_PROVIDER`: openrouter, google, or
+ * meta — default openrouter) with robust post-validation and deterministic
+ * fallback.
  *
  * Exit contract (mirrored by `PROVIDER_EXIT_*` in
  * `src/tailoring/commandAdapter.ts`): 0 prints a proposal; 10/11/12/13
@@ -27,10 +28,12 @@ class ProviderFailure extends Error {
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  chatCompletions,
-  modelChain,
-  OpenRouterError,
-} from "./openrouter-client.mjs";
+  activeProviderId,
+  providerChain,
+  providerChat,
+  providerKeyName,
+  providerLabel,
+} from "./ai-provider.mjs";
 
 function loadEnvFile(filePath) {
   if (!existsSync(filePath)) return;
@@ -51,7 +54,10 @@ function loadEnvFile(filePath) {
 // Load .env.local if present
 loadEnvFile(join(process.cwd(), ".env.local"));
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";
+const PROVIDER = activeProviderId(process.env);
+const PROVIDER_KEY_NAME = providerKeyName(PROVIDER);
+const PROVIDER_LABEL = providerLabel(PROVIDER);
+const PROVIDER_API_KEY = process.env[PROVIDER_KEY_NAME] || "";
 
 const VALID_CATEGORIES = [
   "experience",
@@ -222,7 +228,7 @@ function extractDeterministicFallback(input) {
   };
 }
 
-async function callOpenRouter(input) {
+async function callProvider(input) {
   const { jobTitle, company, jdText, profile, approvedFactIds, jdSnapshotId, candidateSnapshotId } = input;
   const verifiedFacts = (profile?.verified_facts || []).filter(
     (f) => f.verification_status === "approved" && approvedFactIds.includes(f.fact_id),
@@ -279,12 +285,12 @@ ${candidateFactsPrompt}
 
 Analyze the JD, extract exact keyword-dense quotes, map each requirement to EVERY supporting fact across the full career history, and output JSON:`;
 
-  const models = modelChain();
+  const models = providerChain(PROVIDER);
 
   let content;
   try {
-    const completion = await chatCompletions({
-      apiKey: OPENROUTER_API_KEY,
+    const completion = await providerChat(PROVIDER, {
+      apiKey: PROVIDER_API_KEY,
       models,
       messages: [
         { role: "system", content: systemMessage },
@@ -295,21 +301,23 @@ Analyze the JD, extract exact keyword-dense quotes, map each requirement to EVER
     });
     content = completion.content;
   } catch (err) {
-    if (err instanceof OpenRouterError) {
+    // Every client throws { kind, status, message }; branch on the shape
+    // so all providers share one exit-code contract.
+    if (err !== null && typeof err === "object" && typeof err.kind === "string") {
       if (err.kind === "status" && (err.status === 401 || err.status === 402 || err.status === 403)) {
-        throw new ProviderFailure(EXIT_AUTH, `OpenRouter API error ${err.status}`);
+        throw new ProviderFailure(EXIT_AUTH, `${PROVIDER_LABEL} API error ${err.status}`);
       }
       if (err.kind === "status" && err.status === 429) {
-        throw new ProviderFailure(EXIT_RATE_LIMIT, "OpenRouter API error 429");
+        throw new ProviderFailure(EXIT_RATE_LIMIT, `${PROVIDER_LABEL} API error 429`);
       }
       if (err.kind === "bad-response") {
-        throw new ProviderFailure(EXIT_BAD_RESPONSE, "Empty content from OpenRouter API");
+        throw new ProviderFailure(EXIT_BAD_RESPONSE, `Empty content from ${PROVIDER_LABEL} API`);
       }
       if (err.kind === "timeout" || err.kind === "network") {
         throw new ProviderFailure(EXIT_TIMEOUT, err.message);
       }
       if (err.kind === "status" && (err.status === 408 || err.status >= 500)) {
-        throw new ProviderFailure(EXIT_TIMEOUT, `OpenRouter API error ${err.status}`);
+        throw new ProviderFailure(EXIT_TIMEOUT, `${PROVIDER_LABEL} API error ${err.status}`);
       }
       throw new ProviderFailure(EXIT_BAD_RESPONSE, err.message);
     }
@@ -416,16 +424,16 @@ async function main() {
     process.exit(1);
   }
 
-  if (!OPENROUTER_API_KEY) {
+  if (!PROVIDER_API_KEY) {
     process.stderr.write(
-      "OPENROUTER_API_KEY is not set: using deterministic extraction fallback (no AI call)\n",
+      `${PROVIDER_KEY_NAME} is not set: using deterministic extraction fallback (no AI call)\n`,
     );
     process.stdout.write(JSON.stringify(extractDeterministicFallback(input)));
     return;
   }
 
   try {
-    process.stdout.write(JSON.stringify(await callOpenRouter(input)));
+    process.stdout.write(JSON.stringify(await callProvider(input)));
   } catch (err) {
     if (err instanceof ProviderFailure) {
       process.exit(err.exitCode);

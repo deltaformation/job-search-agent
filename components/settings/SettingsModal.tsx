@@ -17,13 +17,24 @@ import { apiGet, apiPost, errorMessage } from "../api";
 
 /**
  * Settings and data-management modal (R5-A): backup download, archive
- * restore, board reset, model chain, OpenRouter diagnostics, profile
- * quick-view with master-resume re-sync, and storage stats. The API key
- * itself is never fetched or displayed — only a fingerprint.
+ * restore, board reset, AI provider + model chains, connection
+ * diagnostics, profile quick-view with master-resume re-sync, and
+ * storage stats. API keys themselves are never fetched or displayed —
+ * only per-provider fingerprints.
  */
+
+type AiProviderId = "openrouter" | "google" | "meta";
+
+interface ProviderSnapshot {
+  configured: boolean;
+  fingerprint: string | null;
+  models: { primary: string; fallback: string };
+}
 
 interface SettingsSnapshot {
   models: { primary: string; fallback: string };
+  activeProvider: AiProviderId;
+  providers: Record<AiProviderId, ProviderSnapshot>;
   openRouter: { configured: boolean; fingerprint: string | null };
   profile: {
     activeVersion: number;
@@ -63,6 +74,36 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 100 ? 0 : 1)} ${units[unit]}`;
 }
 
+const AI_PROVIDERS: Array<{
+  id: AiProviderId;
+  name: string;
+  keyName: string;
+  primaryPlaceholder: string;
+  fallbackPlaceholder: string;
+}> = [
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    keyName: "OPENROUTER_API_KEY",
+    primaryPlaceholder: "google/gemma-4-26b-a4b-it:free",
+    fallbackPlaceholder: "nvidia/nemotron-3.5-lightning:free",
+  },
+  {
+    id: "google",
+    name: "Google AI Studio",
+    keyName: "GEMINI_API_KEY",
+    primaryPlaceholder: "gemini-2.5-pro",
+    fallbackPlaceholder: "gemini-2.5-flash",
+  },
+  {
+    id: "meta",
+    name: "Meta Muse",
+    keyName: "META_API_KEY",
+    primaryPlaceholder: "meta-muse",
+    fallbackPlaceholder: "(optional second model)",
+  },
+];
+
 function Section({
   title,
   children,
@@ -91,6 +132,7 @@ export default function SettingsModal({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const settingsNotice = useNotice<{ type: "success" | "error"; text: string }>();
+  const [selectedProvider, setSelectedProvider] = useState<AiProviderId>("openrouter");
   const [primary, setPrimary] = useState("");
   const [fallback, setFallback] = useState("");
   const [aiResult, setAiResult] = useState<AiTestResult | null>(null);
@@ -108,15 +150,30 @@ export default function SettingsModal({
     }
   }
 
+  function applySnapshot(data: SettingsSnapshot): void {
+    setSnapshot(data);
+    const provider = data.activeProvider ?? "openrouter";
+    setSelectedProvider(provider);
+    setPrimary(data.providers?.[provider]?.models.primary ?? data.models.primary);
+    setFallback(data.providers?.[provider]?.models.fallback ?? data.models.fallback);
+  }
+
   async function refresh(): Promise<void> {
     setLoadError(null);
     try {
-      const data = await apiGet<SettingsSnapshot>("/api/settings");
-      setSnapshot(data);
-      setPrimary(data.models.primary);
-      setFallback(data.models.fallback);
+      applySnapshot(await apiGet<SettingsSnapshot>("/api/settings"));
     } catch (error: unknown) {
       setLoadError(errorMessage(error));
+    }
+  }
+
+  function selectProvider(provider: AiProviderId): void {
+    setSelectedProvider(provider);
+    setAiResult(null);
+    const chain = snapshot?.providers?.[provider]?.models;
+    if (chain !== undefined) {
+      setPrimary(chain.primary);
+      setFallback(chain.fallback);
     }
   }
 
@@ -145,9 +202,7 @@ export default function SettingsModal({
         if (cancelled) {
           return;
         }
-        setSnapshot(data);
-        setPrimary(data.models.primary);
-        setFallback(data.models.fallback);
+        applySnapshot(data);
       },
       (error: unknown) => {
         if (!cancelled) {
@@ -241,9 +296,15 @@ export default function SettingsModal({
 
   async function switchModelChain(): Promise<void> {
     await run("models", async () => {
+      const payload: Record<string, string> =
+        selectedProvider === "google"
+          ? { provider: selectedProvider, googleModel: primary, googleFallbackModel: fallback }
+          : selectedProvider === "meta"
+            ? { provider: selectedProvider, metaModel: primary, metaFallbackModel: fallback }
+            : { provider: selectedProvider, primary, fallback };
       const body = await apiPost<{ primary: string; fallback: string; restartRequired: boolean }>(
         "/api/settings/model",
-        { primary, fallback },
+        payload,
       );
       await refresh();
       return `Model chain saved (${body.primary} / ${body.fallback}). Restart the app to apply it.`;
@@ -252,7 +313,9 @@ export default function SettingsModal({
 
   async function testAi(): Promise<void> {
     await run("ai-test", async () => {
-      const result = await apiPost<AiTestResult>("/api/settings/ai-test", {});
+      const result = await apiPost<AiTestResult>("/api/settings/ai-test", {
+        provider: selectedProvider,
+      });
       setAiResult(result);
       return result.ok
         ? `Ping ok: ${result.model} in ${result.latencyMs} ms`
@@ -465,24 +528,59 @@ export default function SettingsModal({
               </div>
             </TabsContent>
             <TabsContent value="ai" className="workspace-tab mt-0 min-h-[400px]">
-          <Section title="AI & OpenRouter">
+          <Section title="AI Providers">
+            <div role="radiogroup" aria-label="Active AI provider" className="grid gap-2 sm:grid-cols-3">
+              {AI_PROVIDERS.map((item) => {
+                const status = snapshot?.providers?.[item.id];
+                const selected = selectedProvider === item.id;
+                const running = snapshot?.activeProvider === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => selectProvider(item.id)}
+                    className={cn(
+                      "rounded-lg border p-3 text-left transition-colors",
+                      selected
+                        ? "border-primary bg-primary/5 shadow-xs"
+                        : "border-border hover:bg-muted/50",
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5 text-xs font-semibold">
+                      {item.name}
+                      {running && (
+                        <span className="rounded-full bg-primary/10 px-1.5 py-px text-[10px] font-semibold text-primary">
+                          Active
+                        </span>
+                      )}
+                    </span>
+                    <span className="mt-1 block text-[11px]">
+                      {status === undefined ? (
+                        <span className="text-muted-foreground">…</span>
+                      ) : status.configured ? (
+                        <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                          Connected · {status.fingerprint}
+                        </span>
+                      ) : (
+                        <span className="font-medium text-amber-600 dark:text-amber-400">
+                          Key Missing in .env.local
+                        </span>
+                      )}
+                    </span>
+                    <span className="mt-0.5 block font-mono tabular-nums text-[10px] text-muted-foreground">
+                      {item.keyName}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
               <dt className="text-muted-foreground">Primary</dt>
-              <dd className="break-all font-mono tabular-nums text-[11px]">{snapshot?.models.primary ?? "…"}</dd>
+              <dd className="break-all font-mono tabular-nums text-[11px]">{snapshot?.providers?.[selectedProvider]?.models.primary ?? "…"}</dd>
               <dt className="text-muted-foreground">Fallback</dt>
-              <dd className="break-all font-mono tabular-nums text-[11px]">{snapshot?.models.fallback ?? "…"}</dd>
-              <dt className="text-muted-foreground">API key</dt>
-              <dd>
-                {snapshot?.openRouter.configured === true ? (
-                  <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                    Loaded · fingerprint {snapshot.openRouter.fingerprint}
-                  </span>
-                ) : (
-                  <span className="font-medium text-amber-600 dark:text-amber-400">
-                    Not configured
-                  </span>
-                )}
-              </dd>
+              <dd className="break-all font-mono tabular-nums text-[11px]">{snapshot?.providers?.[selectedProvider]?.models.fallback ?? "…"}</dd>
             </dl>
             <div className="grid gap-2 sm:grid-cols-2">
               <div>
@@ -494,9 +592,10 @@ export default function SettingsModal({
                   type="text"
                   autoComplete="off"
                   spellCheck={false}
+                  placeholder={AI_PROVIDERS.find((item) => item.id === selectedProvider)?.primaryPlaceholder}
                   value={primary}
                   onChange={(event) => setPrimary(event.target.value)}
-                  className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 font-mono tabular-nums text-[11px]"
+                  className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 font-mono tabular-nums text-[11px] placeholder:text-muted-foreground/60"
                 />
               </div>
               <div>
@@ -508,9 +607,10 @@ export default function SettingsModal({
                   type="text"
                   autoComplete="off"
                   spellCheck={false}
+                  placeholder={AI_PROVIDERS.find((item) => item.id === selectedProvider)?.fallbackPlaceholder}
                   value={fallback}
                   onChange={(event) => setFallback(event.target.value)}
-                  className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 font-mono tabular-nums text-[11px]"
+                  className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 font-mono tabular-nums text-[11px] placeholder:text-muted-foreground/60"
                 />
               </div>
             </div>
@@ -519,19 +619,19 @@ export default function SettingsModal({
                 {busy === "models" ? "Saving…" : "Save Models"}
               </Button>
               <Button size="sm" variant="outline" onClick={() => void testAi()} disabled={busy !== null}>
-                {busy === "ai-test" ? "Pinging…" : "Test AI Connection"}
+                {busy === "ai-test" ? "Pinging…" : "Test Connection"}
               </Button>
               {aiResult !== null && (
                 <span className="text-[11px] text-muted-foreground">
                   {aiResult.ok
-                    ? `${aiResult.model} · ${aiResult.latencyMs} ms`
+                    ? `✓ Connected (${aiResult.latencyMs} ms, ${aiResult.model})`
                     : `Failed: ${aiResult.error ?? "unknown"}`}
                 </span>
               )}
             </div>
             <p className="text-[11px] text-muted-foreground">
               Saving edits <span className="font-mono tabular-nums">.env.local</span>; restart the app to apply.
-              The key value is never shown.
+              API key values are never shown.
             </p>
           </Section>
             </TabsContent>

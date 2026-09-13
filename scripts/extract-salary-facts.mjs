@@ -15,10 +15,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  chatCompletions,
-  modelChain,
-  OpenRouterError,
-} from "./openrouter-client.mjs";
+  activeProviderId,
+  providerChain,
+  providerChat,
+  providerKeyName,
+} from "./ai-provider.mjs";
 
 function loadEnvFile(filePath) {
   if (!existsSync(filePath)) return;
@@ -38,7 +39,9 @@ function loadEnvFile(filePath) {
 
 loadEnvFile(join(process.cwd(), ".env.local"));
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";
+const PROVIDER = activeProviderId(process.env);
+const PROVIDER_KEY_NAME = providerKeyName(PROVIDER);
+const PROVIDER_API_KEY = process.env[PROVIDER_KEY_NAME] || "";
 const SALARY_FACTS_VERSION = "salary-facts/v1";
 const KNOWN_CURRENCIES = new Set(["USD", "CAD", "AUD", "GBP", "EUR"]);
 
@@ -89,7 +92,7 @@ function cleanHighlights(raw) {
   return kept;
 }
 
-async function callOpenRouter(input) {
+async function callProvider(input) {
   const { jobTitle, company, location, jdText } = input;
 
   const systemMessage = `You are a precise job-posting compensation extractor.
@@ -124,9 +127,9 @@ Extract the compensation facts and output JSON:`;
 
   let completion;
   try {
-    completion = await chatCompletions({
-      apiKey: OPENROUTER_API_KEY,
-      models: modelChain(),
+    completion = await providerChat(PROVIDER, {
+      apiKey: PROVIDER_API_KEY,
+      models: providerChain(PROVIDER),
       messages: [
         { role: "system", content: systemMessage },
         { role: "user", content: userMessage },
@@ -135,7 +138,7 @@ Extract the compensation facts and output JSON:`;
       diagnose: (line) => process.stderr.write(`${line}\n`),
     });
   } catch (err) {
-    if (err instanceof OpenRouterError) {
+    if (err !== null && typeof err === "object" && typeof err.kind === "string") {
       process.stderr.write(`Salary fallback exhausted: ${err.message}\n`);
       return emptyFacts();
     }
@@ -211,13 +214,13 @@ async function main() {
     process.exit(1);
   }
 
-  if (!OPENROUTER_API_KEY) {
-    process.stderr.write("Salary fallback: OPENROUTER_API_KEY is not set, skipping\n");
+  if (!PROVIDER_API_KEY) {
+    process.stderr.write(`Salary fallback: ${PROVIDER_KEY_NAME} is not set, skipping\n`);
     process.stdout.write(JSON.stringify(emptyFacts()));
     return;
   }
 
-  process.stdout.write(JSON.stringify(await callOpenRouter(input)));
+  process.stdout.write(JSON.stringify(await callProvider(input)));
 }
 
 main().catch((err) => {

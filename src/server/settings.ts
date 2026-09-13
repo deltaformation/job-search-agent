@@ -20,14 +20,35 @@ import { sha256HexUtf8 } from "../tailoring/hash";
 import type { DataRootPaths } from "../security/data-root";
 import { getActiveProfileVersion } from "../db/candidates";
 import { activateProfileVersion, importCandidate } from "./candidates";
-import { chatCompletions, modelChain } from "../../scripts/openrouter-client.mjs";
+import {
+  activeProviderId as activeProviderIdFromEnv,
+  providerChain,
+  providerChat,
+} from "../../scripts/ai-provider.mjs";
 
 /**
  * Settings & Data Management service (R5-A): snapshot/read models for the
- * Settings modal, OpenRouter model switching (via `.env.local` upsert),
- * connection pings, master-resume re-sync, and storage stats. Board reset
- * lives in `src/server/backup.ts` beside the safety backup it requires.
+ * Settings modal, AI provider + model switching (via `.env.local`
+ * upsert), connection pings, master-resume re-sync, and storage stats.
+ * Board reset lives in `src/server/backup.ts` beside the safety backup
+ * it requires.
  */
+
+export const AI_PROVIDER_IDS = ["openrouter", "google", "meta"] as const;
+export type AiProviderId = (typeof AI_PROVIDER_IDS)[number];
+
+const AiProviderIdSchema = z.enum(AI_PROVIDER_IDS);
+
+const PROVIDER_KEY_ENV: Record<AiProviderId, string> = {
+  openrouter: "OPENROUTER_API_KEY",
+  google: "GEMINI_API_KEY",
+  meta: "META_API_KEY",
+};
+
+/** Validated `ACTIVE_AI_PROVIDER` (default: openrouter). */
+export function activeProviderId(env: Record<string, string | undefined>): AiProviderId {
+  return activeProviderIdFromEnv(env) as AiProviderId;
+}
 
 export class SettingsError extends Error {
   constructor(message: string) {
@@ -64,8 +85,16 @@ export function resolveEnvFilePath(
   return join(cwd, ".env.local");
 }
 
+export interface ProviderSnapshot {
+  configured: boolean;
+  fingerprint: string | null;
+  models: { primary: string; fallback: string };
+}
+
 export interface SettingsSnapshot {
   models: { primary: string; fallback: string };
+  activeProvider: AiProviderId;
+  providers: Record<AiProviderId, ProviderSnapshot>;
   openRouter: { configured: boolean; fingerprint: string | null };
   profile: {
     activeVersion: number;
@@ -139,8 +168,21 @@ export function getSettingsSnapshot(
   input: { paths: DataRootPaths; env?: Record<string, string | undefined> },
 ): SettingsSnapshot {
   const env = input.env ?? process.env;
-  const [primary, fallback] = modelChain(env);
-  const key = env.OPENROUTER_API_KEY?.trim() || "";
+  const activeProvider = activeProviderId(env);
+  const providers = Object.fromEntries(
+    AI_PROVIDER_IDS.map((provider) => {
+      const chain = providerChain(provider, env) as string[];
+      const key = env[PROVIDER_KEY_ENV[provider]]?.trim() || "";
+      return [
+        provider,
+        {
+          configured: key !== "",
+          fingerprint: key === "" ? null : keyFingerprint(key),
+          models: { primary: chain[0] as string, fallback: (chain[1] ?? chain[0]) as string },
+        } satisfies ProviderSnapshot,
+      ];
+    }),
+  ) as Record<AiProviderId, ProviderSnapshot>;
   const active = getActiveProfileVersion(handle);
   let profile: SettingsSnapshot["profile"] = null;
   if (active !== null) {
@@ -185,8 +227,13 @@ export function getSettingsSnapshot(
   const artifacts = directoryUsage(input.paths.artifactsDir);
   const backups = directoryUsage(join(input.paths.root, "backups"));
   return {
-    models: { primary: primary as string, fallback: (fallback ?? primary) as string },
-    openRouter: { configured: key !== "", fingerprint: key === "" ? null : keyFingerprint(key) },
+    models: providers[activeProvider].models,
+    activeProvider,
+    providers,
+    openRouter: {
+      configured: providers.openrouter.configured,
+      fingerprint: providers.openrouter.fingerprint,
+    },
     profile,
     storage: {
       databaseBytes: fileBytes(input.paths.databasePath),
@@ -212,15 +259,39 @@ const ModelId = z
 
 export const ModelSwitchInput = z
   .object({
+    provider: AiProviderIdSchema.optional(),
     primary: ModelId.optional(),
     fallback: ModelId.optional(),
     clearFallback: z.boolean().optional(),
+    googleModel: ModelId.optional(),
+    googleFallbackModel: ModelId.optional(),
+    clearGoogleFallback: z.boolean().optional(),
+    metaModel: ModelId.optional(),
+    metaFallbackModel: ModelId.optional(),
+    clearMetaFallback: z.boolean().optional(),
   })
   .strict()
-  .refine((input) => input.primary !== undefined || input.fallback !== undefined || input.clearFallback === true, {
-    message: "nothing to switch",
-  });
+  .refine(
+    (input) =>
+      input.provider !== undefined ||
+      input.primary !== undefined ||
+      input.fallback !== undefined ||
+      input.clearFallback === true ||
+      input.googleModel !== undefined ||
+      input.googleFallbackModel !== undefined ||
+      input.clearGoogleFallback === true ||
+      input.metaModel !== undefined ||
+      input.metaFallbackModel !== undefined ||
+      input.clearMetaFallback === true,
+    { message: "nothing to switch" },
+  );
 export type ModelSwitchInput = z.infer<typeof ModelSwitchInput>;
+
+const PROVIDER_MODEL_ENV: Record<AiProviderId, { model: string; fallback: string }> = {
+  openrouter: { model: "OPENROUTER_MODEL", fallback: "OPENROUTER_FALLBACK_MODEL" },
+  google: { model: "GEMINI_MODEL", fallback: "GEMINI_FALLBACK_MODEL" },
+  meta: { model: "META_MODEL", fallback: "META_FALLBACK_MODEL" },
+};
 
 function upsertEnvLine(content: string, key: string, value: string | null): string {
   const lines = content === "" ? [] : content.split("\n");
@@ -243,14 +314,15 @@ function upsertEnvLine(content: string, key: string, value: string | null): stri
 }
 
 /**
- * Switch the OpenRouter model chain by upserting `.env.local` (comments
- * and unrelated keys preserved). Applies on app restart: the worker and
- * routes read process env at boot. Never writes the API key.
+ * Switch the active AI provider and/or any provider's model chain by
+ * upserting `.env.local` (comments and unrelated keys preserved).
+ * Applies on app restart: the worker and routes read process env at
+ * boot. Never writes API keys.
  */
 export function switchModels(
   envFilePath: string,
   rawInput: unknown,
-): { primary: string; fallback: string; restartRequired: true } {
+): { primary: string; fallback: string; activeProvider: AiProviderId; restartRequired: true } {
   const input = ModelSwitchInput.parse(rawInput);
   let content = "";
   try {
@@ -260,6 +332,9 @@ export function switchModels(
       throw new SettingsError(`cannot read env file: ${(error as Error).message}`);
     }
   }
+  if (input.provider !== undefined) {
+    content = upsertEnvLine(content, "ACTIVE_AI_PROVIDER", input.provider);
+  }
   if (input.primary !== undefined) {
     content = upsertEnvLine(content, "OPENROUTER_MODEL", input.primary);
   }
@@ -267,6 +342,22 @@ export function switchModels(
     content = upsertEnvLine(content, "OPENROUTER_FALLBACK_MODEL", null);
   } else if (input.fallback !== undefined) {
     content = upsertEnvLine(content, "OPENROUTER_FALLBACK_MODEL", input.fallback);
+  }
+  if (input.googleModel !== undefined) {
+    content = upsertEnvLine(content, "GEMINI_MODEL", input.googleModel);
+  }
+  if (input.clearGoogleFallback === true) {
+    content = upsertEnvLine(content, "GEMINI_FALLBACK_MODEL", null);
+  } else if (input.googleFallbackModel !== undefined) {
+    content = upsertEnvLine(content, "GEMINI_FALLBACK_MODEL", input.googleFallbackModel);
+  }
+  if (input.metaModel !== undefined) {
+    content = upsertEnvLine(content, "META_MODEL", input.metaModel);
+  }
+  if (input.clearMetaFallback === true) {
+    content = upsertEnvLine(content, "META_FALLBACK_MODEL", null);
+  } else if (input.metaFallbackModel !== undefined) {
+    content = upsertEnvLine(content, "META_FALLBACK_MODEL", input.metaFallbackModel);
   }
   try {
     mkdirSync(dirname(envFilePath), { recursive: true });
@@ -278,18 +369,28 @@ export function switchModels(
   } catch (error: unknown) {
     throw new SettingsError(`cannot write env file: ${(error as Error).message}`);
   }
-  // Response shows the file's chain (what a fresh boot reads); a real
-  // shell-exported variable still wins at runtime, matching Next/script
-  // precedence, and is visible in the snapshot after restart.
+  // Response shows the file's active chain (what a fresh boot reads); a
+  // real shell-exported variable still wins at runtime, matching
+  // Next/script precedence, and is visible in the snapshot after restart.
+  const wanted = new Set([
+    "ACTIVE_AI_PROVIDER",
+    ...Object.values(PROVIDER_MODEL_ENV).flatMap((keys) => [keys.model, keys.fallback]),
+  ]);
   const fileEnv: Record<string, string | undefined> = {};
   for (const line of content.split("\n")) {
     const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
-    if (match?.[1] === "OPENROUTER_MODEL" || match?.[1] === "OPENROUTER_FALLBACK_MODEL") {
-      fileEnv[match[1] as string] = (match[2] as string).trim() || undefined;
+    if (match?.[1] !== undefined && wanted.has(match[1])) {
+      fileEnv[match[1]] = match[2]?.trim() || undefined;
     }
   }
-  const [primary, fallback] = modelChain(fileEnv);
-  return { primary: primary as string, fallback: (fallback ?? primary) as string, restartRequired: true };
+  const activeProvider = activeProviderId(fileEnv);
+  const chain = providerChain(activeProvider, fileEnv) as string[];
+  return {
+    primary: chain[0] as string,
+    fallback: (chain[1] ?? chain[0]) as string,
+    activeProvider,
+    restartRequired: true,
+  };
 }
 
 export interface AiTestResult {
@@ -299,24 +400,39 @@ export interface AiTestResult {
   error: string | null;
 }
 
-/** Lightweight OpenRouter ping: one tiny JSON prompt on the primary model. */
-export async function pingOpenRouter(
+export const AiTestInput = z
+  .object({ provider: AiProviderIdSchema.optional() })
+  .strict();
+export type AiTestInput = z.infer<typeof AiTestInput>;
+
+/**
+ * Lightweight provider ping: one tiny JSON prompt on the provider's
+ * primary model, validating auth, latency, and a well-formed JSON
+ * reply. Unknown providers throw `SettingsError` (route maps to 400).
+ */
+export async function pingProvider(
+  provider: AiProviderId,
   env: Record<string, string | undefined> = process.env,
   timeoutMs = 30_000,
 ): Promise<AiTestResult> {
-  const key = env.OPENROUTER_API_KEY?.trim() || "";
-  if (key === "") {
-    return { ok: false, model: null, latencyMs: 0, error: "OPENROUTER_API_KEY is not configured" };
+  if (!AI_PROVIDER_IDS.includes(provider)) {
+    throw new SettingsError(`unknown AI provider: ${String(provider)}`);
   }
-  const [primary] = modelChain(env);
+  const keyName = PROVIDER_KEY_ENV[provider];
+  const key = env[keyName]?.trim() || "";
+  if (key === "") {
+    return { ok: false, model: null, latencyMs: 0, error: `${keyName} is not configured` };
+  }
+  const chain = providerChain(provider, env) as string[];
+  const primary = chain[0] as string;
   const started = Date.now();
   try {
-    const completion = await chatCompletions({
+    const completion = (await providerChat(provider, {
       apiKey: key,
-      models: [primary as string],
+      models: [primary],
       messages: [{ role: "user", content: 'Reply with exactly: {"ping":"ok"}' }],
       timeoutMs,
-    });
+    })) as { model: string; content: string };
     const parsed = JSON.parse(completion.content) as unknown;
     if (
       typeof parsed !== "object" ||
@@ -334,11 +450,19 @@ export async function pingOpenRouter(
   } catch (error: unknown) {
     return {
       ok: false,
-      model: primary as string,
+      model: primary,
       latencyMs: Date.now() - started,
       error: (error as Error).message,
     };
   }
+}
+
+/** Backwards-compatible OpenRouter ping. */
+export async function pingOpenRouter(
+  env: Record<string, string | undefined> = process.env,
+  timeoutMs = 30_000,
+): Promise<AiTestResult> {
+  return pingProvider("openrouter", env, timeoutMs);
 }
 
 export type ResyncResult =
