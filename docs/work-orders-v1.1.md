@@ -167,3 +167,128 @@ Decisions or deviations:
 Safety/human checkpoint:
   - No approval, application, conflict-retry, or auth mechanics touched; row-version mutation paths byte-identical; drawer/dialog focus-trap, Escape, overlay-click, and aria contracts unchanged; server page falls back to client fetch (never 500s) if the DB is unavailable.
 ```
+
+---
+
+## Record 4: Loading & Notification Behavior
+
+**Work Order ID:** `WO-1.1-C`  
+**Phase:** Phase 1.4  
+**Commit:** `c55fa0f`  
+
+### Prompt Given to Agent
+```markdown
+You are working on the Local Job Tracker repository on branch `release/v1.0`.
+We are completing Phase 1 of `docs/roadmap-v1.1.md`.
+
+### Mandatory Context & Rules
+1. Inspect existing notice implementations before modifying:
+   - `components/board/Board.tsx` (`notice` state and `data-testid="board-notice"`)
+   - `components/board/ResumeReview.tsx` (`notice` state)
+   - `components/settings/SettingsModal.tsx` (`notice` state)
+   - `components/AttemptView.tsx` (`notice` state)
+   - `components/AppHeader.tsx` (`quickMessage` in quick-add dialog)
+2. Follow `AGENTS.md` and `PROJECT.md`.
+3. Run `node scripts/check-project-context.mjs` before and after.
+
+---
+
+### Work Order Scope: Phase 1.4 Loading & Notification Behavior
+
+#### Goal:
+Replace routine, permanently sticky success banners with accessible, auto-dismissing notifications (3–4 second timer), while ensuring errors, version conflicts, and destructive warnings remain strictly persistent until resolved or manually dismissed.
+
+---
+
+### Specific Implementation Steps
+
+#### 1. Notification Rules & Accessibility (Phase 1.4)
+- **Auto-dismissing Successes**:
+  - Success confirmations (e.g., *"Job moved to Interviewed"*, *"Settings saved"*, *"Job URL enqueued into batch"*, *"Approval confirmed"*) must automatically dismiss after **3.5 seconds**.
+  - Must include an explicit manual dismiss (`[X]`) button so keyboard/mouse users can dismiss immediately if desired.
+  - Automatically clear timers when a new notice is set or when the component unmounts to prevent memory leaks or updating unmounted components.
+- **Persistent Errors & Conflicts**:
+  - Errors (e.g., fetch failure, validation error), version conflicts, and approval requirements must **NEVER** auto-dismiss. They must stay on screen with an explicit dismiss button (`[X]`) until the user resolves them or closes the notification.
+- **Accessibility & Motion Contracts**:
+  - Success notices must use `role="status"` and `aria-live="polite"`.
+  - Error notices must use `role="alert"` and `aria-live="assertive"`.
+  - Transitions must respect `prefers-reduced-motion` (instant appearance/disappearance with zero animation if reduced motion is preferred).
+  - The notification must never be the sole evidence of state change (the board columns, card statuses, and badge states must reflect reality independently).
+
+#### 2. Component Integration
+- In `components/board/Board.tsx`:
+  - Retain `data-testid="board-notice"` and `role="status"` so existing E2E and unit tests pass.
+  - Automatically clear `notice` after 3.5s on success; provide an `[X]` dismiss button.
+- In `components/board/ResumeReview.tsx`:
+  - Auto-dismiss success actions (e.g. *"Approval confirmed"*, *"Revision requested"*) after 3.5s with a manual dismiss option.
+- In `components/settings/SettingsModal.tsx`:
+  - Auto-dismiss success messages (e.g. *"Models saved"*, *"Backup generated"*) after 3.5s; keep error messages persistent until dismissed.
+- In `components/AttemptView.tsx`:
+  - Auto-dismiss retry-enqueued notices after 3.5s.
+
+#### 3. Automated Verification & Tests
+- Ensure all existing tests pass without regressions:
+  - `npm test tests/unit/components/board/Board.test.tsx`
+  - `npm test tests/unit/components/settings/SettingsModal.test.tsx`
+  - `npm test tests/unit/components/board/ResumeReview.test.tsx`
+  - Full non-browser vitest suite (`npx vitest run --exclude '**/browser/**'`)
+- Add or update unit tests to verify:
+  - Success notices clear automatically after the timeout.
+  - Timer is cleared on unmount.
+  - Error notices stay persistent and do not clear automatically.
+  - Manual dismiss button clears the notice immediately.
+- Static verification:
+  - `npm run typecheck` (0 errors)
+  - `npm run lint` (0 warnings)
+  - `node scripts/check-project-context.mjs` (11/11 consistent)
+
+---
+
+### Expected Handoff Output
+Provide the completed handoff block required by `AGENTS.md`:
+
+Task: Phase 1.4 loading and notification behavior
+Outcome:
+Status: implemented | needs-review | blocked
+Files changed:
+Migrations/data effects:
+Verification performed and exact result:
+Acceptance criteria not yet proven:
+Decisions or deviations:
+Safety/human checkpoint:
+```
+
+### Official Handoff
+```text
+Task: Phase 1.4 loading and notification behavior
+Outcome: New shared components/ui/notice.tsx (useNotice seq-keyed state + Notice banner: 3.5s success timer, focus-deferred dismissal, always-present [X], status/polite vs alert/assertive) integrated into all five surfaces. Board notices split by variant (move/reorder successes auto-dismiss; update failures and the TAILORED guardrail render persistent error variant, same board-notice testid); ResumeReview approvals/revisions auto-dismiss; settings/quick-add/retry/paste successes auto-dismiss while their errors persist; inline error boxes (board load, refresh-failed, action, settings load) gained [X].
+Status: implemented
+Files changed:
+  - components/ui/notice.tsx (new)
+  - components/board/Board.tsx
+  - components/board/ResumeReview.tsx
+  - components/settings/SettingsModal.tsx
+  - components/AttemptView.tsx
+  - components/AppHeader.tsx
+  - tests/unit/components/ui/notice.test.tsx (new)
+  - tests/unit/components/settings/SettingsModal.test.tsx
+Migrations/data effects: none; client presentation only
+Verification performed and exact result:
+  - Focused files (Board, SettingsModal, ResumeReview, AttemptView, AppHeader, notice): 6 files / 35 tests pass.
+  - Full non-browser suite: 111 files / 813 tests pass.
+  - npm run typecheck: 0 errors.
+  - npm run lint: 0 warnings.
+  - node scripts/check-project-context.mjs: 11/11 consistent before and after.
+  - New coverage: success auto-dismiss at exactly 3.5s, timer restart on identical re-show, no fire after unmount, error persistence past 10s, immediate [X] on both variants, focus-deferral with dismissal after blur, plus real-parent settings tests for success auto-dismiss and error persistence.
+Acceptance criteria not yet proven:
+  - e2e timing margin: board-notice success assertions (reorder) now race a 3.5s dismissal; Playwright polls immediately so it should catch them, but npm run test:e2e needs browsers unavailable in this sandbox. Reduced-motion behavior relies on the existing global prefers-reduced-motion guard (no new animation added).
+Decisions or deviations:
+  - pasteNotice included though unnamed (same component, same sticky-success defect; created/duplicate auto-dismiss, rejected/failed persist).
+  - Content-gating error boxes (AttemptView/ResumeReview full-page load errors) intentionally got no [X] — dismissing the only signal with no content beneath and no retry path would strand the user; the ResumeReview one already offers Retry.
+  - Guardrail classified as persistent error (rejected action ≈ validation error; also keeps the e2e assertion deterministic).
+  - Focus-deferral added beyond the letter of the order to avoid dropping keyboard focus to <body> when a focused link/[X] is inside a dismissing banner.
+  - Sort/search loading indicator untouched (fetch-gated, out of scope).
+Safety/human checkpoint:
+  - Notices remain supplementary — board columns, badges, and review states refresh from the server independently; no approval, application, conflict, or auth flow changed; error text and roles asserted by existing tests unchanged.
+```
+
