@@ -1,24 +1,22 @@
 # Documentation Map
 
-## Active rebuild documentation
+## Active v1.0 documentation
 
 - [`../PROJECT.md`](../PROJECT.md): current project entrypoint.
-- [`product-rebuild/status.md`](product-rebuild/status.md): evidence-backed
-  current state and next ready work.
-- [`product-rebuild/README.md`](product-rebuild/README.md): product scope and
-  end-to-end MVP definition.
-- [`product-rebuild/architecture.md`](product-rebuild/architecture.md): runtime,
-  data, state, security, and artifact contracts.
-- [`product-rebuild/milestones.md`](product-rebuild/milestones.md): outcome gates.
-- [`product-rebuild/agent-work-orders.md`](product-rebuild/agent-work-orders.md):
-  bounded coding assignments.
-- [`product-rebuild/decisions.md`](product-rebuild/decisions.md): active ADRs.
-- [`product-rebuild/reuse-map.md`](product-rebuild/reuse-map.md): port, defer,
-  import, and removal decisions for the old implementation.
+- [`status.md`](status.md): evidence-backed current state and known items.
+- [`architecture.md`](architecture.md): runtime, data, state, security, and
+  artifact contracts.
+- [`operations.md`](operations.md): commands, backup/restore, and runbook
+  pointers.
+- [`decisions.md`](decisions.md): active ADRs.
+- [`ui-ux-design-spec.md`](ui-ux-design-spec.md): visual and interaction
+  contract for UI work.
 
 ## Historical material
 
-[`legacy/`](legacy/) contains documentation for the temporary
-Python/PostgreSQL implementation. It is evidence and migration context, not the
-target architecture or current coding plan. Do not execute historical commands
-without a work order that explicitly requires the legacy oracle.
+- [`archive/v1.0/`](archive/v1.0/): frozen rebuild-era work record
+  (milestones, work orders, handoffs, acceptance checklist). Read-only;
+  do not extend.
+- [`legacy/`](legacy/): documentation for the retired Python/PostgreSQL
+  implementation. Evidence and migration context only, not the target
+  architecture or current plan.

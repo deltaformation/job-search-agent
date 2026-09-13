@@ -2,8 +2,8 @@
 
 ## Project-context check
 
-The replacement harness is dependency-free and can be checked before the new
-application scaffold exists:
+Validate the active documentation harness (required files, local links,
+retired-harness absence):
 
 ```text
 node scripts/check-project-context.mjs
@@ -11,23 +11,41 @@ node scripts/check-project-context.mjs
 
 ## Product commands
 
-The target product commands (`npm run setup`, `npm run dev`, `npm run build`,
-and `npm run start`) are planned but not available until milestone R1. Do not
-claim or document them as working before their acceptance evidence exists.
+```text
+npm run dev              develop: web + worker with graceful shutdown
+npm run start            production web + worker (runs migrations first)
+npm run build            production build
+npm test                 unit and integration suite
+npm run test:e2e         Playwright product acceptance suite
+npm run typecheck        strict TypeScript check
+npm run lint             eslint over the repo
+npm run db:migrate       apply pending SQLite migrations
+npm run candidate:import -- <file> [--activate]   import a reviewed candidate master-resume JSON
+npm run desktop:app [-- --dry-run]   build (and install to ~/Desktop) the Job Tracker.app launcher
+```
 
-## Legacy oracle
+`npm run dev` and `npm run start` apply pending SQLite migrations, supervise
+the web and worker processes together, and shut both down cleanly on Ctrl-C.
+The app binds loopback-only (`127.0.0.1:3000` by default).
 
-The Python/PostgreSQL tree remains temporarily for contract fixtures and later
-read-only data import. Its historical runbook is at
-[`legacy/operations.md`](legacy/operations.md). Use it only when an assigned work
-order explicitly calls for legacy verification, and never run the human-only
-resume approval or application outcome commands autonomously.
+## Backup, restore, and reset
+
+From Settings (gear icon in the header): Download Full Backup (timestamped
+`.tar.gz`, never includes `.env.local`), Restore Backup (automatic
+pre-restore safety copy, staged verification, atomic swap), Clear All Jobs
+(typed confirmation, keeps candidate profile and schema).
+
+## Retired runtimes
+
+The Python/PostgreSQL tree was removed at v1.0; its runbook survives only as
+history at [`legacy/operations.md`](legacy/operations.md). Never reinstall a
+second database runtime or dual-write path.
 
 ## Safety
 
 - New tests and development use an isolated temporary or `data/rebuild` root,
-  never the user's legacy artifacts/database by default.
+  never another user's live data by default.
 - No project operation submits applications, answers protected questions, or
   approves a resume without the human review flow.
-- Destructive import/restore/cleanup work requires an exact target, a verified
-  backup, and the owning work order.
+- Destructive import/restore/cleanup work requires an exact target and a
+  verified backup.

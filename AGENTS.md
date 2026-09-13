@@ -1,52 +1,51 @@
-# AGENTS.md — Local Job Tracker Rebuild
+# AGENTS.md — Local Job Tracker v1.0
 
-This repository is being rebuilt as a local-first job application tracker with
-one deterministic workflow:
+This repository is a local-first job application tracker with one deterministic
+workflow:
 
 ```text
 clip job in browser (or paste URLs) → normalize → New → generate/review resume → Tailored
 → human applies → human records Applied / Interviewed / Rejected
 ```
 
-Nimbalyst is retired as the project-control system. Do not create or update
+Nimbalyst is retired as a project-control system. Do not create or update
 Nimbalyst trackers, plans, sessions, schemas, or population scripts. The
-Nimbalyst directories, population script, and workspace test were removed by
-work order R0-B after R0-A recorded a recoverable checkpoint (see
-`docs/product-rebuild/legacy-baseline.md` and the ignored local archives under
-`data/preservation/2026-09-11/`). Git history is the long-term archive.
+rebuild-era work record (milestones, work orders, handoffs, legacy baseline)
+is frozen under `docs/archive/v1.0/`; the ignored local archives under
+`data/preservation/2026-09-11/` hold the R0 checkpoint. Git history is the
+long-term archive.
 
 ## Required context
 
-Before milestone work, read:
+Before changing code, read:
 
-1. `docs/product-rebuild/README.md`
-2. `docs/product-rebuild/architecture.md`
-3. `docs/product-rebuild/reuse-map.md`
-4. `docs/product-rebuild/milestones.md`
-5. The one bounded work order you own in
-   `docs/product-rebuild/agent-work-orders.md`
+1. `PROJECT.md`
+2. `docs/status.md`
+3. `docs/architecture.md`
+4. `docs/operations.md`
+5. `docs/decisions.md` for the area you touch
 
 Then inspect the actual repository and tests. Planning documents describe
 intent; code, migrations, data, artifacts, tests, and commits prove reality.
 
 ## Collaboration contract
 
-- Own one bounded work order per session.
-- Record the exact work order ID in the handoff or pull request.
+- Own one bounded task per session; say what it is before starting.
+- Record the task in the handoff or pull request.
 - Use a separate branch/worktree for concurrent work that might overlap.
 - Do not let two agents edit `package.json`, the lockfile, one migration, or the
   same generated artifact at the same time.
 - Preserve unrelated and uncommitted user changes. Never reset, clean, or delete
   them to simplify your task.
-- Do not silently expand MVP into discovery, scheduling, cloud sync, email,
-  application autofill, or new board columns.
+- Do not silently expand the product into discovery, scheduling, cloud sync,
+  email, application autofill, or new board columns.
 - Record deviations and unresolved acceptance items; do not call a task done
   because code was written.
 
 Every handoff must include:
 
 ```text
-Work order:
+Task:
 Outcome:
 Status: implemented | needs-review | blocked
 Files changed:
@@ -67,10 +66,10 @@ Safety/human checkpoint:
 - A provider-neutral local-agent adapter that returns schema-validated proposals.
 - One canonical resume view model feeding Markdown, DOCX, and PDF renderers.
 
-The existing Python/PostgreSQL implementation is a temporary executable oracle
-and migration source. Port high-value contracts with shared fixtures; do not
-build a permanent dual-database runtime. Remove legacy code only in the final
-cutover work order after parity and import gates pass.
+The Python/PostgreSQL implementation was retired and removed in the v1.0
+cutover. Do not reintroduce a second database runtime, dual-write path, or
+compatibility layer; `docs/legacy/` and Git history are the only migration
+references.
 
 ## Non-negotiable truthfulness rules
 
@@ -90,7 +89,7 @@ cutover work order after parity and import gates pass.
 
 ## Application boundary
 
-- The MVP never fills or submits ATS forms.
+- The app never fills or submits ATS forms.
 - It never bypasses a login, CAPTCHA, access restriction, rate limit, robots
   rule, or board protection.
 - It never answers legal, work-authorization, compensation, or voluntary
@@ -128,12 +127,12 @@ cutover work order after parity and import gates pass.
 - Use UTC ISO-8601 timestamps; preserve raw salary/date text when normalization
   is uncertain.
 - Never guess database column or table names in ad-hoc commands or scripts. Always
-  inspect the canonical Drizzle definitions in `src/persistence/schema.ts` before
+  inspect the canonical Drizzle definitions in `src/db/schema/*` before
   querying or manipulating SQLite.
 
 ## Code and test standards
 
-### New TypeScript runtime
+### TypeScript runtime
 
 - TypeScript strict mode; avoid `any` at trust boundaries.
 - Zod schemas for every persisted JSON or agent/browser input envelope.
@@ -141,30 +140,12 @@ cutover work order after parity and import gates pass.
   SDKs.
 - Accessible UI: keyboard alternatives for drag/drop, labeled controls, focus
   management, and non-color-only states.
-- Run the smallest focused test first, then the milestone-required unit,
-  integration, type, lint, and end-to-end suites.
-
-### Temporary Python oracle
-
-- Python 3.11+ with complete type hints for changed Python functions.
-- Sanitize `Decimal`, `NaN`, date, and nested values before JSON serialization.
-- Parameterize PostgreSQL queries.
-- Run `.venv/bin/pytest tests/` after modifying legacy services or logic, unless
-  the work order explicitly limits verification; state any environment blocker.
-- Use checked-in diagnostics instead of inline Python or guessed direct SQL.
-
-### Cross-runtime porting
-
-- Create runtime-neutral JSON fixtures before porting deterministic algorithms.
-- Demonstrate expected output against the Python oracle, then the TypeScript
-  implementation.
-- Preserve exact semantics for fact provenance, snapshot hashes, requirement
-  quotes, ranking ties, tenure arithmetic, template lineage, and immutable
-  approvals.
+- Run the smallest focused test first, then the required unit, integration,
+  type, lint, and end-to-end suites.
 
 ## Review checklist
 
-1. Does the change stay inside the assigned work order and MVP boundary?
+1. Does the change stay inside the assigned task and product boundary?
 2. Can any path invent or smuggle an unsupported candidate fact?
 3. Are raw source, normalized data, and agent output still separate/auditable?
 4. Are retries, duplicate requests, crashes, and stale clients safe?

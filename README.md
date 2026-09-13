@@ -87,10 +87,11 @@ All product data stays under ignored local directories:
 
 ## Documentation
 
-- [Product scope and MVP acceptance](docs/product-rebuild/README.md)
-- [Architecture and safety contracts](docs/product-rebuild/architecture.md)
-- [Milestones](docs/product-rebuild/milestones.md)
-- [Coding-agent work orders](docs/product-rebuild/agent-work-orders.md)
-- [Active decisions](docs/product-rebuild/decisions.md)
-- [Reuse and decommission map](docs/product-rebuild/reuse-map.md)
-- [Current status](docs/product-rebuild/status.md)
+- [Project entrypoint](PROJECT.md)
+- [Current status](docs/status.md)
+- [Architecture and safety contracts](docs/architecture.md)
+- [Operations and commands](docs/operations.md)
+- [Active decisions](docs/decisions.md)
+- [UI/UX design contract](docs/ui-ux-design-spec.md)
+- [v1.0 rebuild archive](docs/archive/v1.0/) — frozen milestones, work
+  orders, and handoffs

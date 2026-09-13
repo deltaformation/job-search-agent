@@ -1,3 +1,5 @@
+> **Archived 2026-09-13 at v1.0.** This directory is the frozen rebuild-era (R0–R6) work record: plans, milestones, work orders, and handoffs. Read-only; do not extend. For current context start at [`AGENTS.md`](../../AGENTS.md) and [`PROJECT.md`](../../PROJECT.md); the durable contracts now live at [`docs/architecture.md`](../../docs/architecture.md), [`docs/decisions.md`](../../docs/decisions.md), and [`docs/ui-ux-design-spec.md`](../../docs/ui-ux-design-spec.md).
+
 # Local Job Tracker Product Rebuild
 
 This directory is the implementation brief for replacing the current
@@ -34,7 +36,7 @@ runtime is removed.
 
 ## Canonical planning documents
 
-1. [Product and architecture contract](architecture.md)
+1. [Product and architecture contract](../../docs/architecture.md) (promoted to core docs at v1.0)
 2. [Current-code reuse and decommission map](reuse-map.md)
 3. [Milestones and acceptance gates](milestones.md)
 4. [Bounded coding-agent work orders](agent-work-orders.md)

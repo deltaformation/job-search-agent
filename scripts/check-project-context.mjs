@@ -12,17 +12,12 @@ const requiredFiles = [
   "CLAUDE.md",
   "GEMINI.md",
   "README.md",
+  "docs/README.md",
   "docs/architecture.md",
   "docs/decisions.md",
   "docs/operations.md",
-  "docs/product-rebuild/README.md",
-  "docs/product-rebuild/status.md",
-  "docs/product-rebuild/architecture.md",
-  "docs/product-rebuild/reuse-map.md",
-  "docs/product-rebuild/milestones.md",
-  "docs/product-rebuild/agent-work-orders.md",
-  "docs/product-rebuild/decisions.md",
-  "docs/product-rebuild/legacy-baseline.md",
+  "docs/status.md",
+  "docs/ui-ux-design-spec.md",
 ];
 
 const removedHarnessPaths = [
@@ -42,6 +37,8 @@ const activeEntrypoints = [
   "docs/architecture.md",
   "docs/decisions.md",
   "docs/operations.md",
+  "docs/status.md",
+  "docs/ui-ux-design-spec.md",
 ];
 
 const staleReferencePatterns = [
