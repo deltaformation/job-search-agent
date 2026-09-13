@@ -70,7 +70,6 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
   const boardNotice = useNotice<{ variant: NoticeVariant; text: string }>();
   const [query, setQuery] = useState("");
   const [committedQuery, setCommittedQuery] = useState("");
-  const [viewMode, setViewMode] = useState<"kanban" | "stacked">("kanban");
   const [sort, setSort] = useState<BoardSort>("rank");
   const [limits, setLimits] = useState<Record<string, number>>({});
   const [loadingMore, setLoadingMore] = useState(false);
@@ -99,17 +98,14 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
     [limits],
   );
 
-  // Heavy synchronous renders (drawer mount, full-column re-layout) run as
-  // transitions so the click paints first and the tree follows. Stable
+  // The drawer mount is a heavy synchronous render, so it runs as a
+  // transition: the click paints first and the tree follows. Stable
   // references keep memoized cards from re-rendering on unrelated updates.
   const handleOpenJob = useCallback((jobId: string) => {
     startTransition(() => setOpenJobId(jobId));
   }, []);
   const handleCloseJob = useCallback(() => {
     startTransition(() => setOpenJobId(null));
-  }, []);
-  const handleViewMode = useCallback((mode: "kanban" | "stacked") => {
-    startTransition(() => setViewMode(mode));
   }, []);
 
   const refresh = useCallback(async (): Promise<BoardView | null> => {
@@ -323,15 +319,6 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 flex flex-wrap items-end gap-3 rounded-lg border border-border/70 bg-card p-3 shadow-xs">
         <div className="flex flex-wrap items-center gap-3">
-          <div role="group" aria-label="Board view" className="flex rounded-lg bg-muted p-1">
-            {(["kanban", "stacked"] as const).map((mode) => (
-              <button key={mode} type="button" aria-pressed={viewMode === mode}
-                onClick={() => handleViewMode(mode)}
-                className={`rounded-md px-3 py-2 text-sm transition-opacity duration-150 ${viewMode === mode ? "bg-background shadow-sm" : "text-muted-foreground"}`}>
-                {mode === "kanban" ? "Kanban" : "Stacked"}
-              </button>
-            ))}
-          </div>
           {board && <p className="font-mono tabular-nums text-xs text-muted-foreground">
             {committedQuery ? "Matching active" : "Active"}: {board.columns.filter((c) => c.status !== "REJECTED").reduce((n, c) => n + c.total, 0)} jobs · {board.columns.flatMap((c) => c.cards).filter((c) => c.resume?.reviewState === "AWAITING_REVIEW").length} awaiting review in loaded cards
           </p>}
@@ -404,7 +391,7 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
           onDragEnd={(event) => void onDragEnd(event)}
           onDragCancel={() => setActiveId(null)}
         >
-          <div className={`board-canvas mt-5 flex min-h-0 flex-1 gap-4 overflow-x-auto overflow-y-hidden pb-4 ${viewMode === "stacked" ? "board-stacked flex-col" : ""}`} role="group" aria-label="Kanban columns">
+          <div className="board-canvas mt-5 flex min-h-0 flex-1 gap-4 overflow-x-auto overflow-y-hidden pb-4" role="group" aria-label="Kanban columns">
             {board.columns.map((column) => (
               <BoardColumn
                 key={column.status}
@@ -419,7 +406,7 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
           </div>
           <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
             {activeCard === null ? null : (
-              <div className="w-[280px] rotate-[1.5deg] rounded-xl border border-primary/40 bg-card p-3.5 opacity-90 shadow-xl ring-2 ring-primary ring-offset-2">
+              <div className="w-[360px] rotate-[1.5deg] rounded-xl border border-primary/40 bg-card p-3.5 opacity-90 shadow-xl ring-2 ring-primary ring-offset-2">
                 <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   {activeCard.company ?? "Unknown Company"}
                 </p>

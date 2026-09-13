@@ -40,7 +40,7 @@ export default function BoardColumn({
   return (
     <section
       aria-labelledby={`column-heading-${status}`}
-      className={`flex min-h-0 w-[280px] 2xl:w-[320px] shrink-0 flex-col rounded-xl border border-border/60 bg-muted/40 ${
+      className={`flex min-h-0 w-[360px] min-w-[340px] 2xl:w-[400px] shrink-0 flex-col rounded-xl border border-border/60 bg-muted/40 ${
         isOver ? "ring-2 ring-primary ring-offset-2 bg-muted/70" : ""
       }`}
     >

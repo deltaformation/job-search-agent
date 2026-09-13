@@ -80,8 +80,8 @@ export default function AppHeader() {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80">
       <div className="mx-auto flex min-h-16 w-full flex-wrap items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
-        {/* Brand and Profile */}
-        <div className="flex items-center gap-6">
+        {/* Left: brand + primary navigation */}
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <Link
             href="/"
             className="flex items-center gap-2 font-semibold tracking-tight transition-colors hover:text-primary"
@@ -93,6 +93,43 @@ export default function AppHeader() {
             <span className="text-base font-semibold tracking-tight">Job Tracker</span>
           </Link>
 
+          <nav className="flex items-center gap-1 sm:gap-2" aria-label="Main Navigation">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs sm:text-sm font-medium transition-colors",
+                    item.active
+                      ? "bg-secondary text-secondary-foreground shadow-xs font-semibold"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                  aria-current={item.active ? "page" : undefined}
+                >
+                  <Icon className="size-4" aria-hidden="true" />
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
+
+            <div
+              className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground"
+              title="Local system running"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <span className="hidden md:inline text-[11px] font-medium text-muted-foreground">
+                Ready
+              </span>
+            </div>
+          </nav>
+        </div>
+
+        {/* Right: profile + actions */}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           {/* Active Profile Pill */}
           <div className="hidden xl:flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground">
             <UserCheck className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
@@ -102,45 +139,6 @@ export default function AppHeader() {
               Profile Active
             </span>
           </div>
-        </div>
-
-        {/* Center Navigation */}
-        <nav className="flex items-center gap-1 sm:gap-2" aria-label="Main Navigation">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs sm:text-sm font-medium transition-colors",
-                  item.active
-                    ? "bg-secondary text-secondary-foreground shadow-xs font-semibold"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-                aria-current={item.active ? "page" : undefined}
-              >
-                <Icon className="size-4" aria-hidden="true" />
-                <span>{item.name}</span>
-              </Link>
-            );
-          })}
-
-          <div
-            className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground"
-            title="Local system running"
-          >
-            <span className="relative flex h-2 w-2">
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-            </span>
-            <span className="hidden md:inline text-[11px] font-medium text-muted-foreground">
-              Ready
-            </span>
-          </div>
-        </nav>
-
-        {/* Direct Action */}
-        <div className="ml-auto flex items-center gap-2">
           <Button
             size="sm"
             variant="outline"

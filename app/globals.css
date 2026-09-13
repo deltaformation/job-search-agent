@@ -147,10 +147,6 @@ body:has(.board-page) .page-enter { height: 100%; min-height: 0; }
   scrollbar-gutter: stable;
 }
 .board-canvas { scroll-behavior: smooth; }
-.board-stacked { overflow-y: auto; }
-.board-stacked > section { width: 100%; min-height: min-content; flex-shrink: 0; }
-.board-stacked .board-column-scroll { overflow-y: visible; }
-.board-stacked ul { display: flex; flex-direction: column; }
 /* Card entrance: opacity + 4px rise, first five only, 30ms apart. */
 .board-column-scroll ul > li:nth-child(-n + 5) { animation: list-enter 160ms ease-out backwards; }
 .board-column-scroll ul > li:nth-child(2) { animation-delay: 30ms; }

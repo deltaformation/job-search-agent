@@ -55,7 +55,7 @@ function JobCard({ card, onOpen }: JobCardProps) {
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`group relative flex rounded-xl border border-border/80 bg-card text-card-foreground shadow-sm job-card transition-[transform,box-shadow,border-color] duration-150 hover:border-primary/40 hover:shadow-md ${
+      className={`group relative flex w-full rounded-xl border border-border/80 bg-card text-card-foreground shadow-sm job-card transition-[transform,box-shadow,border-color] duration-150 hover:border-primary/40 hover:shadow-md ${
         isDragging ? "job-card-dragging opacity-90 ring-2 ring-primary ring-offset-2 z-50 shadow-xl" : ""
       }`}
       aria-label={`${headline}, ${PRETTY_STATUS[card.status] ?? card.status}`}
@@ -76,7 +76,7 @@ function JobCard({ card, onOpen }: JobCardProps) {
       <button
         type="button"
         onClick={() => onOpen(card.id)}
-        className="flex min-w-0 flex-1 flex-col gap-2 p-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-r-xl cursor-pointer"
+        className="flex min-w-0 flex-1 flex-col gap-2 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-r-xl cursor-pointer"
         aria-label={`Open details for ${headline}`}
       >
         {/* Top Header: Company + External Link */}
