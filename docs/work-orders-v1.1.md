@@ -630,3 +630,120 @@ Safety/human checkpoint:
 
 
 
+---
+
+## Record 8: Settings Career Profiles & Master Resume Management
+
+**Work Order ID:** `WO-1.1-G`  
+**Phase:** Phase 2.3  
+**Commit:** `29ac8cf`  
+
+### Prompt Given to Agent
+```markdown
+You are working on the Local Job Tracker repository on branch `release/v1.0`.
+We are implementing Phase 2.3 of `docs/roadmap-v1.1.md` (Settings UI for Career Profiles & Master Resume).
+
+### Mandatory Context & Rules
+1. Inspect before modifying:
+   - `src/db/candidates.ts` (Phase 2.1 CRUD: `listProfiles`, `createProfile`, `updateProfile`, `setDefaultProfile`, `getDefaultProfile`)
+   - `src/domain/candidate.ts` (`WorkPreferencesV1`, `CareerProfileV1`, `CandidateProfilePayloadV1`)
+   - `src/server/settings.ts` (`getSettingsSnapshot`, `resyncMasterResume`)
+   - `components/settings/SettingsModal.tsx` (Candidate Profile tab)
+2. Follow `AGENTS.md` and `PROJECT.md`.
+3. Non-negotiable truth boundary: Profile metadata and preferences are steering metadata only; they never invent candidate facts or bypass fact citations.
+4. Run `node scripts/check-project-context.mjs` before and after.
+
+---
+
+### Work Order Scope: Phase 2.3 Settings Career Profiles & Master Resume
+
+#### 1. API Endpoints (`app/api/settings/profiles/`)
+- Add profile management routes:
+  - `GET /api/settings/profiles`: List all career profiles with versions/facts count and default flag.
+  - `POST /api/settings/profiles`: Create a new named career profile (`name`, `displayName`, `workPreferences`, `executiveNarrative`).
+  - `PATCH /api/settings/profiles/[id]`: Update profile metadata (`displayName`, `workPreferences`, `executiveNarrative`).
+  - `POST /api/settings/profiles/[id]/set-default`: Switch the system default profile.
+- Add Master Resume download route or payload handler:
+  - `GET /api/settings/master-resume`: Download current master-resume JSON.
+  - `POST /api/settings/master-resume`: Upload/save master-resume content and re-sync.
+
+#### 2. Settings Backend Integration (`src/server/settings.ts`)
+- Include the list of profiles (`CareerProfileV1[]`) in `SettingsSnapshot` or the dedicated profiles route.
+- Allow `resyncMasterResume` to target a specific `profileId` (defaulting to the default profile).
+
+#### 3. Settings Modal UI (`components/settings/SettingsModal.tsx`)
+- Rebuild the **Candidate Profile** tab into two clean subsections:
+  1. **Career Profiles**:
+     - Card list of configured profiles showing display name, slug, active version, approved facts count, and a `Default` badge.
+     - "Set Default" button on non-default profiles.
+     - "New Career Profile" modal or inline form with fields:
+       - Name (slug), Display Name.
+       - Work Preferences: Work Mode (Remote/Hybrid/Onsite), Authorization, Sponsorship Required (Yes/No), Relocate (Yes/No), Years of Experience, Salary Range (Min / Target).
+       - Executive Narrative textarea.
+     - "Edit" button to adjust preferences and executive narrative on existing profiles.
+  2. **Master Resume Document**:
+     - Display current active resume version, last synced timestamp, and verified skills count.
+     - One-click **Download JSON** button.
+     - **Upload / Replace Master Resume** file input (`.json`) with validation error reporting and immediate re-sync.
+
+#### 4. Automated Verification & Tests
+- Add unit tests for profile API routes (`tests/unit/routes/profiles.test.ts`):
+  - Profile listing, creation, editing, and default switching.
+  - Validation of work preferences and unique name slug.
+- Update `SettingsModal.test.tsx` to verify profile tab interactions and rendering.
+- Run full non-browser vitest suite (`npx vitest run --exclude '**/browser/**'`).
+- Run `npm run typecheck`, `npm run lint`, and `node scripts/check-project-context.mjs`.
+
+---
+
+### Expected Handoff Output
+Provide the completed handoff block required by `AGENTS.md`:
+
+Task: Phase 2.3 settings career profiles and master resume management
+Outcome:
+Status: implemented | needs-review | blocked
+Files changed:
+Migrations/data effects:
+Verification performed and exact result:
+Acceptance criteria not yet proven:
+Decisions or deviations:
+Safety/human checkpoint:
+```
+
+### Official Handoff
+```text
+Task: Phase 2.3 settings career profiles and master resume management
+Outcome: Settings modal Candidate Profile tab rebuilt into Career Profiles (card list with Default badge, set-default, inline create/edit form for slug/display/preferences/narrative) and Master Resume Document (active version, last-synced timestamp, verified skills, JSON download, validated upload with immediate re-sync) sections, backed by profile + master-resume API routes and targeted re-sync.
+Status: implemented
+Files changed:
+  - src/domain/candidate.ts (ProfileId schema: UUIDs plus "local" legacy root)
+  - src/server/candidates.ts (importCandidate accepts optional profileId; new profile-not-found result; per-profile version numbering)
+  - src/server/settings.ts (ProfileSummary + listProfileSummaries; resyncMasterResume targets explicit profileId or the default profile; latest-version lookup scoped per profile; parseMasterResumeDocument shared by re-sync and upload; snapshot profile gains activeVersionAt)
+  - app/api/settings/profiles/route.ts (new: GET list, POST create w/ 409)
+  - app/api/settings/profiles/[id]/route.ts (new: PATCH metadata, 404)
+  - app/api/settings/profiles/[id]/set-default/route.ts (new: POST, 404)
+  - app/api/settings/master-resume/route.ts (new: GET download, POST validate-then-write-then-resync with 2MB cap and atomic rename)
+  - components/api.ts (apiPatch client)
+  - components/settings/SettingsModal.tsx (two subsections, ProfileForm, upload/download/set-default wiring, malformed-list hardening)
+  - tests/unit/routes/profiles.test.ts (new)
+  - tests/unit/components/settings/SettingsModal.test.tsx
+Migrations/data effects: none (uses Phase 2.1 multi-profile schema as-is)
+Verification performed and exact result:
+  - New route suite 13/13 (list/create/409/slug+pref validation, patch/clear/404, set-default flip/404, download 404, upload roundtrip, invalid-upload writes nothing, explicit-profile targeting, unknown profile 404).
+  - Modal suite 13/13 (7 existing incl. 2 fetch-count updates for the new profiles fetch, 6 new: list render, set-default, create body, edit prefill+patch body, non-JSON upload error, upload re-sync).
+  - Full non-browser suite: 116 files / 900 tests pass (2 consecutive green runs; a third-party flake in tests/unit/server/queries.test.ts batch ordering fails ~1 in 3 runs and was proven pre-existing: flakes standalone 2/6 with both files untouched by this task).
+  - npm run typecheck: 0 errors.
+  - npm run lint: 0 warnings.
+  - node scripts/check-project-context.mjs: 11/11 before and after.
+Acceptance criteria not yet proven:
+  - Visual layout of the rebuilt tab at 13in/4K viewports (no browser in sandbox; markup follows existing modal conventions).
+  - End-to-end upload roundtrip through a real browser (covered at route + component level only).
+Decisions or deviations:
+  - resyncMasterResume/importCandidate resolve the real default profile instead of the legacy "local" id (required once a non-local default exists; fresh DBs still bootstrap "local").
+  - Profiles served from a dedicated GET route, not bloating SettingsSnapshot; snapshot gains only activeVersionAt.
+  - Edit form merges over preserved preferences (target titles/locations survive) and sends null to clear the narrative.
+  - Two existing fetch-count assertions updated 1->2 (new profiles fetch on open is intended behavior, not a regression).
+Safety/human checkpoint:
+  - Profiles stay steering metadata only (no claim/fact path touched); upload validates before writing and re-syncs through the human-actor import path; no keys, paths, or secrets serialized; mutations stay behind the Host/Origin gate; no ATS/application behavior changed.
+```
+
