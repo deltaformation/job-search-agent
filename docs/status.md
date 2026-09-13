@@ -14,9 +14,10 @@ Last updated: 2026-09-13. Branch: `release/v1.0`. Package version: 1.0.0.
 - Active v1.1 progression underway: roadmap in [`roadmap-v1.1.md`](roadmap-v1.1.md)
   and execution log in [`work-orders-v1.1.md`](work-orders-v1.1.md).
   Completed: `WO-1.1-A` (bounded O(1) queries in `b2fc150`), `WO-1.1-B` (frame-1
-  initial render + INP de-janking in `1d24ac0`).
-- Verification at current HEAD: typecheck clean, eslint clean, unit suite 110 files
-  / 805 tests green.
+  initial render + INP de-janking in `1d24ac0`), `WO-1.1-C` (accessible auto-dismissing
+  notices in `c55fa0f`).
+- Verification at current HEAD: typecheck clean, eslint clean, unit suite 111 files
+  / 813 tests green.
 
 ## Known items
 
