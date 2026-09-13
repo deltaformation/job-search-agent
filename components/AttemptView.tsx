@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Notice, useNotice, type NoticeVariant } from "@/components/ui/notice";
 import type { WorkItemView } from "@/src/server/queries";
 import type { IngestClipResult } from "@/src/server/clip";
 import { apiGet, apiPost, errorMessage } from "./api";
@@ -40,11 +41,11 @@ export default function AttemptView({ workItemId }: { workItemId: string }) {
   const [view, setView] = useState<WorkItemView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const retryNotice = useNotice<{ variant: NoticeVariant; text: string }>();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [content, setContent] = useState("");
   const [pasting, setPasting] = useState(false);
-  const [pasteNotice, setPasteNotice] = useState<string | null>(null);
+  const pasteNoticeState = useNotice<{ variant: NoticeVariant; text: string }>();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -72,13 +73,13 @@ export default function AttemptView({ workItemId }: { workItemId: string }) {
 
   async function onRetry(): Promise<void> {
     setRetrying(true);
-    setNotice(null);
+    retryNotice.clear();
     try {
       await apiPost(`/api/attempts/${workItemId}/retry`, {});
-      setNotice("Requeued with a fresh attempt budget.");
+      retryNotice.show({ variant: "success", text: "Requeued with a fresh attempt budget." });
       await refresh();
     } catch (error: unknown) {
-      setNotice(`Retry failed: ${errorMessage(error)}`);
+      retryNotice.show({ variant: "error", text: `Retry failed: ${errorMessage(error)}` });
     } finally {
       setRetrying(false);
     }
@@ -86,22 +87,22 @@ export default function AttemptView({ workItemId }: { workItemId: string }) {
 
   async function onPasteSubmit(): Promise<void> {
     setPasting(true);
-    setPasteNotice(null);
+    pasteNoticeState.clear();
     try {
       const result = await apiPost<IngestClipResult>(
         `/api/attempts/${workItemId}/content`,
         { html: content },
       );
       if (result.outcome === "created") {
-        setPasteNotice("Content ingested: NEW job created.");
+        pasteNoticeState.show({ variant: "success", text: "Content ingested: NEW job created." });
       } else if (result.outcome === "duplicate") {
-        setPasteNotice("Already tracked: no new card was created.");
+        pasteNoticeState.show({ variant: "success", text: "Already tracked: no new card was created." });
       } else {
-        setPasteNotice(`Ingestion rejected: ${result.detail}`);
+        pasteNoticeState.show({ variant: "error", text: `Ingestion rejected: ${result.detail}` });
       }
       await refresh();
     } catch (error: unknown) {
-      setPasteNotice(`Paste failed: ${errorMessage(error)}`);
+      pasteNoticeState.show({ variant: "error", text: `Paste failed: ${errorMessage(error)}` });
     } finally {
       setPasting(false);
     }
@@ -194,12 +195,13 @@ export default function AttemptView({ workItemId }: { workItemId: string }) {
         </p>
 
         {error !== null && (
-          <div
-            role="alert"
+          <Notice
+            variant="error"
+            onDismiss={() => setError(null)}
             className="mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs font-semibold text-destructive"
           >
             Refresh failed: {error}
-          </div>
+          </Notice>
         )}
       </section>
 
@@ -361,10 +363,19 @@ export default function AttemptView({ workItemId }: { workItemId: string }) {
             </div>
           )}
 
-          {pasteNotice !== null && (
-            <p role="status" className="flash-enter mt-3 text-xs font-semibold text-amber-900 dark:text-amber-300">
-              {pasteNotice}
-            </p>
+          {pasteNoticeState.notice !== null && (
+            <Notice
+              key={pasteNoticeState.notice.seq}
+              variant={pasteNoticeState.notice.data.variant}
+              onDismiss={pasteNoticeState.clear}
+              className={
+                pasteNoticeState.notice.data.variant === "success"
+                  ? "mt-3 text-xs font-semibold text-amber-900 dark:text-amber-300"
+                  : "mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs font-semibold text-destructive"
+              }
+            >
+              {pasteNoticeState.notice.data.text}
+            </Notice>
           )}
         </section>
       )}
@@ -494,13 +505,19 @@ export default function AttemptView({ workItemId }: { workItemId: string }) {
           </p>
         )}
 
-        {notice !== null && (
-          <div
-            role="status"
-            className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs font-semibold text-primary"
+        {retryNotice.notice !== null && (
+          <Notice
+            key={retryNotice.notice.seq}
+            variant={retryNotice.notice.data.variant}
+            onDismiss={retryNotice.clear}
+            className={
+              retryNotice.notice.data.variant === "success"
+                ? "mt-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs font-semibold text-primary"
+                : "mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs font-semibold text-destructive"
+            }
           >
-            {notice}
-          </div>
+            {retryNotice.notice.data.text}
+          </Notice>
         )}
       </section>
     </div>

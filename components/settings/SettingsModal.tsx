@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Notice, useNotice } from "@/components/ui/notice";
 import { cn } from "@/lib/utils";
 import { apiGet, apiPost, errorMessage } from "../api";
 
@@ -89,7 +90,7 @@ export default function SettingsModal({
   const [snapshot, setSnapshot] = useState<SettingsSnapshot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const settingsNotice = useNotice<{ type: "success" | "error"; text: string }>();
   const [primary, setPrimary] = useState("");
   const [fallback, setFallback] = useState("");
   const [aiResult, setAiResult] = useState<AiTestResult | null>(null);
@@ -124,7 +125,7 @@ export default function SettingsModal({
       // Reset on close (an event handler, not an effect) so every
       // opening starts fresh without setState-in-effect.
       setSnapshot(null);
-      setNotice(null);
+      settingsNotice.clear();
       setAiResult(null);
       setResetArmed(false);
       setResetConfirm("");
@@ -161,11 +162,11 @@ export default function SettingsModal({
 
   async function run(action: string, fn: () => Promise<string>): Promise<void> {
     setBusy(action);
-    setNotice(null);
+    settingsNotice.clear();
     try {
-      setNotice({ type: "success", text: await fn() });
+      settingsNotice.show({ type: "success", text: await fn() });
     } catch (error: unknown) {
-      setNotice({ type: "error", text: errorMessage(error) });
+      settingsNotice.show({ type: "error", text: errorMessage(error) });
     } finally {
       setBusy(null);
     }
@@ -290,23 +291,29 @@ export default function SettingsModal({
         </DialogHeader>
 
         {loadError !== null && (
-          <p role="alert" className="rounded-md bg-destructive/10 p-3 text-xs text-destructive">
+          <Notice
+            variant="error"
+            onDismiss={() => setLoadError(null)}
+            className="rounded-md bg-destructive/10 p-3 text-xs text-destructive"
+          >
             Could not load settings: {loadError}
-          </p>
+          </Notice>
         )}
 
-        {notice !== null && (
-          <p
-            role="status"
+        {settingsNotice.notice !== null && (
+          <Notice
+            key={settingsNotice.notice.seq}
+            variant={settingsNotice.notice.data.type}
+            onDismiss={settingsNotice.clear}
             className={cn(
               "rounded-md p-3 text-xs",
-              notice.type === "success"
+              settingsNotice.notice.data.type === "success"
                 ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300"
                 : "bg-destructive/10 text-destructive",
             )}
           >
-            {notice.text}
-          </p>
+            {settingsNotice.notice.data.text}
+          </Notice>
         )}
 
         {dataSwapped && (

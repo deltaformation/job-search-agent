@@ -16,6 +16,7 @@ import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BoardStatus } from "@/src/domain/enums";
 import type { BoardCardView, BoardView } from "@/src/server/board";
+import { Notice, useNotice, type NoticeVariant } from "../ui/notice";
 import { apiGet, errorMessage } from "../api";
 import AppliedModal from "./AppliedModal";
 import BoardColumn from "./BoardColumn";
@@ -66,7 +67,7 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
   const [board, setBoard] = useState<BoardView | null>(initialData);
   const [loading, setLoading] = useState(initialData === null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const boardNotice = useNotice<{ variant: NoticeVariant; text: string }>();
   const [query, setQuery] = useState("");
   const [committedQuery, setCommittedQuery] = useState("");
   const [viewMode, setViewMode] = useState<"kanban" | "stacked">("kanban");
@@ -194,18 +195,18 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
     try {
       await postJobMutation(path, body);
     } catch (error: unknown) {
-      setNotice(`Update failed: ${errorMessage(error)}`);
+      boardNotice.show({ variant: "error", text: `Update failed: ${errorMessage(error)}` });
       await refresh();
       return false;
     }
-    setNotice(successNotice);
+    boardNotice.show({ variant: "success", text: successNotice });
     await refresh();
     return true;
   }
 
   function onDragStart(event: DragStartEvent): void {
     setActiveId(String(event.active.id));
-    setNotice(null);
+    boardNotice.clear();
   }
 
   async function onDragEnd(event: DragEndEvent): Promise<void> {
@@ -262,7 +263,10 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
       return;
     }
     if (toStatus === "TAILORED") {
-      setNotice("TAILORED requires an approved resume — approval moves the card, not dragging.");
+      boardNotice.show({
+        variant: "error",
+        text: "TAILORED requires an approved resume — approval moves the card, not dragging.",
+      });
       return;
     }
     if (toStatus === "APPLIED") {
@@ -365,15 +369,29 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
         </div>
       </div>
 
-      {notice !== null && (
-        <div role="status" data-testid="board-notice" className="flash-enter shrink-0 mt-3 rounded-md border border-primary/20 bg-primary/5 p-3 text-sm font-semibold text-primary">
-          {notice}
-        </div>
+      {boardNotice.notice !== null && (
+        <Notice
+          key={boardNotice.notice.seq}
+          variant={boardNotice.notice.data.variant}
+          onDismiss={boardNotice.clear}
+          testId="board-notice"
+          className={
+            boardNotice.notice.data.variant === "success"
+              ? "shrink-0 mt-3 rounded-md border border-primary/20 bg-primary/5 p-3 text-sm font-semibold text-primary"
+              : "shrink-0 mt-3 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm font-semibold text-destructive"
+          }
+        >
+          {boardNotice.notice.data.text}
+        </Notice>
       )}
       {error !== null && (
-        <div role="alert" className="shrink-0 mt-3 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm font-semibold text-destructive">
+        <Notice
+          variant="error"
+          onDismiss={() => setError(null)}
+          className="shrink-0 mt-3 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm font-semibold text-destructive"
+        >
           Could not load the board: {error}
-        </div>
+        </Notice>
       )}
       {loading && <p className="mt-3 text-sm text-muted-foreground">Loading board…</p>}
 

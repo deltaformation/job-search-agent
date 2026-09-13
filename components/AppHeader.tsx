@@ -20,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Notice, useNotice } from "@/components/ui/notice";
 import { cn } from "@/lib/utils";
 import { apiPost, errorMessage } from "./api";
 import SettingsModal from "./settings/SettingsModal";
@@ -30,11 +31,11 @@ export default function AppHeader() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quickUrl, setQuickUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [quickMessage, setQuickMessage] = useState<{
+  const quickMessage = useNotice<{
     type: "success" | "error";
     text: string;
     batchId?: string;
-  } | null>(null);
+  }>();
 
   const navItems = [
     {
@@ -55,19 +56,19 @@ export default function AppHeader() {
     e.preventDefault();
     if (!quickUrl.trim()) return;
     setSubmitting(true);
-    setQuickMessage(null);
+    quickMessage.clear();
     try {
       const res = await apiPost<{ batchId: string }>("/api/intake/submit", {
         lines: [quickUrl.trim()],
       });
-      setQuickMessage({
+      quickMessage.show({
         type: "success",
         text: "Job URL enqueued into batch!",
         batchId: res.batchId,
       });
       setQuickUrl("");
     } catch (err: unknown) {
-      setQuickMessage({
+      quickMessage.show({
         type: "error",
         text: errorMessage(err),
       });
@@ -193,26 +194,29 @@ export default function AppHeader() {
               />
             </div>
 
-            {quickMessage && (
-              <div
+            {quickMessage.notice !== null && (
+              <Notice
+                key={quickMessage.notice.seq}
+                variant={quickMessage.notice.data.type}
+                onDismiss={quickMessage.clear}
                 className={cn(
                   "rounded-md p-3 text-xs",
-                  quickMessage.type === "success"
+                  quickMessage.notice.data.type === "success"
                     ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300"
                     : "bg-destructive/10 text-destructive"
                 )}
               >
-                <p className="font-medium">{quickMessage.text}</p>
-                {quickMessage.batchId && (
+                <p className="font-medium">{quickMessage.notice.data.text}</p>
+                {quickMessage.notice.data.batchId && (
                   <Link
-                    href={`/intake/batches/${quickMessage.batchId}`}
+                    href={`/intake/batches/${quickMessage.notice.data.batchId}`}
                     onClick={() => setAddJobOpen(false)}
                     className="mt-1 inline-flex items-center gap-1 font-semibold underline underline-offset-2"
                   >
                     View Batch Progress <ExternalLink className="size-3.5" aria-hidden="true" />
                   </Link>
                 )}
-              </div>
+              </Notice>
             )}
 
             <div className="flex items-center justify-between pt-2">

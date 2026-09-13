@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Notice, useNotice } from "@/components/ui/notice";
 import { Separator } from "@/components/ui/separator";
 import type { ResumeReviewView } from "@/src/server/review";
 import { apiGet, errorMessage } from "../api";
@@ -53,7 +54,7 @@ export default function ResumeReview({
   const [view, setView] = useState<ResumeReviewView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const reviewNotice = useNotice<string>();
   const [confirming, setConfirming] = useState(false);
   const [approveNote, setApproveNote] = useState("");
   const [reviseNote, setReviseNote] = useState("");
@@ -101,7 +102,7 @@ export default function ResumeReview({
   }, [load, refreshToken]);
 
   async function afterMutation(message: string): Promise<void> {
-    setNotice(message);
+    reviewNotice.show(message);
     setActionError(null);
     setConfirming(false);
     setApproveNote("");
@@ -195,16 +196,25 @@ export default function ResumeReview({
           </div>
         </div>
 
-        {notice !== null && (
-          <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-            {notice}
-          </div>
+        {reviewNotice.notice !== null && (
+          <Notice
+            key={reviewNotice.notice.seq}
+            variant="success"
+            onDismiss={reviewNotice.clear}
+            className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+          >
+            {reviewNotice.notice.data}
+          </Notice>
         )}
 
         {actionError !== null && (
-          <div role="alert" className="mt-3 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm font-semibold text-destructive">
+          <Notice
+            variant="error"
+            onDismiss={() => setActionError(null)}
+            className="mt-3 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm font-semibold text-destructive"
+          >
             {actionError}
-          </div>
+          </Notice>
         )}
 
         {view.actions.reason !== null && !view.actions.canApprove && !view.actions.canRequestRevision && (

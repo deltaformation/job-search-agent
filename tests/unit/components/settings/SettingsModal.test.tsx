@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import SettingsModal from "../../../../components/settings/SettingsModal";
 
@@ -54,6 +54,74 @@ it("preserves the type-to-confirm reset gate when tabs are interrupted", async (
   fireEvent.keyDown(document, { key: "Escape" });
   expect(onOpenChange).toHaveBeenCalledWith(false);
   expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it("auto-dismisses settings successes while [X] clears them at once", async () => {
+  vi.useFakeTimers();
+  try {
+    const fetchMock = vi.fn(async (url: string, init?: { method?: string }) => {
+      if (url === "/api/settings/model" && init?.method === "POST") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ primary: "p", fallback: "f", restartRequired: true }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => snapshot };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SettingsModal open onOpenChange={() => {}} />);
+    selectTab("AI & Models");
+    await vi.waitFor(() =>
+      expect(screen.getByLabelText("Primary model")).toHaveValue("provider/primary"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save Models" }));
+    await vi.waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/model chain saved/i),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+    expect(screen.queryByRole("status")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Save Models" }));
+    await vi.waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/model chain saved/i),
+    );
+    act(() => {
+      vi.advanceTimersByTime(3500);
+    });
+    expect(screen.queryByRole("status")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("keeps settings errors until manually dismissed", async () => {
+  vi.useFakeTimers();
+  try {
+    const fetchMock = vi.fn(async (url: string, init?: { method?: string }) => {
+      if (url === "/api/settings/model" && init?.method === "POST") {
+        return { ok: false, status: 500, json: async () => ({ error: "write failed" }) };
+      }
+      return { ok: true, status: 200, json: async () => snapshot };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SettingsModal open onOpenChange={() => {}} />);
+    selectTab("AI & Models");
+    await vi.waitFor(() =>
+      expect(screen.getByLabelText("Primary model")).toHaveValue("provider/primary"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save Models" }));
+    await vi.waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(/write failed/i),
+    );
+    act(() => {
+      vi.advanceTimersByTime(10000);
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(/write failed/i);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("resets section scroll to the top when switching tabs", async () => {
