@@ -292,3 +292,83 @@ Safety/human checkpoint:
   - Notices remain supplementary — board columns, badges, and review states refresh from the server independently; no approval, application, conflict, or auth flow changed; error text and roles asserted by existing tests unchanged.
 ```
 
+---
+
+## Record 5: UI Ergonomics & Pure Kanban Layout
+
+**Work Order ID:** `WO-1.1-D`  
+**Phase:** Phase 3.2 & 3.3  
+**Commit:** `17f9fd4`  
+
+### Prompt Given to Agent
+```markdown
+You are working on the Local Job Tracker repository on branch `release/v1.0`.
+We are implementing Phase 3.2 and Phase 3.3 of `docs/roadmap-v1.1.md`.
+
+### Mandatory Context & Rules
+1. Inspect before modifying:
+   - `components/AppHeader.tsx` (navigation buttons, profile pill, logo placement)
+   - `app/board/page.tsx` (breadcrumbs removal)
+   - `components/board/Board.tsx` (view mode toggle removal, column layout and scroll container)
+   - `components/board/JobCard.tsx` (card sizing, typography, metadata hierarchy)
+2. Follow `AGENTS.md` and `PROJECT.md`.
+3. Do not break board drag-and-drop or column semantics. Retain the exact 5 columns (`New`, `Tailored`, `Applied`, `Interviewed`, `Rejected`).
+4. Run `node scripts/check-project-context.mjs` before and after.
+
+---
+
+### Work Order Scope: Phase 3.2 & 3.3 UI Ergonomics & Pure Kanban Layout
+
+#### 1. Header Optimization (Phase 3.3)
+- In `app/board/page.tsx`: Remove the `Home > Board` breadcrumb trail to recover vertical space.
+- In `components/AppHeader.tsx`:
+  - **Left Group**: Dock primary navigation links (`Board`, `Intake`) directly adjacent to the brand logo (`Job Tracker`).
+  - **Right Group**: Move the `Mouad Atfi / Profile Active` pill to the right, sitting directly next to `Settings` and `Add Job`.
+  - Ensure header scales gracefully from 13"/14" laptop viewports to 4K displays with clean flex spacing and zero overlapping.
+
+#### 2. Pure Kanban View & Larger Cards (Phase 3.2)
+- In `components/board/Board.tsx`:
+  - Permanently remove the Kanban / Stacked view switcher (lock board to pure Kanban). Remove obsolete `viewMode` state and toggle UI.
+  - Set column widths and horizontal scroll container so the default viewport naturally displays the core 3 application buckets (`New`, `Tailored`, `Applied`), while `Interviewed` and `Rejected` are revealed smoothly by horizontal drag, scroll, or keyboard navigation.
+- In `components/board/JobCard.tsx`:
+  - Enlarge cards (`min-w-[340px]`, `w-full` inside column) with comfortable internal padding (`p-4`), clear typography, tabular salary/compensation display, and prominent status pills.
+
+#### 3. Verification & Handoff
+- Run existing tests: `npm test`
+- Static verification:
+  - `npm run typecheck` (0 errors)
+  - `npm run lint` (0 warnings)
+  - `node scripts/check-project-context.mjs` (11/11 consistent)
+- Provide the official `AGENTS.md` handoff block so it can be appended to `docs/work-orders-v1.1.md`.
+```
+
+### Official Handoff
+```text
+Task: Phase 3.2 pure Kanban & larger cards + Phase 3.3 header optimization
+Outcome: Board page breadcrumb removed (tighter pb-4 header); AppHeader restructured into left group (logo + Board/Intake nav + Ready dot) and right group (profile pill + Settings + Add Job) with wrapping flex for narrow screens. Kanban/Stacked switcher, viewMode state, and dead .board-stacked CSS removed; columns widened to w-[360px] min-w-[340px] 2xl:w-[400px] so 13"/14" viewports frame New/Tailored/Applied with Interviewed/Rejected one scroll away; cards filled to w-full with p-4; drag overlay widened to match.
+Status: implemented
+Files changed:
+  - app/board/page.tsx
+  - components/AppHeader.tsx
+  - components/board/Board.tsx
+  - components/board/BoardColumn.tsx
+  - components/board/JobCard.tsx
+  - app/globals.css
+Migrations/data effects: none; markup/CSS only
+Verification performed and exact result:
+  - npm test: 813 passed, 0 failed (111 files pass; only the 2 known environmental browser-file failures — Playwright cannot launch Chromium in this sandbox, proven pre-existing and untouched by this change).
+  - npm run typecheck: 0 errors.
+  - npm run lint: 0 warnings.
+  - node scripts/check-project-context.mjs: 11/11 before and after.
+  - Repo-wide search confirms zero remaining viewMode/stacked references; no test referenced the toggle or board breadcrumb.
+Acceptance criteria not yet proven:
+  - visual framing on physical 13"/14" and 4K viewports (no browser available in this sandbox — confirm 3-bucket framing and header non-overlap on hardware).
+Decisions or deviations:
+  - used 2xl:w-[400px] instead of the roadmap's example xl:w-[400px] so exactly-1280px viewports still fit all three core buckets (1296px need at 400px would clip); 400px columns apply at ≥1536px where 3×400 fits with room.
+  - Card type scale and pill sizes kept (already hierarchical with tabular numerals) — the width + padding change carries the readability gain.
+  - Profile pill keeps its xl:flex visibility breakpoint.
+Safety/human checkpoint:
+  - exact 5 columns and all DnD/keyboard mechanics untouched (only widths and the view toggle changed); all nav links, aria labels, and button behaviors preserved; no approval, application, or data flow touched.
+```
+
+
