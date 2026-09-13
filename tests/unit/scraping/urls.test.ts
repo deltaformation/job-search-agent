@@ -5,6 +5,7 @@ import {
   detectAtsType,
   isAtsUrl,
   MAX_URL_LENGTH,
+  sanitizeDestinationUrl,
   type CanonicalUrl,
 } from "../../../src/scraping";
 
@@ -196,5 +197,33 @@ describe("URL validation policy", () => {
   it("trims surrounding whitespace but preserves the original", () => {
     const value = mustCanonicalize("  https://example.com/j?a=1  \n");
     expect(value.submittedUrl).toBe("https://example.com/j?a=1");
+  });
+});
+
+describe("sanitizeDestinationUrl", () => {
+  it("preserves trailing slash in pathname with query parameters", () => {
+    const url = new URL(
+      "https://www.kaseya.com/careers/jobs/id/6179651004/?gh_jid=6179651004#app",
+    );
+    expect(sanitizeDestinationUrl(url)).toBe(
+      "https://www.kaseya.com/careers/jobs/id/6179651004/?gh_jid=6179651004",
+    );
+  });
+
+  it("preserves trailing slash on paths without query parameters", () => {
+    const url = new URL("https://example.com/apply/");
+    expect(sanitizeDestinationUrl(url)).toBe("https://example.com/apply/");
+  });
+
+  it("preserves paths without trailing slash", () => {
+    const url = new URL("https://example.com/apply");
+    expect(sanitizeDestinationUrl(url)).toBe("https://example.com/apply");
+  });
+
+  it("strips tracking parameters and drops fragments", () => {
+    const url = new URL(
+      "https://example.com/apply/?utm_source=twitter&ref=social#form",
+    );
+    expect(sanitizeDestinationUrl(url)).toBe("https://example.com/apply/");
   });
 });

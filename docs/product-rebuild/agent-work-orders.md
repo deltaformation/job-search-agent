@@ -299,13 +299,14 @@ human-attributed transition to `TAILORED`.
 
 **Deliver:**
 1. **Complete Removal of Python Runtime & Services**:
-   - Delete `services/` (all 10 legacy Python packages: applications, briefing, discovery, documents, intelligence, mcp, memory, ui).
+   - Delete `services/` (all 8 legacy Python packages: applications, briefing, discovery, documents, intelligence, mcp, memory, ui).
    - Delete `.venv/`, `.pytest_cache/`, `pyproject.toml`, `pytest.ini`, `requirements.txt`.
-   - Delete all 18 legacy Python scripts in `scripts/*.py` (`check_environment.py`, `init_db.py`, `load_candidate_profile.py`, `migrate.py`, `run_discovery.py`, etc.).
-   - Delete all 25 legacy Python test files in `tests/*.py` and `tests/conftest.py`.
+   - Delete all 20 legacy Python scripts in `scripts/*.py` (`check_environment.py`, `init_db.py`, `load_candidate_profile.py`, `migrate.py`, `run_discovery.py`, etc.).
+   - Delete all 26 legacy Python test files in `tests/*.py` and `tests/conftest.py`.
+   - Delete the remaining Python files outside those sets: `integrations/antigravity/` and `tests/fixtures/scoring_corpus.py`.
 2. **Complete Removal of PostgreSQL & Container Files**:
    - Delete `docker-compose.yml`.
-   - Delete `db/migrations/` (16 PostgreSQL SQL migrations; Node migrations are in `drizzle/`) and `db/seeds/`.
+   - Delete `db/migrations/` (14 PostgreSQL SQL migrations; Node migrations are in `drizzle/`) and `db/seeds/`.
 3. **Toolchain & Deprecation Fixes**:
    - Update `scripts/ts-register.mjs` to eliminate Node v26 module registration deprecation warnings.
 4. **Documentation Cutover**:
@@ -322,12 +323,44 @@ human-attributed transition to `TAILORED`.
 1. Clip or paste a job URL $\rightarrow$ verifies scrape and extraction.
 2. Verify Kanban card shows prominent Salary Min/Max badge and extracted company/title.
 3. Open card workspace $\rightarrow$ check Compensation Highlights and Top 5 ATS Keywords.
-4. Verify AI tailoring runs automatically and badges card as `Resumes (1) · Awaiting Review`.
+4. Verify AI tailoring runs automatically and badges card as `Resume v1: Awaiting review`.
 5. Review resume $\rightarrow$ verify exact phrase mirroring, hard skills focus, and natural placement.
-6. Click "Approve Resume" $\rightarrow$ verifies job transitions from `NEW` to `TAILORED`.
+6. Click "Approve version N" then "Confirm approval" $\rightarrow$ verifies job transitions from `NEW` to `TAILORED`.
 7. Click "Apply & Log" $\rightarrow$ records manual application timestamp.
 8. Open Settings $\rightarrow$ download backup $\rightarrow$ verify `.tar.gz` archive is created.
 
+## R6 work orders
+
+### R6-A — UI/UX design polish pass
+
+**Owns:** Presentational changes implementing `ui-ux-design-spec.md`:
+`components/board/`, `components/settings/SettingsModal.tsx`,
+`components/AppHeader.tsx`, `app/globals.css`, shared interaction/motion
+utilities, and tests proving the spec §6 checklist.
+
+**Depends on:** R4-G and R5-A verified (R5-B accepted).
+
+**Deliver:**
+
+1. **Analyze**: audit every spec-named surface (board, job card, card
+   drawer, resume review, settings modal, app header) against spec §§1–5;
+   report current state $\rightarrow$ requirement $\rightarrow$ gap per
+   surface before writing code.
+2. **Review**: flag any spec item that conflicts with existing component
+   APIs, breaks accessibility, or cannot be done reversibly; propose the
+   smallest presentational change and hold those items for approval.
+3. **Implement**: reversible spacing/layout pass (shared grids, tight card
+   internals, generous section separation, bounded viewports) and
+   interaction pass (spec timing table, focus management, keyboard drag
+   paths, live-region announcements, `prefers-reduced-motion`).
+4. **Prove**: every spec §6 checklist item with the exact verification run
+   and result; the project's own tests for every touched area pass; R5-C
+   checklist steps still pass verbatim against the polished UI.
+
+**Do not:** change behavior, routes, component APIs, or data flows; change
+color, font-family, or type-scale tokens; rename UI labels that R5-C
+verifies; introduce a second icon library or arbitrary one-off values;
+expand MVP scope.
 
 ## Parallelism guide
 
@@ -339,8 +372,12 @@ human-attributed transition to `TAILORED`.
   R3-C follows them.
 - R4-A and R4-B can run in parallel. R4-C follows R4-B. R4-D can begin from the
   existing view model/template. R4-E integrates R4-C, and R4-F integrates all.
-- R5-A and R5-B can run in parallel. R5-C follows the integrated product.
-  R5-D is always last.
+- R5-A and R5-B can run in parallel. R5-C follows the integrated product
+  and is the last behavioral gate. (Early plans named the final cutover
+  "R5-D"; that role is R5-B, and the label is retired.)
+- R6-A is a behavior-preserving polish pass over the accepted product. It
+  may land before or after R5-C execution, but R5-C steps must still pass
+  verbatim against the polished UI.
 
 Agents working concurrently must use separate branches/worktrees when their
 changes might overlap. No two agents should edit `package.json`, the same

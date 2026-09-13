@@ -66,7 +66,7 @@ function isValidDnsName(hostname: string): boolean {
   return hostname.split(".").every((label) => DNS_LABEL.test(label));
 }
 
-function sortedQuery(url: URL): string {
+export function sortedQuery(url: URL): string {
   const kept: Array<[string, string]> = [];
   url.searchParams.forEach((value, name) => {
     const lowered = name.toLowerCase();
@@ -79,6 +79,28 @@ function sortedQuery(url: URL): string {
     nameA < nameB ? -1 : nameA > nameB ? 1 : valueA < valueB ? -1 : valueA > valueB ? 1 : 0,
   );
   return new URLSearchParams(kept).toString();
+}
+
+/**
+ * Construct an actionable destination URL: preserves the verbatim pathname
+ * (including any trailing slash required by host routing), strips tracking
+ * parameters from the query string, drops hash fragments, and normalizes
+ * the host/port.
+ */
+export function sanitizeDestinationUrl(url: URL): string {
+  const port = url.port;
+  const path = url.pathname === "" ? "/" : url.pathname;
+  const query = sortedQuery(url);
+  let hostname = url.hostname.toLowerCase();
+  if (hostname.startsWith("[") && hostname.endsWith("]")) {
+    hostname = hostname.slice(1, -1);
+  }
+  if (hostname.endsWith(".") && hostname.length > 1) {
+    hostname = hostname.slice(0, -1);
+  }
+  const ipVersion = isIP(hostname);
+  const host = ipVersion === 6 ? `[${hostname}]` : hostname;
+  return `${url.protocol}//${host}${port === "" ? "" : `:${port}`}${path}${query === "" ? "" : `?${query}`}`;
 }
 
 /** Exact-or-subdomain host match (legacy used substring matching). */

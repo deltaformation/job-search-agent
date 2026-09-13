@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JobDetailView } from "../../../../src/server/board";
 import CardDrawer from "../../../../components/board/CardDrawer";
@@ -130,6 +130,37 @@ describe("CardDrawer", () => {
     // The note body renders as text, never as markup.
     expect(screen.getByText("<b>call back</b>")).toBeInTheDocument();
     expect(container.querySelector("b")).toBeNull();
+  });
+
+  it("places identity and tabs in the header with status and actions beside the content", async () => {
+    renderDrawer();
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    // Fixed header order: section tabs precede the active panel in the page.
+    const tablist = screen.getByRole("tablist", { name: "Card sections" });
+    const panel = screen.getByRole("tabpanel");
+    expect(tablist.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Context sidebar: status rows keep the contiguous pipeline hook.
+    const status = screen.getByRole("region", { name: "Status" });
+    expect(status).toHaveTextContent("Status: TAILORED");
+    expect(status).toHaveTextContent("Scrape: Succeeded");
+    expect(status).toHaveTextContent("Tailoring: Pending");
+    // Context sidebar: actions keep their label and button bindings.
+    const actions = screen.getByRole("region", { name: "Card actions" });
+    expect(within(actions).getByLabelText("Move to")).toBeInTheDocument();
+    expect(within(actions).getByRole("button", { name: /^move$/i })).toBeInTheDocument();
+    expect(within(actions).getByRole("button", { name: /correct \/ reopen/i })).toBeInTheDocument();
+  });
+
+  it("resets section scroll to the top when switching tabs", async () => {
+    renderDrawer();
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    const main = document.querySelector(".workspace-main") as HTMLElement;
+    const center = document.querySelector(".workspace-center") as HTMLElement;
+    main.scrollTop = 500;
+    center.scrollTop = 500;
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Notes & Timeline" }), { button: 0, ctrlKey: false });
+    expect(main.scrollTop).toBe(0);
+    expect(center.scrollTop).toBe(0);
   });
 
   it("moves within the ordinary graph and opens dialogs for the rest", async () => {
@@ -302,6 +333,8 @@ describe("CardDrawer tailoring status", () => {
     vi.stubGlobal("fetch", fetchMock);
     const props = drawerProps();
     render(<CardDrawer {...props} />);
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    openResumesTab();
     expect(await screen.findByText(/tailoring failed/i)).toBeInTheDocument();
     expect(screen.getByText(/rate limit reached \(HTTP 429\)/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /retry tailoring/i }));
@@ -320,6 +353,8 @@ describe("CardDrawer tailoring status", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<CardDrawer {...drawerProps()} />);
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    openResumesTab();
     expect(await screen.findByText(/tailoring failed/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /retry tailoring/i }));
     expect(await screen.findByText(/extraction incomplete/i)).toBeInTheDocument();

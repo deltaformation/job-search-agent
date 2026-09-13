@@ -2,7 +2,7 @@
 
 ## Delivery model
 
-The rebuild has six sequential outcome milestones. Work orders inside a
+The rebuild has seven sequential outcome milestones. Work orders inside a
 milestone may run in parallel only when their file ownership and dependencies
 do not overlap. A milestone is complete only when its acceptance evidence is
 recorded in the pull request or commit; editing this document is not completion
@@ -16,6 +16,7 @@ evidence.
 | R3 | Persistent five-column manual Kanban | R1; integrates with R2 |
 | R4 | Truthful resume tailoring, artifacts, and approval | R2, R3 |
 | R5 | Import, hardening, and final legacy cutover | R4 |
+| R6 | Polished, accessible UI over the accepted product | R5 |
 
 ## R0 — Preservation and Nimbalyst exit
 
@@ -276,6 +277,42 @@ file dependency on Python, PostgreSQL, Docker, MCP, or Nimbalyst.
 - Board reset clears jobs and extractions without errors and leaves schema intact.
 - Repository scans confirm zero Python files, zero PostgreSQL configs, and zero running Docker dependencies.
 - `npm run dev` and `npm test` pass cleanly with zero dead-reference errors.
+
+## R6 — UI/UX design polish
+
+### Outcome
+
+The accepted product presents a precise, calm, dense-but-breathable interface:
+clear scan paths on every surface, a consistent spacing rhythm, one functional
+icon scale, and restrained motion that confirms state changes — with zero
+behavior change.
+
+### Scope
+
+- Implement `ui-ux-design-spec.md` §§1–6 across the board, job card, card
+  drawer, resume review, settings modal, and app header surfaces.
+- Spacing/layout pass for visibility: shared grids, tight card internals,
+  generous section separation, bounded viewports at 1280×800 through 4K.
+- Interaction pass: transform/opacity-only motion per the spec timing table,
+  focus management, keyboard paths for drag operations, live-region
+  announcements, and `prefers-reduced-motion` support.
+
+### Explicit non-goals
+
+- No behavior, route, API, or data-flow changes.
+- No color, font-family, or type-scale token changes.
+- No UI label renames: R5-C verifies labels verbatim.
+- No MVP scope expansion (no discovery, scheduling, cloud sync, email,
+  autofill, or new board columns).
+
+### Acceptance evidence
+
+- Every `ui-ux-design-spec.md` §6 checklist item is proven with the exact
+  verification run and result, including light/dark themes, 1280×800 and 4K
+  viewports, keyboard-only operation, reduced motion, and interruption safety.
+- The project's own tests for every touched area pass; no committed test is
+  narrowed, skipped, or rewritten to fit the change.
+- R5-C checklist steps still pass verbatim against the polished UI.
 
 ## Cross-milestone release rules
 

@@ -6,7 +6,7 @@ import RecentBatches from "@/components/RecentBatches";
 
 export default function IntakePage() {
   return (
-    <main className="mx-auto max-w-5xl px-4 sm:px-6 py-8 space-y-8">
+    <main id="main-content" tabIndex={-1} className="mx-auto max-w-5xl px-4 sm:px-6 py-8 space-y-8 scroll-mt-20 focus:outline-none">
       {/* Breadcrumb & Header */}
       <div className="border-b border-border/60 pb-5">
         <nav

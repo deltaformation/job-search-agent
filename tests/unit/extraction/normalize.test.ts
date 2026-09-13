@@ -142,7 +142,60 @@ describe("apply urls", () => {
     ).toBe("https://boards.test/jobs/1/apply");
     expect(resolveApplyUrl("javascript:alert(1)", "https://example.com/")).toBeNull();
     expect(resolveApplyUrl("mailto:a@b.c", "https://example.com/")).toBeNull();
+    expect(resolveApplyUrl("tel:1234567", "https://example.com/")).toBeNull();
     expect(resolveApplyUrl(null, "https://example.com/")).toBeNull();
     expect(resolveApplyUrl("", "https://example.com/")).toBeNull();
+    expect(resolveApplyUrl("   ", "https://example.com/")).toBeNull();
+  });
+
+  it("preserves trailing slash in pathname before query params (Kaseya fix)", () => {
+    const kaseyaUrl =
+      "https://www.kaseya.com/careers/jobs/id/6179651004/?gh_jid=6179651004";
+    expect(resolveApplyUrl(kaseyaUrl, kaseyaUrl)).toBe(kaseyaUrl);
+    expect(resolveApplyUrl("#app", kaseyaUrl)).toBe(kaseyaUrl);
+    expect(resolveApplyUrl("#apply", kaseyaUrl)).toBe(kaseyaUrl);
+    expect(resolveApplyUrl("#", kaseyaUrl)).toBe(kaseyaUrl);
+    expect(
+      resolveApplyUrl(
+        "/careers/jobs/id/6179651004/?gh_jid=6179651004#app",
+        kaseyaUrl,
+      ),
+    ).toBe(kaseyaUrl);
+  });
+
+  it("preserves trailing slash on relative and external apply URLs", () => {
+    expect(
+      resolveApplyUrl("/careers/x/apply/", "https://example.com/careers/x"),
+    ).toBe("https://example.com/careers/x/apply/");
+    expect(
+      resolveApplyUrl(
+        "https://boards.greenhouse.io/kaseya/jobs/6179651004/",
+        "https://example.com/posting",
+      ),
+    ).toBe("https://boards.greenhouse.io/kaseya/jobs/6179651004/");
+  });
+
+  it("strips tracking parameters while preserving query parameters and slashes", () => {
+    expect(
+      resolveApplyUrl(
+        "https://example.com/jobs/1/?gh_jid=123&utm_source=mailer&utm_campaign=daily&ref=jobboard",
+        "https://example.com/jobs/1/",
+      ),
+    ).toBe("https://example.com/jobs/1/?gh_jid=123");
+  });
+
+  it("rejects over-long targets and credentials", () => {
+    expect(
+      resolveApplyUrl(
+        `https://example.com/${"a".repeat(2050)}`,
+        "https://example.com/",
+      ),
+    ).toBeNull();
+    expect(
+      resolveApplyUrl(
+        "https://user:pass@example.com/apply",
+        "https://example.com/",
+      ),
+    ).toBeNull();
   });
 });

@@ -12,14 +12,7 @@ import { Button } from "@/components/ui/button";
 
 export default function HomePage() {
   return (
-    <main className="mx-auto max-w-5xl px-4 sm:px-6 py-10 space-y-8">
-      <a
-        href="#platform-status"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-4 focus:py-2 focus:text-foreground focus:ring-2 focus:ring-ring focus:shadow-md"
-      >
-        Skip to platform status
-      </a>
-
+    <main id="main-content" tabIndex={-1} className="mx-auto max-w-5xl px-4 sm:px-6 py-10 space-y-8 scroll-mt-20 focus:outline-none">
       <PlatformStatus />
 
       {/* Primary Navigation & Action Hub */}
@@ -40,7 +33,7 @@ export default function HomePage() {
             <CardTitle className="text-xl pt-2">
               <Link
                 href="/board"
-                className="hover:text-primary transition-colors underline underline-offset-4"
+                className="hover:text-primary transition-colors hover:underline underline-offset-4"
               >
                 Job board
               </Link>
@@ -78,7 +71,7 @@ export default function HomePage() {
             <CardTitle className="text-xl pt-2">
               <Link
                 href="/intake"
-                className="hover:text-primary transition-colors underline underline-offset-4"
+                className="hover:text-primary transition-colors hover:underline underline-offset-4"
               >
                 Add job URLs
               </Link>

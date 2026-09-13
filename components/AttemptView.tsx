@@ -244,7 +244,7 @@ export default function AttemptView({ workItemId }: { workItemId: string }) {
         {view.attempts.length === 0 ? (
           <p className="mt-4 text-xs text-muted-foreground">No worker attempts yet.</p>
         ) : (
-          <div className="mt-4 overflow-hidden rounded-lg border border-border/80">
+          <div className="mt-4 overflow-x-auto rounded-lg border border-border/80">
             <table className="w-full border-collapse text-left text-sm">
               <thead className="bg-muted/50 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/80">
                 <tr>
@@ -336,12 +336,13 @@ export default function AttemptView({ workItemId }: { workItemId: string }) {
           </div>
 
           {drawerOpen && (
-            <div id="paste-drawer" className="mt-4 space-y-3 pt-3 border-t border-amber-200/60 dark:border-amber-900/50">
+            <div id="paste-drawer" className="workspace-tab mt-4 scroll-mt-24 space-y-3 pt-3 border-t border-amber-200/60 dark:border-amber-900/50">
               <label htmlFor="paste-content" className="block text-xs font-semibold text-foreground">
                 Page HTML or visible text
               </label>
               <textarea
                 id="paste-content"
+                autoFocus
                 rows={8}
                 value={content}
                 onChange={(event) => setContent(event.target.value)}
@@ -361,7 +362,7 @@ export default function AttemptView({ workItemId }: { workItemId: string }) {
           )}
 
           {pasteNotice !== null && (
-            <p role="status" className="mt-3 text-xs font-semibold text-amber-900 dark:text-amber-300">
+            <p role="status" className="flash-enter mt-3 text-xs font-semibold text-amber-900 dark:text-amber-300">
               {pasteNotice}
             </p>
           )}

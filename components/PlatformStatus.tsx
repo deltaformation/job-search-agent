@@ -6,7 +6,7 @@ export default function PlatformStatus() {
     <section
       id="platform-status"
       aria-labelledby="platform-status-heading"
-      className="rounded-xl border border-border bg-card p-6 shadow-xs space-y-4"
+      className="rounded-xl border border-border bg-card p-6 shadow-xs space-y-4 scroll-mt-24"
     >
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="space-y-1">

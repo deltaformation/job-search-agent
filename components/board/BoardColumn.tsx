@@ -40,23 +40,23 @@ export default function BoardColumn({
   return (
     <section
       aria-labelledby={`column-heading-${status}`}
-      className={`flex w-80 shrink-0 flex-col rounded-xl border border-border/60 bg-muted/40 p-3 transition-colors duration-200 ${
+      className={`flex min-h-0 w-[280px] 2xl:w-[320px] shrink-0 flex-col rounded-xl border border-border/60 bg-muted/40 ${
         isOver ? "ring-2 ring-primary ring-offset-2 bg-muted/70" : ""
       }`}
     >
-      <div className="flex items-center justify-between px-1.5 pb-2.5 pt-1">
+      <div className="shrink-0 flex items-center justify-between border-b border-border/40 px-3 py-2.5">
         <h2
           id={`column-heading-${status}`}
           className="text-sm font-semibold tracking-tight text-foreground"
         >
           {PRETTY_STATUS[status]}{" "}
-          <span className="text-xs font-normal text-muted-foreground">
+          <span className="font-mono tabular-nums text-xs font-medium text-muted-foreground">
             ({cards.length} of {total})
           </span>
         </h2>
       </div>
 
-      <div ref={setNodeRef} className="min-h-32 flex-1">
+      <div ref={setNodeRef} className="board-column-scroll min-h-0 flex-1 overflow-y-auto p-2.5">
         <SortableContext
           items={cards.map((card) => card.id)}
           strategy={verticalListSortingStrategy}
@@ -81,7 +81,7 @@ export default function BoardColumn({
           type="button"
           onClick={() => onShowMore(status)}
           disabled={loadingMore}
-          className="mt-2.5 w-full rounded-md border border-input bg-background py-1.5 text-xs font-medium text-muted-foreground shadow-xs hover:bg-accent hover:text-accent-foreground disabled:opacity-50 cursor-pointer transition-colors"
+          className="shrink-0 w-full rounded-md border border-input bg-background py-1.5 text-xs font-medium text-muted-foreground shadow-xs hover:bg-accent hover:text-accent-foreground disabled:opacity-50 cursor-pointer transition-colors"
         >
           {loadingMore ? "Loading…" : `Show more (${total - cards.length} remaining)`}
         </button>

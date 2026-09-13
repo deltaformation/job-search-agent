@@ -54,8 +54,8 @@ export default function JobCard({ card, onOpen }: JobCardProps) {
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`group relative flex rounded-lg border border-border/80 bg-card text-card-foreground shadow-sm transition-[box-shadow,border-color] duration-200 hover:border-primary/40 hover:shadow-md ${
-        isDragging ? "opacity-50 ring-2 ring-primary ring-offset-2 z-50 shadow-lg" : ""
+      className={`group relative flex rounded-xl border border-border/80 bg-card text-card-foreground shadow-sm job-card transition-[transform,box-shadow,border-color] duration-150 hover:border-primary/40 hover:shadow-md ${
+        isDragging ? "job-card-dragging opacity-90 ring-2 ring-primary ring-offset-2 z-50 shadow-xl" : ""
       }`}
       aria-label={`${headline}, ${PRETTY_STATUS[card.status] ?? card.status}`}
     >
@@ -66,16 +66,16 @@ export default function JobCard({ card, onOpen }: JobCardProps) {
         {...listeners}
         aria-label={`Drag ${headline} to move it`}
         title="Drag to move (keyboard: Space, arrows, Space)"
-        className="flex w-7 cursor-grab items-center justify-center rounded-l-lg border-r border-border/40 bg-muted/20 text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground active:cursor-grabbing focus-visible:bg-muted focus-visible:text-foreground focus-visible:outline-none"
+        className="flex w-7 cursor-grab items-center justify-center rounded-l-xl border-r border-border/40 bg-muted/20 text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground active:cursor-grabbing focus-visible:bg-muted focus-visible:text-foreground focus-visible:outline-none"
       >
-        <GripVertical className="h-4 w-4" aria-hidden="true" />
+        <GripVertical className="size-4" aria-hidden="true" />
       </button>
 
       {/* Main Interactive Details Button */}
       <button
         type="button"
         onClick={() => onOpen(card.id)}
-        className="flex min-w-0 flex-1 flex-col gap-2 p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-r-lg cursor-pointer"
+        className="flex min-w-0 flex-1 flex-col gap-2 p-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-r-xl cursor-pointer"
         aria-label={`Open details for ${headline}`}
       >
         {/* Top Header: Company + External Link */}
@@ -94,54 +94,55 @@ export default function JobCard({ card, onOpen }: JobCardProps) {
         {/* Metadata Badges */}
         {hasMeta && (
           <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            {salaryBadge !== null && (
+              <Badge variant="secondary" className="text-[11px] px-2 py-0.5 font-semibold gap-1">
+                <Banknote className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="font-mono tabular-nums break-words">{salaryBadge}</span>
+              </Badge>
+            )}
             {card.location && (
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <MapPin className="h-3 w-3 shrink-0" />
-                <span className="truncate max-w-[120px]">{card.location}</span>
+                <MapPin className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="break-words">{card.location}</span>
               </span>
             )}
             {card.arrangement && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal">
+              <Badge variant="outline" className="text-[11px] px-1.5 py-0 h-4 font-normal">
                 {card.arrangement}
               </Badge>
             )}
-            {salaryBadge !== null && (
-              <Badge variant="secondary" className="text-[11px] px-2 py-0.5 font-semibold gap-1">
-                <Banknote className="h-3 w-3 shrink-0" aria-hidden="true" />
-                <span className="truncate max-w-[180px]">{salaryBadge}</span>
-              </Badge>
-            )}
+
           </div>
         )}
 
         {/* Resume & Tailoring Status */}
-        <div className="mt-1 flex flex-wrap items-center gap-1.5 pt-1 border-t border-border/40">
+        <div className="mt-3 flex flex-wrap items-center gap-2 pt-2.5 border-t border-border/40">
           {card.tailoringState === "RUNNING" && (
             <Badge variant="warning" className="gap-1 text-[11px] py-0.5 font-medium">
-              <Sparkles className="h-3 w-3 animate-spin" aria-hidden="true" />
+              <Sparkles className="size-3.5 animate-spin" aria-hidden="true" />
               <span>Tailoring in progress…</span>
             </Badge>
           )}
           {(card.tailoringState === "FAILED" || card.tailoringState === "BLOCKED") && (
             <Badge variant="destructive" className="gap-1 text-[11px] py-0.5 font-medium">
-              <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+              <AlertTriangle className="size-3.5" aria-hidden="true" />
               <span>Tailoring failed (open to retry)</span>
             </Badge>
           )}
           {card.resume !== null ? (
             card.resume.reviewState === "AWAITING_REVIEW" ? (
               <Badge variant="warning" className="gap-1 text-[11px] py-0.5 font-medium">
-                <Sparkles className="h-3 w-3" />
+                <Sparkles className="size-3.5" aria-hidden="true" />
                 <span>Resume v{card.resume.version}: Awaiting review</span>
               </Badge>
             ) : card.resume.reviewState === "APPROVED" ? (
               <Badge variant="success" className="gap-1 text-[11px] py-0.5 font-medium">
-                <CheckCircle2 className="h-3 w-3" />
+                <CheckCircle2 className="size-3.5" aria-hidden="true" />
                 <span>Tailored (v{card.resume.version})</span>
               </Badge>
             ) : card.resume.reviewState === "REVISION_REQUESTED" ? (
               <Badge variant="destructive" className="gap-1 text-[11px] py-0.5 font-medium">
-                <AlertTriangle className="h-3 w-3" />
+                <AlertTriangle className="size-3.5" aria-hidden="true" />
                 <span>Revision Requested (v{card.resume.version})</span>
               </Badge>
             ) : (
@@ -161,7 +162,7 @@ export default function JobCard({ card, onOpen }: JobCardProps) {
             card.tailoringState !== "FAILED" &&
             card.tailoringState !== "BLOCKED" &&
             card.resume === null && (
-              <Badge variant="outline" className="text-[10px] py-0">
+              <Badge variant="outline" className="text-[11px] py-0">
                 Tailoring: {pretty(card.tailoringState)}
               </Badge>
             )}
@@ -172,8 +173,8 @@ export default function JobCard({ card, onOpen }: JobCardProps) {
           <div className="flex items-center justify-between pt-1 text-xs text-muted-foreground">
             {card.notesCount > 0 ? (
               <span className="inline-flex items-center gap-1 text-[11px]">
-                <MessageSquare className="h-3 w-3" />
-                <span>
+                <MessageSquare className="size-3.5" aria-hidden="true" />
+                <span className="font-mono tabular-nums">
                   {card.notesCount} {card.notesCount === 1 ? "note" : "notes"}
                 </span>
               </span>
@@ -193,7 +194,7 @@ export default function JobCard({ card, onOpen }: JobCardProps) {
         <a href={card.sourceUrl} target="_blank" rel="noreferrer"
           aria-label={`Open original job posting for ${headline}`}
           className="absolute right-2 top-2 rounded p-1 text-muted-foreground hover:bg-muted">
-          <ExternalLink className="h-3 w-3" />
+          <ExternalLink className="size-3.5" aria-hidden="true" />
         </a>
       )}
     </li>

@@ -4,10 +4,10 @@ Last updated: 2026-09-12
 
 ## Current position
 
-- Current milestone: **R5 — Settings UI, backup/restore, and legacy cutover** (R1, R2, R3, and R4 completed and accepted; R5-A accepted)
-- Product runtime: **standalone Node.js/Next.js/SQLite** — R5-B removed the last Python, PostgreSQL, and Docker files (deleted files staged, needs review)
+- Current milestone: **R5 — Settings UI, backup/restore, and legacy cutover** (R1, R2, R3, R4, R5-A, and R5-B completed and accepted)
+- Product runtime: **standalone Node.js/Next.js/SQLite** — R5-B removed the last Python, PostgreSQL, and Docker files
 - Target runtime: **Milestones 1–4 plus R5-A complete on `rebuild/r1-platform`** (supervisor, Next.js, worker, SQLite, security layer, URL intake, Playwright fetcher, extraction adapters, queue dispatcher, attempt visibility UI, workflow state machine, board projections, Kanban UI, candidate snapshots, parity fixtures, truthfulness core, view models, renderers, agent adapter, tailoring orchestration, review/approval gate, salary fallback, and settings/backup/restore/reset)
-- Next implementation work: **R5-C — User-Led Manual Acceptance Walkthrough** after R5-B review.
+- Next implementation work: **R5-C — User-Led Manual Acceptance Walkthrough** (awaiting user execution) and **R6-A — UI/UX design polish pass** (`ready`; behavior-preserving, order-independent vs R5-C).
 
 Target commands (`npm run dev`, `npm test`, `npm run build`, `npm run start`)
 are the supported product runtime. SQLite migrations execute automatically on
@@ -41,15 +41,17 @@ startup. PostgreSQL data migration was dropped per user decision (see
 | R4-F Resume review and approval UI/service | accepted | `r4f-handoff.md`; side-by-side review, mandatory-note revision loop, hash-rechecking approval to TAILORED, 60 new/affected tests green, tsc/eslint clean on Node 24 |
 | R4-G Salary fallback & dual-model resilience | accepted | Commit `658d4f9`; salary sidecar, compensation highlights (0004), dual-model tailoring; R4 accepted |
 | R5-A Settings and Data Management UI | accepted | Commit `03e9d39`; SettingsModal, backup/restore/reset/ai-test/resync routes, tar engine; backup+settings suites re-verified green 2026-09-12 |
-| R5-B Final Legacy Removal and Clean Cutover | needs review | 143 staged deletions (`services/`, `db/`, scripts/tests `.py`, venv, compose); `registerHooks` fix; README rewrite; typecheck/lint clean, 779 unit green, worker boot proven; user must confirm `npm run dev` serves (web bind sandbox-blocked here) |
-| R5-C User-Led Manual Acceptance Walkthrough | ready | 8-step checklist in `agent-work-orders.md`; follows R5-B review |
+| R5-B Final Legacy Removal and Clean Cutover | accepted | Commit `ca8d50d` + PROJECT.md sign-off; 143 deletions, `registerHooks` fix, README rewrite; typecheck/lint clean, 779 unit green, worker boot proven; serve check covered by R5-C prereq |
+| R5-C User-Led Manual Acceptance Walkthrough | needs review | Checklist `r5-c-user-acceptance-checklist.md` consolidated and corrected against implementation 2026-09-12; awaiting user execution and pass/fail result |
+| R6-A UI/UX design polish pass | ready | `ui-ux-design-spec.md` consolidated 2026-09-12; owns presentational implementation only, no behavior/token/label changes |
 
 Allowed status values are `ready`, `in progress`, `needs review`, `blocked by
 dependency`, and `accepted`. Avoid percentages: evidence and remaining gates are
 more informative.
 
-Note: no R5-D work order is defined — the parallelism guide names it
-("R5-D is always last") but `agent-work-orders.md` ends at R5-C.
+Historical note: early plans named the final cutover "R5-D"; that role is
+R5-B (accepted), the label is retired, and `agent-work-orders.md` ends at
+R6-A.
 
 ## Baseline facts
 

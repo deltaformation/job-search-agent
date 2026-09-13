@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -74,7 +74,7 @@ function RunElapsedClock() {
     return () => clearInterval(timer);
   }, []);
   const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000));
-  return <span>Tailoring in progress ({elapsed}s elapsed)</span>;
+  return <span className="font-mono tabular-nums">Tailoring in progress ({elapsed}s elapsed)</span>;
 }
 
 interface CardDrawerProps {
@@ -105,6 +105,25 @@ export default function CardDrawer({
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+  const centerScrollRef = useRef<HTMLDivElement>(null);
+
+  function resetSectionScroll(): void {
+    // Section switches start at the top: without a reset, newly shown
+    // content inherits the previous scroll offset and opens mid-section.
+    // Instant (not smooth): tab swaps are state changes, not navigation.
+    if (mainScrollRef.current !== null) {
+      mainScrollRef.current.scrollTop = 0;
+    }
+    if (centerScrollRef.current !== null) {
+      centerScrollRef.current.scrollTop = 0;
+    }
+  }
+
+  function onTabChange(value: string): void {
+    setActiveTab(value);
+    resetSectionScroll();
+  }
 
   const refreshDetail = useCallback(async (): Promise<void> => {
     try {
@@ -226,7 +245,7 @@ export default function CardDrawer({
       {/* Job Facts */}
       <section aria-labelledby="drawer-facts" className="rounded-lg border border-border/80 bg-card p-4 space-y-3">
         <h3 id="drawer-facts" className="font-semibold text-sm flex items-center gap-2">
-          <Briefcase className="h-4 w-4 text-primary" />
+          <Briefcase className="size-4 text-primary" aria-hidden="true" />
           <span>Facts</span>
         </h3>
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -236,13 +255,13 @@ export default function CardDrawer({
           </div>
           <div className="rounded-md border border-border/60 bg-muted/20 p-2.5">
             <dt className="font-semibold text-muted-foreground">Salary / Compensation</dt>
-            <dd className="mt-1 font-medium text-foreground">
+            <dd className="mt-1 font-mono tabular-nums font-medium text-foreground">
               {formatSalaryRange(v.job) ?? "Unknown"}
             </dd>
           </div>
           <div className="rounded-md border border-border/60 bg-muted/20 p-2.5">
             <dt className="font-semibold text-muted-foreground">Date Posted</dt>
-            <dd className="mt-1 font-medium text-foreground">{v.job.postedAt ?? "Unknown"}</dd>
+            <dd className="mt-1 font-mono tabular-nums font-medium text-foreground">{v.job.postedAt ?? "Unknown"}</dd>
           </div>
           <div className="rounded-md border border-border/60 bg-muted/20 p-2.5">
             <dt className="font-semibold text-muted-foreground">Pipeline Stage</dt>
@@ -250,7 +269,7 @@ export default function CardDrawer({
           </div>
           <div className="sm:col-span-2 rounded-md border border-border/60 bg-muted/20 p-3">
             <dt className="font-semibold text-muted-foreground mb-1">Job description</dt>
-            <dd className="whitespace-pre-wrap font-sans text-base text-foreground/90 leading-relaxed">
+            <dd className="max-w-[75ch] whitespace-pre-wrap font-sans text-sm text-foreground/90 leading-relaxed">
               {v.job.descriptionText ?? "No description extracted."}
             </dd>
           </div>
@@ -261,7 +280,7 @@ export default function CardDrawer({
       {v.extraction !== null && v.extraction.missingFields.length > 0 && (
         <div className="rounded-lg border border-amber-200/60 bg-amber-50/50 dark:bg-amber-950/20 p-3.5 text-xs text-amber-900 dark:text-amber-300">
           <span className="font-semibold">Missing from posting:</span>{" "}
-          <span className="font-mono">{v.extraction.missingFields.join(", ")}</span>
+          <span className="font-mono tabular-nums">{v.extraction.missingFields.join(", ")}</span>
         </div>
       )}
 
@@ -269,7 +288,7 @@ export default function CardDrawer({
       {v.compensationHighlights.length > 0 && (
         <section aria-labelledby="drawer-comp" className="rounded-lg border border-border/80 bg-card p-4 space-y-2">
           <h3 id="drawer-comp" className="font-semibold text-sm flex items-center gap-2">
-            <Banknote className="h-4 w-4 text-primary" />
+            <Banknote className="size-4 text-primary" aria-hidden="true" />
             <span>Compensation highlights</span>
           </h3>
           <ul className="flex flex-wrap gap-1.5">
@@ -291,7 +310,7 @@ export default function CardDrawer({
       {v.topKeywords.length > 0 && (
         <section aria-labelledby="drawer-keywords" className="rounded-lg border border-border/80 bg-card p-4 space-y-3">
           <h3 id="drawer-keywords" className="font-semibold text-sm flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
+            <Sparkles className="size-4 text-primary" aria-hidden="true" />
             <span>Top 5 ATS keywords</span>
           </h3>
           {v.topKeywords.some((entry) => entry.evidenced) && (
@@ -337,7 +356,7 @@ export default function CardDrawer({
       {v.source !== null && (
         <section aria-labelledby="drawer-source" className="rounded-lg border border-border/80 bg-card p-4 space-y-2">
           <h3 id="drawer-source" className="font-semibold text-sm flex items-center gap-2">
-            <ExternalLink className="h-4 w-4 text-primary" />
+            <ExternalLink className="size-4 text-primary" aria-hidden="true" />
             <span>Source URLs</span>
           </h3>
           <ul className="text-xs space-y-1.5">
@@ -359,7 +378,7 @@ export default function CardDrawer({
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 font-semibold text-primary underline underline-offset-2 truncate max-w-[340px]"
                     >
-                      Open original job posting <ExternalLink className="h-3 w-3 shrink-0" />
+                      Open original job posting <ExternalLink className="size-3.5 shrink-0" aria-hidden="true" />
                     </a>
                   </li>
                 ),
@@ -376,20 +395,20 @@ export default function CardDrawer({
       return null;
     }
     return (
-      <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm space-y-2">
+      <div role="alert" className="workspace-tab rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm space-y-2">
         <p className="flex items-center gap-2 font-semibold text-destructive">
-          <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+          <AlertTriangle className="size-4" aria-hidden="true" />
           <span>Tailoring failed{v.job.tailoringReasonCode !== null ? ` (${pretty(v.job.tailoringReasonCode)})` : ""}</span>
         </p>
         <p className="text-foreground/90">{tailoringReasonCopy(v.job.tailoringReasonCode)}</p>
         {v.tailoringAttempt?.errorDetail && (
-          <p className="rounded-md border border-border/60 bg-background p-2 text-xs font-mono break-words">
+          <p className="rounded-md border border-border/60 bg-background p-2 text-xs font-mono tabular-nums break-words">
             {v.tailoringAttempt.errorDetail}
           </p>
         )}
         <div className="flex items-center gap-2 pt-1">
           <Button type="button" size="sm" onClick={() => void onRetryTailoring()} disabled={retrying}>
-            <RotateCcw className={`h-3.5 w-3.5 mr-1 ${retrying ? "animate-spin" : ""}`} aria-hidden="true" />
+            <RotateCcw className={`size-3.5 mr-1 ${retrying ? "animate-spin" : ""}`} aria-hidden="true" />
             {retrying ? "Restarting…" : "Retry tailoring"}
           </Button>
         </div>
@@ -401,9 +420,9 @@ export default function CardDrawer({
     const state = v.job.tailoringState;
     if (state === "RUNNING") {
       return (
-        <div className="rounded-lg border border-border/80 bg-card p-4 text-sm" role="status" aria-live="polite">
+        <div className="workspace-tab rounded-lg border border-border/80 bg-card p-4 text-sm" role="status" aria-live="polite">
           <p className="flex items-center gap-2 font-semibold">
-            <Sparkles className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />
+            <Sparkles className="size-4 animate-spin text-primary" aria-hidden="true" />
             <RunElapsedClock />
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -415,9 +434,9 @@ export default function CardDrawer({
     }
     if (state === "PENDING" && v.resumes.length === 0) {
       return (
-        <div className="rounded-lg border border-border/80 bg-card p-4 text-sm" role="status">
+        <div className="workspace-tab rounded-lg border border-border/80 bg-card p-4 text-sm" role="status">
           <p className="flex items-center gap-2 font-semibold">
-            <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <Clock className="size-4 text-muted-foreground" aria-hidden="true" />
             <span>Queued for tailoring</span>
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -432,9 +451,9 @@ export default function CardDrawer({
   const renderResumes = (v: JobDetailView) => (
     <section aria-labelledby="drawer-resumes" className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 id="drawer-resumes" className="font-bold text-base flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <span>Resumes ({v.resumes.length})</span>
+        <h3 id="drawer-resumes" className="font-semibold tracking-tight text-base flex items-center gap-2">
+          <Sparkles className="size-4 text-primary" aria-hidden="true" />
+          <span>Resumes (<span className="font-mono tabular-nums">{v.resumes.length}</span>)</span>
         </h3>
         {v.resumes.length > 0 && (
           <Badge variant="outline" className="text-xs">
@@ -442,6 +461,8 @@ export default function CardDrawer({
           </Badge>
         )}
       </div>
+
+      {renderTailoringAlert(v)}
 
       {renderTailoringProgress(v)}
 
@@ -457,7 +478,7 @@ export default function CardDrawer({
         return <div className="space-y-4">
           <label className="flex items-center gap-3 text-sm font-medium">
             Resume version
-            <select value={resume.id} onChange={(e) => { setSelectedVersion(e.target.value); setMatchSummary("Loading requirement matches…"); }}
+            <select value={resume.id} onChange={(e) => { setSelectedVersion(e.target.value); setMatchSummary("Loading requirement matches…"); resetSectionScroll(); }}
               className="rounded-lg border border-input bg-background p-2">
               {v.resumes.map((r) => <option key={r.id} value={r.id}>v{r.version} · {pretty(r.reviewState)}{r.id === v.job.activeResumeVersionId ? " · active" : ""}</option>)}
             </select>
@@ -476,7 +497,7 @@ export default function CardDrawer({
       {v.application !== null && (
         <section aria-labelledby="drawer-application" className="rounded-lg border border-emerald-300/60 bg-emerald-50/50 dark:bg-emerald-950/20 p-4 space-y-1">
           <h3 id="drawer-application" className="font-semibold text-sm text-emerald-900 dark:text-emerald-300 flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4" />
+            <CheckCircle2 className="size-4" aria-hidden="true" />
             <span>Application Recorded</span>
           </h3>
           <p className="text-xs text-foreground/80">
@@ -490,8 +511,8 @@ export default function CardDrawer({
 
       {/* Notes Section */}
       <section aria-labelledby="drawer-notes" className="rounded-lg border border-border/80 bg-card p-4 space-y-3">
-        <h3 id="drawer-notes" className="font-bold text-base flex items-center gap-2">
-          <MessageSquare className="h-4 w-4 text-primary" />
+        <h3 id="drawer-notes" className="font-semibold tracking-tight text-base flex items-center gap-2">
+          <MessageSquare className="size-4 text-primary" aria-hidden="true" />
           <span>Notes ({v.notes.length})</span>
         </h3>
 
@@ -503,7 +524,7 @@ export default function CardDrawer({
           {v.notes.map((note) => (
             <li key={note.id} className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-1">
               <p className="whitespace-pre-wrap font-sans text-foreground">{note.body}</p>
-              <span className="block text-[11px] text-muted-foreground">{note.createdAt}</span>
+              <span className="block font-mono tabular-nums text-[11px] text-muted-foreground">{note.createdAt}</span>
             </li>
           ))}
         </ul>
@@ -522,7 +543,7 @@ export default function CardDrawer({
       {/* History Timeline */}
       <section aria-labelledby="drawer-history" className="rounded-lg border border-border/80 bg-card p-4 space-y-3">
         <h3 id="drawer-history" className="font-semibold text-sm flex items-center gap-2">
-          <History className="h-4 w-4 text-muted-foreground" />
+          <History className="size-4 text-muted-foreground" aria-hidden="true" />
           <span>History ({v.history.length})</span>
         </h3>
 
@@ -535,7 +556,7 @@ export default function CardDrawer({
             <li key={event.id} className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-1">
               <div className="flex items-center justify-between font-semibold">
                 <span>{(event.fromStatus ?? "—") + " → " + event.toStatus}</span>
-                <span className="text-[11px] text-muted-foreground">{event.createdAt}</span>
+                <span className="font-mono tabular-nums text-[11px] text-muted-foreground">{event.createdAt}</span>
               </div>
               <p className="text-muted-foreground">
                 {event.reason ?? "move"} · by {event.actor}
@@ -563,7 +584,7 @@ export default function CardDrawer({
       {/* Fetch Attempts */}
       <section aria-labelledby="drawer-attempts" className="rounded-lg border border-border/80 bg-card p-4 space-y-2">
         <h3 id="drawer-attempts" className="font-semibold text-sm flex items-center gap-2">
-          <Clock className="h-4 w-4 text-muted-foreground" />
+          <Clock className="size-4 text-muted-foreground" aria-hidden="true" />
           <span>Fetch attempts ({v.attempts.length})</span>
         </h3>
 
@@ -576,7 +597,7 @@ export default function CardDrawer({
             <li key={attempt.id} className="rounded border border-border/60 bg-muted/10 p-2 space-y-0.5">
               <div className="flex items-center justify-between">
                 <span className="font-semibold">{attempt.outcome}</span>
-                <span className="text-muted-foreground">{attempt.startedAt}</span>
+                <span className="font-mono tabular-nums text-muted-foreground">{attempt.startedAt}</span>
               </div>
               {attempt.reasonCode !== null && (
                 <span className="block text-muted-foreground">Reason: {attempt.reasonCode}</span>
@@ -597,7 +618,7 @@ export default function CardDrawer({
                   <a href={`/api/evidence/${artifact.id}`} className="text-primary underline">
                     {artifact.kind} evidence
                   </a>{" "}
-                  <span className="text-muted-foreground">({formatBytes(artifact.byteSize)})</span>
+                  <span className="font-mono tabular-nums text-muted-foreground">({formatBytes(artifact.byteSize)})</span>
                 </li>
               ))}
             </ul>
@@ -619,14 +640,21 @@ export default function CardDrawer({
 
   return (
     <Dialog labelledBy="card-drawer-heading" onClose={onClose} position="workspace">
-      <button type="button" aria-label="Close" onClick={onClose} className="mb-5 flex items-center gap-2 rounded-md px-2 py-1 text-sm font-medium hover:bg-muted">
-        <ArrowLeft className="h-4 w-4" /> Back to Board
+      <button type="button" aria-label="Close" onClick={onClose} className="mb-5 shrink-0 self-start flex items-center gap-2 rounded-md px-2 py-1 text-sm font-medium hover:bg-muted">
+        <ArrowLeft className="size-4" aria-hidden="true" /> Back to Board
       </button>
       {view === null && <h2 id="card-drawer-heading" className="sr-only">Job workspace</h2>}
       {view === null && error === null && (
-        <div className="flex items-center gap-2 py-12 text-sm text-muted-foreground justify-center">
-          <Sparkles className="h-5 w-5 animate-spin text-primary" />
-          <span>Loading card details…</span>
+        <div role="status" aria-label="Loading card details" className="min-h-[400px] space-y-4 py-4">
+          <span className="sr-only">Loading card details…</span>
+          <div className="skeleton h-8 w-2/3 rounded-md" aria-hidden="true" />
+          <div className="skeleton h-4 w-1/3 rounded-md" aria-hidden="true" />
+          <div className="flex gap-1.5" aria-hidden="true">
+            <div className="skeleton h-8 w-36 rounded-md" />
+            <div className="skeleton h-8 w-44 rounded-md" />
+            <div className="skeleton h-8 w-32 rounded-md" />
+          </div>
+          <div className="skeleton h-48 rounded-lg" aria-hidden="true" />
         </div>
       )}
 
@@ -637,100 +665,125 @@ export default function CardDrawer({
       )}
 
       {view !== null && (
-        <div className="flex flex-col space-y-6">
-          {/* Top Header & Breadcrumb */}
-          <div className="border-b border-border/70 pb-4">
-
-            <h2 id="card-drawer-heading" className="text-2xl font-bold tracking-tight text-foreground">
-              {view.job.title ?? "Untitled posting"}
-            </h2>
+        <Tabs
+          value={activeTab ?? (view.resumes.length > 0 ? "resumes" : "overview")}
+          onValueChange={onTabChange}
+          className="flex min-h-0 flex-1 flex-col gap-6"
+        >
+          {/* Page header: identity + section navigation. Fixed; never scrolls,
+              so the tabs stay reachable on every viewport. Status and actions
+              live in the context sidebar beside the content they govern. */}
+          <div className="shrink-0 border-b border-border/70 pb-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 id="card-drawer-heading" className="line-clamp-2 text-2xl font-bold tracking-tight text-foreground">
+                {view.job.title ?? "Untitled posting"}
+              </h2>
+              <Badge variant="outline" className="font-mono tabular-nums text-[11px]">
+                {view.job.status}
+              </Badge>
+            </div>
 
             <p className="mt-1 text-sm font-medium text-muted-foreground">
               {[view.job.company, view.job.location].filter((part) => part !== null && part !== "").join(" · ") ||
                 "Unknown employer"}
             </p>
 
-            {/* Semantic status line required by tests */}
-            <p className="mt-2 text-xs text-muted-foreground">
-              Status: {view.job.status} · Scrape: {pretty(view.job.scrapeState)}
-              {view.job.scrapeReasonCode !== null ? ` (${pretty(view.job.scrapeReasonCode)})` : ""} ·
-              Tailoring: {pretty(view.job.tailoringState)}
-            </p>
-
-            {/* Move & Correct Toolbar */}
-            <div className="mt-3 flex flex-wrap items-end gap-3 rounded-lg border border-border/60 bg-muted/20 p-3">
-              {ORDINARY_TARGETS[view.job.status].length > 0 && (
-                <div className="flex items-end gap-2">
-                  <div>
-                    <label htmlFor="drawer-move-to" className="block text-xs font-semibold text-muted-foreground mb-1">
-                      Move to
-                    </label>
-                    <select
-                      id="drawer-move-to"
-                      value={moveTo}
-                      onChange={(event) => setMoveTo(event.target.value as BoardStatus | "")}
-                      className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
-                    >
-                      <option value="">Select…</option>
-                      {ORDINARY_TARGETS[view.job.status].map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => void onMoveSubmit(view)}
-                    disabled={moveTo === ""}
-                    className="h-8 font-semibold text-xs"
-                  >
-                    Move
-                  </Button>
-                </div>
-              )}
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => { setActiveTab("notes"); onCorrect(asCard(view)); }}
-                className="h-8 font-medium text-xs"
-              >
-                Correct / reopen
-              </Button>
-            </div>
-
-            {actionError !== null && (
-              <p role="alert" className="mt-2 text-xs font-semibold text-destructive">
-                {actionError}
-              </p>
-            )}
-            {retryNotice !== null && (
-              <p className="mt-2 text-xs text-muted-foreground">{retryNotice}</p>
-            )}
+            <TabsList aria-label="Card sections" className="mt-4 flex h-auto w-full flex-wrap justify-start gap-1 p-1">
+              <TabsTrigger value="resumes">Tailoring & Resumes</TabsTrigger>
+              <TabsTrigger value="overview">Job Description & Overview</TabsTrigger>
+              <TabsTrigger value="notes">Notes & Timeline</TabsTrigger>
+            </TabsList>
           </div>
 
-          {renderTailoringAlert(view)}
-
-          <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.85fr)_minmax(280px,1fr)]">
-            <Tabs value={activeTab ?? (view.resumes.length > 0 ? "resumes" : "overview")} onValueChange={setActiveTab} className="min-w-0">
-              <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 p-1">
-                <TabsTrigger value="resumes">Tailoring & Resumes</TabsTrigger>
-                <TabsTrigger value="overview">Job Description & Overview</TabsTrigger>
-                <TabsTrigger value="notes">Notes & Timeline</TabsTrigger>
-              </TabsList>
-              <TabsContent value="resumes" className="workspace-tab mt-5">{renderResumes(view)}</TabsContent>
-              <TabsContent value="overview" className="workspace-tab mt-5">{renderOverview(view)}</TabsContent>
-              <TabsContent value="notes" className="workspace-tab mt-5">{renderNotesAndHistory(view)}</TabsContent>
-            </Tabs>
-            <aside aria-label="Job context" className="space-y-4 lg:sticky lg:top-6">
+          <div ref={centerScrollRef} className="workspace-center grid min-h-0 flex-1 grid-cols-1 items-start gap-6 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
+            <div ref={mainScrollRef} className="workspace-main min-w-0 lg:h-full lg:overflow-y-auto lg:pr-2">
+              <TabsContent value="resumes" className="workspace-tab min-h-[400px] mt-0">{renderResumes(view)}</TabsContent>
+              <TabsContent value="overview" className="workspace-tab min-h-[400px] mt-0">{renderOverview(view)}</TabsContent>
+              <TabsContent value="notes" className="workspace-tab min-h-[400px] mt-0">{renderNotesAndHistory(view)}</TabsContent>
+            </div>
+            {/* Two-pane scroll is intentional: five context cards (~800px) cannot
+                fit a ~500px drawer viewport, and the grid clips overflow, so
+                the aside keeps a bounded inner scroll to keep every card —
+                including Apply & Log — reachable. */}
+            <aside aria-label="Job context" className="workspace-context min-w-0 space-y-4 self-start lg:max-h-full lg:overflow-y-auto">
+              <section aria-labelledby="drawer-status" className="rounded-xl border bg-card p-5">
+                <h3 id="drawer-status" className="mb-3 font-semibold">Status</h3>
+                <ul className="space-y-2 text-sm">
+                  <li className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">Status:</span>{" "}
+                    <span className="font-mono tabular-nums text-xs font-semibold">{view.job.status}</span>
+                  </li>
+                  <li className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">Scrape:</span>{" "}
+                    <span className="text-right text-xs font-medium">
+                      {pretty(view.job.scrapeState)}
+                      {view.job.scrapeReasonCode !== null ? ` (${pretty(view.job.scrapeReasonCode)})` : ""}
+                    </span>
+                  </li>
+                  <li className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">Tailoring:</span>{" "}
+                    <span className="text-right text-xs font-medium">{pretty(view.job.tailoringState)}</span>
+                  </li>
+                </ul>
+                {retryNotice !== null && (
+                  <p className="flash-enter mt-3 border-t border-border/40 pt-2 text-xs text-muted-foreground">{retryNotice}</p>
+                )}
+              </section>
+              <section aria-labelledby="drawer-actions" className="rounded-xl border bg-card p-5">
+                <h3 id="drawer-actions" className="mb-3 font-semibold">Card actions</h3>
+                <div className="space-y-3">
+                  {ORDINARY_TARGETS[view.job.status].length > 0 && (
+                    <div className="space-y-2">
+                      <div>
+                        <label htmlFor="drawer-move-to" className="mb-1 block text-xs font-semibold text-muted-foreground">
+                          Move to
+                        </label>
+                        <select
+                          id="drawer-move-to"
+                          value={moveTo}
+                          onChange={(event) => setMoveTo(event.target.value as BoardStatus | "")}
+                          className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
+                        >
+                          <option value="">Select…</option>
+                          {ORDINARY_TARGETS[view.job.status].map((status) => (
+                            <option key={status} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void onMoveSubmit(view)}
+                        disabled={moveTo === ""}
+                        className="h-8 w-full text-xs font-semibold"
+                      >
+                        Move
+                      </Button>
+                    </div>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setActiveTab("notes"); onCorrect(asCard(view)); }}
+                    className="h-8 w-full text-xs font-medium"
+                  >
+                    Correct / reopen
+                  </Button>
+                  {actionError !== null && (
+                    <p role="alert" className="text-xs font-semibold text-destructive">
+                      {actionError}
+                    </p>
+                  )}
+                </div>
+              </section>
               <section className="rounded-xl border bg-card p-5">
                 <h3 className="mb-4 font-semibold">Quick facts</h3>
                 <dl className="space-y-3 text-sm">
                   {[["Arrangement", view.job.arrangement], ["Salary", view.job.salaryText], ["Posted", view.job.postedAt]].map(([label, value]) => (
-                    <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 break-words">{value ?? "Unknown"}</dd></div>
+                    <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className={`mt-1 break-words ${label === "Salary" || label === "Posted" ? "font-mono tabular-nums" : ""}`}>{value ?? "Unknown"}</dd></div>
                   ))}
                   {view.intake && <div><dt className="text-xs text-muted-foreground">Batch origin</dt><dd><a className="underline" href={`/intake/batches/${view.intake.batchId}`}>Intake line {view.intake.lineNumber}</a></dd></div>}
                 </dl>
@@ -749,7 +802,7 @@ export default function CardDrawer({
               </section>
             </aside>
           </div>
-        </div>
+        </Tabs>
       )}
     </Dialog>
   );

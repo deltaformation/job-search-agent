@@ -44,7 +44,7 @@ export default function AddNoteForm({ jobId, onSaved }: AddNoteFormProps) {
         value={body}
         maxLength={4000}
         onChange={(event) => setBody(event.target.value)}
-        className="mt-1 w-full border p-2"
+        className="mt-1 w-full resize-y max-h-60 border p-2"
       />
       {error !== null && (
         <p role="alert" className="mt-1 font-semibold">

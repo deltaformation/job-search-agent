@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Settings as SettingsIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { apiGet, apiPost, errorMessage } from "../api";
 
@@ -69,8 +70,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section aria-label={title} className="space-y-2 rounded-lg border border-border p-3">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+    <section aria-label={title} className="space-y-3 rounded-lg border border-border p-4">
+      <h3 className="text-base font-semibold tracking-tight text-muted-foreground">
         {title}
       </h3>
       {children}
@@ -95,6 +96,16 @@ export default function SettingsModal({
   const [resetArmed, setResetArmed] = useState(false);
   const [resetConfirm, setResetConfirm] = useState("");
   const [dataSwapped, setDataSwapped] = useState(false);
+  const sectionScrollRef = useRef<HTMLDivElement>(null);
+
+  function onSectionChange(): void {
+    // Section switches start at the top: without a reset, the newly
+    // shown panel inherits the previous scroll offset and opens
+    // mid-section. Instant (not smooth): tab swaps are state changes.
+    if (sectionScrollRef.current !== null) {
+      sectionScrollRef.current.scrollTop = 0;
+    }
+  }
 
   async function refresh(): Promise<void> {
     setLoadError(null);
@@ -267,10 +278,10 @@ export default function SettingsModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="settings-panel flex max-h-[90dvh] flex-col overflow-hidden sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <SettingsIcon className="h-5 w-5 text-primary" aria-hidden="true" />
+            <SettingsIcon className="size-5 text-primary" aria-hidden="true" />
             Settings & Data Management
           </DialogTitle>
           <DialogDescription>
@@ -307,7 +318,14 @@ export default function SettingsModal({
           </div>
         )}
 
-        <div className="space-y-3">
+        <Tabs defaultValue="data" onValueChange={onSectionChange} className="flex min-h-0 flex-1 flex-col gap-5">
+          <TabsList aria-label="Settings sections" className="h-auto shrink-0 flex-wrap justify-start gap-1">
+            <TabsTrigger value="data">Data & Backup</TabsTrigger>
+            <TabsTrigger value="ai">AI & Models</TabsTrigger>
+            <TabsTrigger value="profile">Candidate Profile</TabsTrigger>
+          </TabsList>
+          <div ref={sectionScrollRef} className="settings-scroll min-h-0 flex-1 overflow-y-auto">
+            <TabsContent value="data" forceMount className="workspace-tab mt-0 min-h-[400px] space-y-6 data-[state=inactive]:hidden">
           <Section title="Backup & Restore">
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" onClick={() => void downloadBackup()} disabled={busy !== null}>
@@ -342,7 +360,45 @@ export default function SettingsModal({
               secrets. Restore always writes a rollback backup first.
             </p>
           </Section>
-
+          <Section title="Storage">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
+              <div>
+                <dt className="text-muted-foreground">Database</dt>
+                <dd className="font-mono tabular-nums font-medium">
+                  {storage === null ? "…" : formatBytes(storage.databaseBytes + storage.walBytes)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Jobs</dt>
+                <dd className="font-mono tabular-nums font-medium">{storage === null ? "…" : storage.jobCount}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Evidence</dt>
+                <dd className="font-mono tabular-nums font-medium">
+                  {storage === null
+                    ? "…"
+                    : `${formatBytes(storage.evidenceBytes)} · ${storage.evidenceFiles} files`}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Artifacts</dt>
+                <dd className="font-mono tabular-nums font-medium">
+                  {storage === null
+                    ? "…"
+                    : `${formatBytes(storage.artifactBytes)} · ${storage.artifactFiles} files`}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Backups</dt>
+                <dd className="font-mono tabular-nums font-medium">
+                  {storage === null
+                    ? "…"
+                    : `${storage.backupCount} · ${formatBytes(storage.backupsBytes)}`}
+                </dd>
+              </div>
+            </dl>
+          </Section>
+              <div className="border-t border-border/40 pt-6">
           <Section title="Board Reset">
             {!resetArmed ? (
               <Button
@@ -358,7 +414,7 @@ export default function SettingsModal({
                 <p className="text-xs">
                   This removes every job, extraction, and resume version. The candidate profile
                   is kept, and a safety backup is written first. Type{" "}
-                  <kbd className="rounded border border-border bg-muted px-1 font-mono">
+                  <kbd className="rounded border border-border bg-muted px-1 font-mono tabular-nums">
                     RESET
                   </kbd>{" "}
                   to confirm.
@@ -399,13 +455,15 @@ export default function SettingsModal({
               </div>
             )}
           </Section>
-
+              </div>
+            </TabsContent>
+            <TabsContent value="ai" forceMount className="workspace-tab mt-0 min-h-[400px] data-[state=inactive]:hidden">
           <Section title="AI & OpenRouter">
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
               <dt className="text-muted-foreground">Primary</dt>
-              <dd className="break-all font-mono text-[11px]">{snapshot?.models.primary ?? "…"}</dd>
+              <dd className="break-all font-mono tabular-nums text-[11px]">{snapshot?.models.primary ?? "…"}</dd>
               <dt className="text-muted-foreground">Fallback</dt>
-              <dd className="break-all font-mono text-[11px]">{snapshot?.models.fallback ?? "…"}</dd>
+              <dd className="break-all font-mono tabular-nums text-[11px]">{snapshot?.models.fallback ?? "…"}</dd>
               <dt className="text-muted-foreground">API key</dt>
               <dd>
                 {snapshot?.openRouter.configured === true ? (
@@ -431,7 +489,7 @@ export default function SettingsModal({
                   spellCheck={false}
                   value={primary}
                   onChange={(event) => setPrimary(event.target.value)}
-                  className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 font-mono text-[11px]"
+                  className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 font-mono tabular-nums text-[11px]"
                 />
               </div>
               <div>
@@ -445,7 +503,7 @@ export default function SettingsModal({
                   spellCheck={false}
                   value={fallback}
                   onChange={(event) => setFallback(event.target.value)}
-                  className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 font-mono text-[11px]"
+                  className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 font-mono tabular-nums text-[11px]"
                 />
               </div>
             </div>
@@ -465,72 +523,36 @@ export default function SettingsModal({
               )}
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Saving edits <span className="font-mono">.env.local</span>; restart the app to apply.
+              Saving edits <span className="font-mono tabular-nums">.env.local</span>; restart the app to apply.
               The key value is never shown.
             </p>
           </Section>
-
+            </TabsContent>
+            <TabsContent value="profile" forceMount className="workspace-tab mt-0 min-h-[400px] data-[state=inactive]:hidden">
           <Section title="Candidate Profile">
             {snapshot?.profile === null || snapshot?.profile === undefined ? (
               <p className="text-xs text-muted-foreground">
-                No active profile. Add <span className="font-mono">data/candidate/master-resume.json</span> then re-sync.
+                No active profile. Add <span className="font-mono tabular-nums">data/candidate/master-resume.json</span> then re-sync.
               </p>
             ) : (
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
                 <dt className="text-muted-foreground">Name</dt>
                 <dd className="font-medium">{snapshot.profile.displayName ?? "—"}</dd>
                 <dt className="text-muted-foreground">Active version</dt>
-                <dd className="font-medium">v{snapshot.profile.activeVersion}</dd>
+                <dd className="font-mono tabular-nums font-medium">v{snapshot.profile.activeVersion}</dd>
                 <dt className="text-muted-foreground">Approved facts</dt>
-                <dd className="font-medium">{snapshot.profile.approvedFacts}</dd>
+                <dd className="font-mono tabular-nums font-medium">{snapshot.profile.approvedFacts}</dd>
                 <dt className="text-muted-foreground">Verified skills</dt>
-                <dd className="font-medium">{snapshot.profile.verifiedSkills}</dd>
+                <dd className="font-mono tabular-nums font-medium">{snapshot.profile.verifiedSkills}</dd>
               </dl>
             )}
             <Button size="sm" variant="outline" onClick={() => void resyncProfile()} disabled={busy !== null}>
               {busy === "resync" ? "Re-syncing…" : "Re-sync Master Resume"}
             </Button>
           </Section>
-
-          <Section title="Storage">
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
-              <div>
-                <dt className="text-muted-foreground">Database</dt>
-                <dd className="font-medium">
-                  {storage === null ? "…" : formatBytes(storage.databaseBytes + storage.walBytes)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Jobs</dt>
-                <dd className="font-medium">{storage === null ? "…" : storage.jobCount}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Evidence</dt>
-                <dd className="font-medium">
-                  {storage === null
-                    ? "…"
-                    : `${formatBytes(storage.evidenceBytes)} · ${storage.evidenceFiles} files`}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Artifacts</dt>
-                <dd className="font-medium">
-                  {storage === null
-                    ? "…"
-                    : `${formatBytes(storage.artifactBytes)} · ${storage.artifactFiles} files`}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Backups</dt>
-                <dd className="font-medium">
-                  {storage === null
-                    ? "…"
-                    : `${storage.backupCount} · ${formatBytes(storage.backupsBytes)}`}
-                </dd>
-              </div>
-            </dl>
-          </Section>
-        </div>
+            </TabsContent>
+          </div>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );

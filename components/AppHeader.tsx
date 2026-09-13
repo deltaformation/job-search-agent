@@ -78,7 +78,7 @@ export default function AppHeader() {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80">
-      <div className="mx-auto flex min-h-16 flex-wrap gap-2 py-3 max-w-[1700px] items-center justify-between px-4 sm:px-6">
+      <div className="mx-auto flex min-h-16 w-full flex-wrap items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
         {/* Brand and Profile */}
         <div className="flex items-center gap-6">
           <Link
@@ -87,17 +87,17 @@ export default function AppHeader() {
             aria-label="Job Tracker Home"
           >
             <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-xs">
-              <Briefcase className="h-4 w-4" />
+              <Briefcase className="size-4" aria-hidden="true" />
             </div>
-            <span className="text-base font-bold">Job Tracker</span>
+            <span className="text-base font-semibold tracking-tight">Job Tracker</span>
           </Link>
 
           {/* Active Profile Pill */}
-          <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground">
-            <UserCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+          <div className="hidden xl:flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground">
+            <UserCheck className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
             <span className="font-medium text-foreground">Mouad Atfi</span>
-            <span className="text-[10px] text-muted-foreground">·</span>
-            <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+            <span className="text-[11px] text-muted-foreground">·</span>
+            <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
               Profile Active
             </span>
           </div>
@@ -119,7 +119,7 @@ export default function AppHeader() {
                 )}
                 aria-current={item.active ? "page" : undefined}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="size-4" aria-hidden="true" />
                 <span>{item.name}</span>
               </Link>
             );
@@ -130,7 +130,6 @@ export default function AppHeader() {
             title="Local system running"
           >
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
             </span>
             <span className="hidden md:inline text-[11px] font-medium text-muted-foreground">
@@ -140,7 +139,7 @@ export default function AppHeader() {
         </nav>
 
         {/* Direct Action */}
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           <Button
             size="sm"
             variant="outline"
@@ -148,7 +147,7 @@ export default function AppHeader() {
             className="h-8 gap-1 text-xs font-medium"
             aria-label="Open settings and data management"
           >
-            <Settings className="h-3.5 w-3.5" aria-hidden="true" />
+            <Settings className="size-3.5" aria-hidden="true" />
             <span>Settings</span>
           </Button>
           <Button
@@ -156,7 +155,7 @@ export default function AppHeader() {
             onClick={() => setAddJobOpen(true)}
             className="h-8 gap-1 text-xs font-medium"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="size-3.5" aria-hidden="true" />
             <span>Add Job</span>
           </Button>
         </div>
@@ -167,7 +166,7 @@ export default function AppHeader() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" />
+              <Sparkles className="size-5 text-primary" aria-hidden="true" />
               Quick Add Job URL
             </DialogTitle>
             <DialogDescription>
@@ -210,7 +209,7 @@ export default function AppHeader() {
                     onClick={() => setAddJobOpen(false)}
                     className="mt-1 inline-flex items-center gap-1 font-semibold underline underline-offset-2"
                   >
-                    View Batch Progress <ExternalLink className="h-3 w-3" />
+                    View Batch Progress <ExternalLink className="size-3.5" aria-hidden="true" />
                   </Link>
                 )}
               </div>

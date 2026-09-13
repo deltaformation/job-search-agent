@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CheckCircle2,
   FileCheck,
@@ -58,6 +58,24 @@ export default function ResumeReview({
   const [approveNote, setApproveNote] = useState("");
   const [reviseNote, setReviseNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const confirmPanelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // The approve trigger lives in the sticky bar, which is visible
+    // mid-document; when the inline confirmation opens, bring it into
+    // view so the state change is never silent. Instant under reduced
+    // motion; guarded for non-DOM test environments.
+    if (!confirming) {
+      return;
+    }
+    const panel = confirmPanelRef.current;
+    if (panel !== null && typeof panel.scrollIntoView === "function") {
+      const reduceMotion =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      panel.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "nearest" });
+    }
+  }, [confirming]);
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -145,7 +163,7 @@ export default function ResumeReview({
   if (view === null) {
     return (
       <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-        <Sparkles className="h-4 w-4 animate-spin text-primary" />
+        <Sparkles className="size-4 animate-spin text-primary" aria-hidden="true" />
         <span>Loading review…</span>
       </div>
     );
@@ -156,13 +174,13 @@ export default function ResumeReview({
   const reviseNoteId = `review-${view.version.id}-revise-note`;
 
   return (
-    <div aria-labelledby={reviewHeadingId} className="space-y-5 pt-2">
+    <div aria-labelledby={reviewHeadingId} className="resume-review space-y-6 pt-2">
       {/* Version Header Card */}
       <div className="rounded-lg border border-border/80 bg-muted/30 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <FileCheck className="h-5 w-5 text-primary" />
-            <h3 id={reviewHeadingId} className="text-base font-bold">
+            <FileCheck className="size-5 text-primary" aria-hidden="true" />
+            <h3 id={reviewHeadingId} className="text-base font-semibold tracking-tight">
               Version {view.version.version} · {prettyState(view.version.reviewState)}
             </h3>
             {view.version.parentVersionId !== null ? (
@@ -199,7 +217,7 @@ export default function ResumeReview({
       {/* Files & Artifacts */}
       <div className="rounded-lg border border-border/80 bg-card p-4 space-y-3">
         <h4 className="text-sm font-semibold flex items-center gap-2">
-          <FileText className="h-4 w-4 text-primary" />
+          <FileText className="size-4 text-primary" aria-hidden="true" />
           <span>Files ({view.artifacts.length})</span>
         </h4>
         {view.artifacts.length === 0 && (
@@ -212,7 +230,7 @@ export default function ResumeReview({
               className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-1.5 text-xs"
             >
               <span className="font-semibold uppercase text-[11px]">{artifact.kind}</span>
-              <span className="text-muted-foreground font-mono">({formatBytes(artifact.byteSize)})</span>
+              <span className="text-muted-foreground font-mono tabular-nums">({formatBytes(artifact.byteSize)})</span>
               <span className="text-border">|</span>
               <a
                 href={`/api/resumes/artifacts/${artifact.id}`}
@@ -236,7 +254,7 @@ export default function ResumeReview({
       {/* Side-by-Side: Proposed Changes & Claims vs Requirements & Gaps */}
       <div className="grid gap-5 xl:grid-cols-2">
         {/* Left: Proposed Changes & Resume Claims */}
-        <Card className="shadow-xs">
+        <Card className="shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center justify-between">
               <span>Proposed changes</span>
@@ -248,7 +266,7 @@ export default function ResumeReview({
               )}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4 text-sm leading-relaxed">
+          <CardContent className="space-y-3 text-sm leading-relaxed">
             {view.content?.changeSummary === null || view.content?.changeSummary === undefined ? (
               <p className="text-muted-foreground">Change summary unavailable.</p>
             ) : (
@@ -289,7 +307,7 @@ export default function ResumeReview({
               )}
               <ul className="space-y-2.5">
                 {view.claims.map((claim) => (
-                  <li key={claim.id} className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-1">
+                  <li key={claim.id} className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-2">
                     <p className="font-medium text-foreground">{claim.claimText}</p>
                     {claim.derivationKind !== null && (
                       <span className="inline-block text-[11px] text-muted-foreground">
@@ -297,13 +315,16 @@ export default function ResumeReview({
                       </span>
                     )}
                     {claim.facts.length > 0 && (
+                      <details open className="mt-2">
+                        <summary className="cursor-pointer text-xs font-medium">Source facts ({claim.facts.length})</summary>
                       <ul className="mt-1 pl-3 border-l-2 border-primary/30 space-y-0.5 text-[11px] text-muted-foreground">
                         {claim.facts.map((fact) => (
                           <li key={fact.factId}>
-                            [{fact.factId}] {fact.statement}
+                            <span className="font-mono tabular-nums">[{fact.factId}]</span> {fact.statement}
                           </li>
                         ))}
                       </ul>
+                      </details>
                     )}
                   </li>
                 ))}
@@ -313,13 +334,13 @@ export default function ResumeReview({
         </Card>
 
         {/* Right: Requirements & Explicit Gaps */}
-        <Card className="shadow-xs">
+        <Card className="shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center justify-between">
               <span>Requirements ({view.analysis?.requirements.length ?? 0})</span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4 text-sm leading-relaxed">
+          <CardContent className="space-y-3 text-sm leading-relaxed">
             {view.analysis === null && <p className="text-muted-foreground">Analysis unavailable.</p>}
             {view.analysis !== null && view.analysis.requirements.length === 0 && (
               <p className="text-muted-foreground">No requirements recorded.</p>
@@ -327,10 +348,10 @@ export default function ResumeReview({
 
             <ul className="space-y-2.5">
               {(view.analysis?.requirements ?? []).map((requirement) => (
-                <li key={requirement.requirementId} className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-1">
+                <li key={requirement.requirementId} className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-2">
                   <p className="font-medium text-foreground italic">“{requirement.jdQuote}”</p>
                   <div className="flex items-center gap-2 pt-0.5">
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="text-[11px]">
                       {prettyState(requirement.importance)}
                     </Badge>
                     <Badge
@@ -341,13 +362,13 @@ export default function ResumeReview({
                           ? "warning"
                           : "muted"
                       }
-                      className="text-[10px]"
+                      className="text-[11px]"
                     >
                       {requirement.matchStatus === "matched" ? "Supported" : prettyState(requirement.matchStatus)}
                     </Badge>
                   </div>
                   {requirement.evidenceFactIds.length > 0 && (
-                    <p className="text-[11px] text-muted-foreground pt-0.5">
+                    <p className="font-mono tabular-nums text-[11px] text-muted-foreground pt-0.5">
                       Evidence: {requirement.evidenceFactIds.join(", ")}
                     </p>
                   )}
@@ -366,10 +387,10 @@ export default function ResumeReview({
                   <li key={gap.requirementId} className="rounded-md border border-destructive/20 bg-destructive/5 p-2 space-y-1">
                     <p className="font-medium text-destructive italic">“{gap.jdQuote}”</p>
                     <div className="flex items-center gap-1.5">
-                      <Badge variant="outline" className="text-[10px]">
+                      <Badge variant="outline" className="text-[11px]">
                         {prettyState(gap.importance)}
                       </Badge>
-                      <Badge variant="destructive" className="text-[10px]">
+                      <Badge variant="destructive" className="text-[11px]">
                         {prettyState(gap.matchStatus)}
                       </Badge>
                     </div>
@@ -388,31 +409,31 @@ export default function ResumeReview({
 
       {/* Top 5 ATS Keywords & Match Audit */}
       {view.topKeywords.length > 0 && (
-        <Card className="shadow-xs">
+        <Card className="shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
+              <Sparkles className="size-4 text-primary" aria-hidden="true" />
               <span>Top 5 ATS keywords & match audit</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="space-y-2.5 text-sm">
               {view.topKeywords.map((entry, index) => (
-                <li key={`${entry.requirementId}-${entry.keyword}-${index}`} className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-1">
+                <li key={`${entry.requirementId}-${entry.keyword}-${index}`} className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-2">
                   <p className="font-medium text-foreground italic">“{entry.keyword}”</p>
                   <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="text-[11px]">
                       {prettyState(entry.category)}
                     </Badge>
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="text-[11px]">
                       {prettyState(entry.importance)}
                     </Badge>
                     {entry.evidenced ? (
-                      <Badge variant="success" className="text-[10px]">
+                      <Badge variant="success" className="text-[11px]">
                         Evidenced
                       </Badge>
                     ) : (
-                      <Badge variant="destructive" className="text-[10px]">
+                      <Badge variant="destructive" className="text-[11px]">
                         Gap — not on resume
                       </Badge>
                     )}
@@ -440,10 +461,10 @@ export default function ResumeReview({
 
       {/* Generation Notes Card */}
       {view.content?.audit !== null && view.content?.audit !== undefined && (
-        <Card className="shadow-xs bg-muted/20">
+        <Card className="shadow-sm bg-muted/20">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
+              <Sparkles className="size-4 text-primary" aria-hidden="true" />
               <span>Generation notes</span>
             </CardTitle>
           </CardHeader>
@@ -468,32 +489,19 @@ export default function ResumeReview({
         </Card>
       )}
 
+      {/* Decision details flow inline at the end of the audit; only the
+          compact trigger bar below sticks, so long confirmations can never
+          push the actions offscreen or cover the content being reviewed. */}
+      <div className="space-y-3">
       <section aria-label="Human review decision" className="rounded-xl border border-primary/20 bg-muted/30 p-5">
         <h4 className="font-semibold">Your review decision</h4>
         <p className="text-sm text-muted-foreground">Review the claims, evidence and files before approving this exact version.</p>
-        {/* Human Action Triggers */}
-        {view.actions.canApprove && !confirming && (
-          <div className="mt-4 flex items-center gap-3">
-            <Button
-              type="button"
-              onClick={() => {
-                setActionError(null);
-                setConfirming(true);
-              }}
-              disabled={busy}
-              className="gap-1.5 font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs"
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              Approve version {view.version.version}
-            </Button>
-          </div>
-        )}
 
-        {/* Confirmation Modal Area */}
+        {/* Confirmation Details Area */}
         {view.actions.canApprove && confirming && (
-          <div className="mt-4 rounded-lg border border-emerald-300/60 bg-emerald-50/60 dark:bg-emerald-950/30 p-4 space-y-3">
+          <div ref={confirmPanelRef} className="workspace-tab mt-4 scroll-mt-24 rounded-lg border border-emerald-300/60 bg-emerald-50/60 dark:bg-emerald-950/30 p-4 space-y-3">
             <div className="flex items-center gap-2 text-emerald-900 dark:text-emerald-300">
-              <CheckCircle2 className="h-5 w-5" />
+              <CheckCircle2 className="size-5" aria-hidden="true" />
               <h4 className="font-bold text-sm">
                 Confirm approval of version {view.version.version}
               </h4>
@@ -505,7 +513,7 @@ export default function ResumeReview({
 
             <ul className="rounded-md border border-border/60 bg-background/80 p-2 text-xs divide-y divide-border/40">
               {view.artifacts.map((artifact) => (
-                <li key={artifact.id} className="py-1 flex items-center justify-between font-mono">
+                <li key={artifact.id} className="py-1 flex items-center justify-between font-mono tabular-nums">
                   <span>{artifact.kind}</span>
                   <span className="text-muted-foreground">
                     {formatBytes(artifact.byteSize)}
@@ -576,24 +584,50 @@ export default function ResumeReview({
               disabled={busy || reviseNote.trim() === ""}
               className="mt-2 gap-1.5"
             >
-              <RotateCcw className="h-3.5 w-3.5" />
+              <RotateCcw className="size-3.5" aria-hidden="true" />
               Request revision
             </Button>
           </div>
-        )}      </section>
+        )}
+      </section>
+
+      {/* Compact sticky trigger bar: the primary decision stays reachable
+          while reading, without covering the audit it governs. */}
+      {view.actions.canApprove && !confirming && (
+        <div className="sticky bottom-0 z-10 flex items-center justify-end gap-3 rounded-xl border border-border/80 bg-background/95 p-3 shadow-sm backdrop-blur">
+          <p className="mr-auto hidden text-xs text-muted-foreground sm:block">
+            Version {view.version.version} ·{" "}
+            <span className="font-mono tabular-nums">{view.artifacts.length}</span>{" "}
+            {view.artifacts.length === 1 ? "file" : "files"}
+          </p>
+          <Button
+            type="button"
+            onClick={() => {
+              setActionError(null);
+              setConfirming(true);
+            }}
+            disabled={busy}
+            className="w-full gap-1.5 font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm sm:w-auto"
+          >
+            <CheckCircle2 className="size-4" aria-hidden="true" />
+            Approve version {view.version.version}
+          </Button>
+        </div>
+      )}
+      </div>
 
       {/* Review History */}
       {view.reviews.length > 0 && (
         <div className="rounded-lg border border-border/80 bg-card p-4 space-y-2">
           <h4 className="text-sm font-semibold flex items-center gap-2">
-            <History className="h-4 w-4 text-muted-foreground" />
+            <History className="size-4 text-muted-foreground" aria-hidden="true" />
             <span>Review history ({view.reviews.length})</span>
           </h4>
           <ul className="text-xs divide-y divide-border/60">
             {view.reviews.map((review) => (
               <li key={review.id} className="py-2">
                 <span className="font-semibold text-foreground">{prettyState(review.action)}</span>{" "}
-                <span className="text-muted-foreground">by {review.actor} · {review.createdAt}</span>
+                <span className="text-muted-foreground">by {review.actor} · <span className="font-mono tabular-nums">{review.createdAt}</span></span>
                 {review.note !== null && (
                   <p className="mt-1 text-muted-foreground bg-muted/50 rounded p-2">
                     {review.note}

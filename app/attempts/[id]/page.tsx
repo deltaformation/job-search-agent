@@ -9,7 +9,7 @@ export default async function AttemptPage({
 }) {
   const { id } = await params;
   return (
-    <main className="mx-auto max-w-5xl px-4 sm:px-6 py-8 space-y-6">
+    <main id="main-content" tabIndex={-1} className="mx-auto max-w-5xl px-4 sm:px-6 py-8 space-y-6 scroll-mt-20 focus:outline-none">
       <div className="flex items-center justify-between border-b border-border/60 pb-4">
         <nav
           aria-label="Breadcrumb"

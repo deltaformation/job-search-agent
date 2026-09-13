@@ -138,7 +138,7 @@ export default function IntakeForm() {
       </form>
 
       {preview !== null && (
-        <div className="mt-8 border-t border-border/60 pt-6">
+        <div className="workspace-tab mt-8 scroll-mt-24 border-t border-border/60 pt-6">
           <div className="flex items-center justify-between mb-3">
             <h2
               ref={previewHeadingRef}
@@ -157,7 +157,7 @@ export default function IntakeForm() {
               Nothing to validate: every line is blank.
             </p>
           ) : (
-            <div className="overflow-hidden rounded-lg border border-border/80">
+            <div className="overflow-x-auto rounded-lg border border-border/80">
               <table className="w-full border-collapse text-left text-sm">
                 <thead className="bg-muted/50 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/80">
                   <tr>

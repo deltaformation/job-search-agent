@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import type { Arrangement } from "../domain/enums";
-import { canonicalizeUrl } from "../scraping/urls";
+import {
+  canonicalizeUrl,
+  MAX_URL_LENGTH,
+  sanitizeDestinationUrl,
+} from "../scraping/urls";
 
 /**
  * Field normalization ported from `services/discovery/normalizer.py` with
@@ -192,25 +196,79 @@ export function parsePostedDate(value: unknown): string | null {
 
 /**
  * Resolve a possibly-relative apply href against the posting URL and
- * validate it through the URL policy. Returns null for empty,
- * non-http(s), over-long, or otherwise rejected targets.
+ * validate it through the URL policy. Preserves exact path structure
+ * (including trailing slashes required by host routing), strips tracking
+ * query params, and handles in-page anchors by returning finalUrl.
+ * Returns null for empty, non-http(s), over-long, or otherwise rejected targets.
  */
 export function resolveApplyUrl(
   href: string | null,
   finalUrl: string,
 ): string | null {
-  if (href === null || href.trim() === "") {
+  if (href === null || typeof href !== "string") {
     return null;
   }
-  let absolute: string;
+  const trimmedHref = href.trim();
+  if (trimmedHref === "") {
+    return null;
+  }
+  if (
+    trimmedHref.toLowerCase().startsWith("javascript:") ||
+    trimmedHref.toLowerCase().startsWith("mailto:") ||
+    trimmedHref.toLowerCase().startsWith("tel:")
+  ) {
+    return null;
+  }
+
+  let finalParsed: URL;
   try {
-    absolute = new URL(href.trim(), finalUrl).toString();
+    finalParsed = new URL(finalUrl.trim());
   } catch {
     return null;
   }
-  if (absolute.length > 2048) {
+  if (finalParsed.protocol !== "http:" && finalParsed.protocol !== "https:") {
     return null;
   }
-  const canonical = canonicalizeUrl(absolute);
-  return canonical.ok ? canonical.value.canonicalUrl : null;
+
+  // If href is an in-page fragment (e.g. #app, #apply, #), the application
+  // form is embedded on the posting page itself. Return the verified finalUrl.
+  if (trimmedHref.startsWith("#")) {
+    return finalUrl;
+  }
+
+  let target: URL;
+  try {
+    target = new URL(trimmedHref, finalUrl);
+  } catch {
+    return null;
+  }
+
+  if (target.protocol !== "http:" && target.protocol !== "https:") {
+    return null;
+  }
+  if (target.username !== "" || target.password !== "") {
+    return null;
+  }
+
+  const validation = canonicalizeUrl(target.toString());
+  if (!validation.ok) {
+    return null;
+  }
+
+  // If the target resolves to the same page as finalUrl, return finalUrl
+  // to guarantee that the known-good posting URL path and query are preserved.
+  if (
+    target.origin === finalParsed.origin &&
+    target.pathname.replace(/\/+$/, "") ===
+      finalParsed.pathname.replace(/\/+$/, "") &&
+    (target.search === "" || target.search === finalParsed.search)
+  ) {
+    return finalUrl;
+  }
+
+  const destination = sanitizeDestinationUrl(target);
+  if (destination.length > MAX_URL_LENGTH) {
+    return null;
+  }
+  return destination;
 }

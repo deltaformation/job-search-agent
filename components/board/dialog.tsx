@@ -91,10 +91,10 @@ export default function Dialog({ labelledBy, onClose, position, children }: Dial
         tabIndex={-1}
         className={
           position === "workspace"
-            ? "workspace-panel relative h-dvh w-full overflow-y-auto bg-background p-4 sm:p-8 text-foreground"
+            ? "workspace-panel relative flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-background px-4 py-5 sm:px-6 lg:px-8 text-foreground"
             : position === "right"
-            ? "relative h-full w-full max-w-2xl overflow-y-auto border-l border-border bg-background p-6 shadow-2xl text-foreground"
-            : "mx-auto my-auto w-full max-h-[90dvh] overflow-y-auto max-w-lg rounded-xl border border-border bg-background p-6 shadow-2xl text-foreground"
+            ? "dialog-panel-right relative h-full w-full max-w-2xl overflow-y-auto border-l border-border bg-background p-6 shadow-2xl text-foreground"
+            : "dialog-panel-center mx-auto my-auto w-full max-h-[90dvh] overflow-y-auto max-w-lg rounded-xl border border-border bg-background p-6 shadow-2xl text-foreground"
         }
       >
         {children}

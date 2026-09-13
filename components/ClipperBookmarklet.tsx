@@ -132,6 +132,12 @@ export default function ClipperBookmarklet() {
             <a
               ref={linkRef}
               href="#clip-to-job-tracker"
+              onClick={(event) => {
+                // Drag-only control: activating it in place would clip
+                // this app page itself (a junk intake item) or jump to a
+                // dead hash. Dragging to the bookmarks bar still works.
+                event.preventDefault();
+              }}
               className="inline-flex items-center justify-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-bold text-primary shadow-xs hover:bg-primary/20 transition-colors cursor-grab active:cursor-grabbing w-fit"
               title="Drag this link to your bookmarks bar"
             >

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ResumeReviewView } from "../../../../src/server/review";
 import ResumeReview from "../../../../components/board/ResumeReview";
@@ -143,7 +143,7 @@ describe("ResumeReview", () => {
     // Proposal column: the bullet appears both as an added change and as a claim.
     expect(screen.getAllByText("Led the API migration to TypeScript.")).toHaveLength(2);
     expect(screen.getByText(/resume claims \(1\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/\[f1\] led the api migration\./i)).toBeInTheDocument();
+    expect(screen.getByText((_, node) => node?.tagName === "LI" && node.textContent === "[f1] Led the API migration.")).toBeInTheDocument();
     // Evidence column.
     expect(screen.getByText(/requirements \(1\)/i)).toBeInTheDocument();
     // Each quote appears twice: once in requirements/gaps, once in the Top-5 audit.
@@ -221,6 +221,21 @@ describe("ResumeReview", () => {
       note: "Second bullet overstates the metric.",
     });
     await waitFor(() => expect(screen.getByText(/revision requested for version 1/i)).toBeInTheDocument());
+  });
+
+  it("keeps the sticky bar compact with confirmation details inline in the document", async () => {
+    renderReview();
+    expect(await screen.findByText(/version 1 · awaiting review/i)).toBeInTheDocument();
+    const bar = screen.getByRole("button", { name: /approve version 1/i }).closest("div.sticky");
+    expect(bar).not.toBeNull();
+    // The bar carries the trigger only — no note fields or confirm buttons.
+    expect(within(bar as HTMLElement).queryByLabelText(/approval note/i)).toBeNull();
+    expect(within(bar as HTMLElement).queryByRole("button", { name: /^confirm approval$/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /approve version 1/i }));
+    // Confirmation opens inline in the document flow, outside any sticky wrapper.
+    const panel = await screen.findByText(/confirm approval of version 1/i);
+    expect(panel.closest("div.sticky")).toBeNull();
+    expect(screen.getByLabelText(/approval note/i)).toBeInTheDocument();
   });
 
   it("shows the gate reason instead of actions for decided versions", async () => {

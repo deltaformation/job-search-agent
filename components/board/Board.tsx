@@ -303,23 +303,23 @@ export default function Board() {
   const activeCard = activeId !== null && board !== null ? findCard(board, activeId) : null;
 
   return (
-    <div>
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border/70 bg-card p-3 shadow-xs">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 flex flex-wrap items-end gap-3 rounded-lg border border-border/70 bg-card p-3 shadow-xs">
         <div className="flex flex-wrap items-center gap-3">
           <div role="group" aria-label="Board view" className="flex rounded-lg bg-muted p-1">
             {(["kanban", "stacked"] as const).map((mode) => (
               <button key={mode} type="button" aria-pressed={viewMode === mode}
                 onClick={() => setViewMode(mode)}
-                className={`rounded-md px-3 py-2 text-sm transition-all duration-200 ${viewMode === mode ? "bg-background shadow-sm" : "text-muted-foreground"}`}>
+                className={`rounded-md px-3 py-2 text-sm transition-opacity duration-150 ${viewMode === mode ? "bg-background shadow-sm" : "text-muted-foreground"}`}>
                 {mode === "kanban" ? "Kanban" : "Stacked"}
               </button>
             ))}
           </div>
-          {board && <p className="text-xs text-muted-foreground">
+          {board && <p className="font-mono tabular-nums text-xs text-muted-foreground">
             {committedQuery ? "Matching active" : "Active"}: {board.columns.filter((c) => c.status !== "REJECTED").reduce((n, c) => n + c.total, 0)} jobs · {board.columns.flatMap((c) => c.cards).filter((c) => c.resume?.reviewState === "AWAITING_REVIEW").length} awaiting review in loaded cards
           </p>}
         </div>
-        <div className="flex-1 min-w-[220px]">
+        <div className="flex-1 min-w-48">
           <label htmlFor="board-search" className="block text-xs font-semibold text-muted-foreground mb-1">
             Search cards
           </label>
@@ -353,12 +353,12 @@ export default function Board() {
       </div>
 
       {notice !== null && (
-        <div role="status" data-testid="board-notice" className="mt-3 rounded-md border border-primary/20 bg-primary/5 p-3 text-sm font-semibold text-primary">
+        <div role="status" data-testid="board-notice" className="flash-enter shrink-0 mt-3 rounded-md border border-primary/20 bg-primary/5 p-3 text-sm font-semibold text-primary">
           {notice}
         </div>
       )}
       {error !== null && (
-        <div role="alert" className="mt-3 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm font-semibold text-destructive">
+        <div role="alert" className="shrink-0 mt-3 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm font-semibold text-destructive">
           Could not load the board: {error}
         </div>
       )}
@@ -373,7 +373,7 @@ export default function Board() {
           onDragEnd={(event) => void onDragEnd(event)}
           onDragCancel={() => setActiveId(null)}
         >
-          <div className={`board-canvas mt-4 flex gap-4 overflow-x-auto pb-4 ${viewMode === "stacked" ? "board-stacked flex-col" : ""}`} role="group" aria-label="Kanban columns">
+          <div className={`board-canvas mt-5 flex min-h-0 flex-1 gap-4 overflow-x-auto overflow-y-hidden pb-4 ${viewMode === "stacked" ? "board-stacked flex-col" : ""}`} role="group" aria-label="Kanban columns">
             {board.columns.map((column) => (
               <BoardColumn
                 key={column.status}
@@ -386,10 +386,15 @@ export default function Board() {
               />
             ))}
           </div>
-          <DragOverlay>
+          <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
             {activeCard === null ? null : (
-              <div className="border bg-white p-3 font-semibold shadow-lg">
-                {activeCard.title ?? "Untitled posting"}
+              <div className="w-[280px] rotate-[1.5deg] rounded-xl border border-primary/40 bg-card p-3.5 opacity-90 shadow-xl ring-2 ring-primary ring-offset-2">
+                <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {activeCard.company ?? "Unknown Company"}
+                </p>
+                <p className="mt-1 line-clamp-2 text-sm font-semibold text-foreground">
+                  {activeCard.title ?? "Untitled posting"}
+                </p>
               </div>
             )}
           </DragOverlay>

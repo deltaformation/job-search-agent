@@ -72,6 +72,19 @@ describe("ClipperBookmarklet", () => {
     );
   });
 
+  it("does not navigate when the bookmarklet is activated in place", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ token: "c".repeat(64) }),
+    }));
+    render(<ClipperBookmarklet />);
+    const link = await screen.findByRole("link", { name: "Clip to Job Tracker" });
+    // Drag-only control: activating it in place must not clip this page
+    // or jump to the placeholder hash.
+    expect(fireEvent.click(link)).toBe(false);
+  });
+
   it("refuses to render the bookmarklet for malformed tokens", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,

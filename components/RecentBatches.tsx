@@ -69,7 +69,7 @@ export default function RecentBatches() {
       )}
 
       {batches !== null && batches.length > 0 && (
-        <div className="mt-5 overflow-hidden rounded-lg border border-border/80">
+        <div className="mt-5 overflow-x-auto rounded-lg border border-border/80">
           <table className="w-full border-collapse text-left text-sm">
             <thead className="bg-muted/50 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/80">
               <tr>

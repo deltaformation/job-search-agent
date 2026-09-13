@@ -4,8 +4,8 @@ import Board from "@/components/board/Board";
 
 export default function BoardPage() {
   return (
-    <main className="mx-auto max-w-[1700px] w-full px-4 sm:px-6 py-6 space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-border/60 pb-5">
+    <main id="main-content" tabIndex={-1} className="board-page mx-auto flex h-full min-h-0 w-full flex-col gap-5 overflow-hidden px-4 py-5 sm:px-6 lg:px-8 scroll-mt-20 focus:outline-none">
+      <div className="shrink-0 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-border/60 pb-5">
         <div>
           <nav
             aria-label="Breadcrumb"
@@ -15,10 +15,10 @@ export default function BoardPage() {
               href="/"
               className="flex items-center gap-1 hover:text-foreground transition-colors"
             >
-              <Home className="h-3 w-3" />
+              <Home className="size-3.5" aria-hidden="true" />
               <span>Home</span>
             </Link>
-            <ChevronRight className="h-3 w-3 text-muted-foreground/60" />
+            <ChevronRight className="size-3.5 text-muted-foreground/60" aria-hidden="true" />
             <span className="font-medium text-foreground">Board</span>
           </nav>
           <h1 className="text-2xl font-bold tracking-tight">Job Board</h1>
@@ -31,7 +31,7 @@ export default function BoardPage() {
 
       </div>
 
-      <div>
+      <div className="min-h-0 flex-1">
         <Board />
       </div>
     </main>
