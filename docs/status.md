@@ -15,9 +15,10 @@ Last updated: 2026-09-13. Branch: `release/v1.0`. Package version: 1.0.0.
   and execution log in [`work-orders-v1.1.md`](work-orders-v1.1.md).
   Completed: `WO-1.1-A` (bounded O(1) queries in `b2fc150`), `WO-1.1-B` (frame-1
   initial render + INP de-janking in `1d24ac0`), `WO-1.1-C` (accessible auto-dismissing
-  notices in `c55fa0f`), `WO-1.1-D` (pure Kanban, larger cards, optimized header in `17f9fd4`).
-- Verification at current HEAD: typecheck clean, eslint clean, unit suite 111 files
-  / 813 tests green.
+  notices in `c55fa0f`), `WO-1.1-D` (pure Kanban, larger cards, optimized header in `17f9fd4`),
+  `WO-1.1-E` (multi-profile candidate schema and repository in `3ee857e`).
+- Verification at current HEAD: typecheck clean, eslint clean, unit suite 112 files
+  / 821 tests green.
 
 ## Known items
 
