@@ -19,9 +19,10 @@ Last updated: 2026-09-13. Branch: `release/v1.0`. Package version: 1.0.0.
   `WO-1.1-E` (multi-profile candidate schema and repository in `3ee857e`),
   `WO-1.1-F` (direct cloud providers Google AI Studio & Meta Muse in `edc1172`),
   `WO-1.1-G` (settings career profiles and master resume management in `29ac8cf`),
-  `WO-1.1-H` (interactive tailoring in job workspace in `ab1b98f`).
-- Verification at current HEAD: typecheck clean, eslint clean, unit suite 119 files
-  / 931 tests green.
+  `WO-1.1-H` (interactive tailoring in job workspace in `ab1b98f`),
+  `WO-1.1-I` (resumes section hierarchy and derived follow-up badges in `3de1956`).
+- Verification at current HEAD: typecheck clean, eslint clean, unit suite 120 files
+  / 945 tests green.
 
 ## Known items
 
