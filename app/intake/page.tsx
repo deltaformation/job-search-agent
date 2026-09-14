@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, PlusCircle } from "lucide-react";
+import { FileText, History, PlusCircle } from "lucide-react";
 import ClipperBookmarklet from "@/components/ClipperBookmarklet";
 import IntakeForm from "@/components/IntakeForm";
 import RecentBatches from "@/components/RecentBatches";
@@ -27,14 +27,24 @@ export default function IntakePage() {
           </div>
         </div>
 
-        {/* Right: Quick Action to Board */}
+        {/* Right: Related Ingestion & Tailoring Pages */}
         <div className="flex items-center gap-2">
-          <Link
-            href="/board"
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-input bg-background/90 px-3 text-xs sm:text-sm font-medium text-foreground shadow-xs hover:bg-accent hover:text-accent-foreground transition-colors"
+          <a
+            href="#recent-batches-heading"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-input bg-background/90 px-3 text-xs sm:text-sm font-medium text-muted-foreground hover:text-foreground shadow-xs hover:bg-accent transition-colors"
           >
-            <span>View Board</span>
-            <ArrowRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
+            <History className="size-3.5 text-muted-foreground" aria-hidden="true" />
+            <span>Batch History</span>
+          </a>
+          <Link
+            href="/master-resume"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-input bg-background/90 px-3 text-xs sm:text-sm font-medium text-foreground shadow-xs hover:bg-accent hover:text-accent-foreground transition-colors"
+            title="Open canonical master resume facts in a new tab"
+          >
+            <FileText className="size-3.5 text-primary" aria-hidden="true" />
+            <span>Master Resume</span>
           </Link>
         </div>
       </div>
