@@ -18,9 +18,10 @@ Last updated: 2026-09-13. Branch: `release/v1.0`. Package version: 1.0.0.
   notices in `c55fa0f`), `WO-1.1-D` (pure Kanban, larger cards, optimized header in `17f9fd4`),
   `WO-1.1-E` (multi-profile candidate schema and repository in `3ee857e`),
   `WO-1.1-F` (direct cloud providers Google AI Studio & Meta Muse in `edc1172`),
-  `WO-1.1-G` (settings career profiles and master resume management in `29ac8cf`).
-- Verification at current HEAD: typecheck clean, eslint clean, unit suite 116 files
-  / 900 tests green.
+  `WO-1.1-G` (settings career profiles and master resume management in `29ac8cf`),
+  `WO-1.1-H` (interactive tailoring in job workspace in `ab1b98f`).
+- Verification at current HEAD: typecheck clean, eslint clean, unit suite 119 files
+  / 931 tests green.
 
 ## Known items
 
