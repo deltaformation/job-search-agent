@@ -993,3 +993,92 @@ Safety/human checkpoint:
   - All previews open by artifact id / fixed route in new tabs with rel="noreferrer"; no paths serialized; approval and application stay manual; badge is a read-only client derivation (zero mutations).
 ```
 
+---
+
+## Record 11: Release 1.1 Cutover & Hardening
+
+**Work Order ID:** `WO-1.1-J`  
+**Phase:** Phase 4  
+**Commit:** `65ca8d6`  
+
+### Prompt Given to Agent
+```markdown
+You are working on the Local Job Tracker repository on branch `release/v1.0`.
+We are executing Phase 4 of `docs/roadmap-v1.1.md` (Release 1.1 Cutover & Hardening).
+
+### Mandatory Context & Rules
+1. Inspect before modifying:
+   - `package.json` and `package-lock.json`
+   - `docs/status.md`
+   - `docs/operations.md`
+   - `docs/decisions.md`
+   - `docs/roadmap-v1.1.md`
+2. Follow `AGENTS.md` and `PROJECT.md`.
+3. Bump package version to `1.1.0`.
+4. Run `node scripts/check-project-context.mjs` before and after.
+
+---
+
+### Work Order Scope: Phase 4 Release 1.1 Cutover
+
+#### 1. Version Bump
+- Update version to `"1.1.0"` in `package.json` and sync in `package-lock.json`.
+
+#### 2. Architecture Decisions & Operational Docs
+- In `docs/decisions.md`, record:
+  - **R-ADR-012 Multi-Profile Candidate Persistence**: Rebuilding `candidate_profiles` to support multiple named career tracks with unique slug, default flag, and work preferences while maintaining immutable version/snapshot lineage.
+  - **R-ADR-013 Interactive Tailoring Envelope**: Inclusion of career profile ID, selected ATS keywords, and directive notes into the immutable input hash (`input_hash`).
+  - **R-ADR-014 Direct Cloud Providers (Google AI Studio & Meta Muse)**: Direct REST client adapters with structured JSON output and unified `ACTIVE_AI_PROVIDER` routing.
+- In `docs/operations.md`, add runtime configuration guidance for `GEMINI_API_KEY`, `META_API_KEY`, and career profile management.
+- Update `docs/roadmap-v1.1.md` header status to `Complete`.
+- Update `docs/status.md` package version to `1.1.0` and summarize v1.1 release completion.
+
+#### 3. Full Verification & Release Gate
+- `npm run typecheck` (0 errors)
+- `npm run lint` (0 warnings)
+- Full non-browser vitest suite (`npx vitest run --exclude '**/browser/**'`)
+- `node scripts/check-project-context.mjs` (11/11 consistent)
+
+---
+
+### Expected Handoff Output
+Provide the completed handoff block required by `AGENTS.md`:
+
+Task: Phase 4 release 1.1 cutover and hardening
+Outcome:
+Status: implemented | needs-review | blocked
+Files changed:
+Migrations/data effects:
+Verification performed and exact result:
+Acceptance criteria not yet proven:
+Decisions or deviations:
+Safety/human checkpoint:
+```
+
+### Official Handoff
+```text
+Task: Phase 4 release 1.1 cutover and hardening
+Outcome: Package bumped to 1.1.0 (package.json + lock in sync); R-ADR-012/013/014 recorded; operations gained provider and profile runbooks; roadmap marked Complete; status rewritten as v1.1 with the verified work-order evidence retained. Release gate fully green.
+Status: implemented
+Files changed:
+  - package.json, package-lock.json (1.0.0 -> 1.1.0, 2-line lock diff)
+  - docs/decisions.md (R-ADR-012 multi-profile persistence, R-ADR-013 interactive tailoring envelope, R-ADR-014 direct cloud providers)
+  - docs/operations.md (AI provider configuration, career profiles)
+  - docs/roadmap-v1.1.md (Status: Complete + completion line)
+  - docs/status.md (v1.1 header/version/completion; verified WO SHAs kept)
+Migrations/data effects: none (docs + version metadata only)
+Verification performed and exact result:
+  - npm run typecheck: 0 errors (exit 0).
+  - npm run lint: clean (exit 0).
+  - npx vitest run --exclude '**/browser/**': 120 files / 945 tests pass.
+  - node scripts/check-project-context.mjs: 11/11 before and after.
+  - All 9 WO SHAs in status.md verified present in git history.
+  - Doc claims verified against code (env names, tab labels, button text).
+Acceptance criteria not yet proven:
+  - None for cutover scope; previously noted visual/hardware acceptances (13in/4K, INP profile, live provider calls) remain user-verified.
+Decisions or deviations:
+  - Kept the verified per-order commit SHAs in status.md rather than condensing them away (verified evidence, not clutter).
+Safety/human checkpoint:
+  - Metadata-only change; no code, schema, queue, provider, or boundary behavior touched. No commit/tag created — release tagging is the human's call.
+```
+
