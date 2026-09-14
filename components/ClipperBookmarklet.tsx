@@ -86,32 +86,30 @@ export default function ClipperBookmarklet() {
   return (
     <section
       aria-labelledby="clipper-heading"
-      className="rounded-xl border border-border/70 bg-card p-6 shadow-xs text-card-foreground"
+      className="rounded-xl border border-border/70 bg-card/60 p-4 sm:p-5 shadow-xs backdrop-blur-xs text-card-foreground"
     >
-      <div className="border-b border-border/60 pb-4">
-        <h2 id="clipper-heading" className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-          <Bookmark className="h-5 w-5 text-primary" />
+      <div className="border-b border-border/60 pb-3">
+        <h2 id="clipper-heading" className="text-base sm:text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
+          <Bookmark className="size-4 text-primary" aria-hidden="true" />
           <span>1-click browser clipper</span>
         </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Clip the posting you are already viewing — past any login or CAPTCHA
-          you cleared yourself. Only the page URL and rendered DOM are sent to
-          this local app; no cookies or sessions are touched.
+        <p className="mt-0.5 text-xs text-muted-foreground leading-normal">
+          Clip the posting you are already viewing — past any login or CAPTCHA. Only the page URL and rendered DOM are sent.
         </p>
       </div>
 
       {error !== null && (
         <div
           role="alert"
-          className="mt-4 rounded-lg border border-destructive/20 bg-destructive/10 p-3.5 text-sm font-semibold text-destructive"
+          className="mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs font-semibold text-destructive"
         >
           Could not load clip setup: {error}
         </div>
       )}
 
       {error === null && (token === null || origin === "") && (
-        <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-          <Sparkles className="h-4 w-4 animate-spin text-primary" />
+        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+          <Sparkles className="size-3.5 animate-spin text-primary" />
           <span>Loading clip setup…</span>
         </div>
       )}
@@ -119,7 +117,7 @@ export default function ClipperBookmarklet() {
       {error === null && token !== null && origin !== "" && !tokenValid && (
         <div
           role="alert"
-          className="mt-4 rounded-lg border border-destructive/20 bg-destructive/10 p-3.5 text-sm font-semibold text-destructive"
+          className="mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs font-semibold text-destructive"
         >
           Clip setup returned an unexpected token shape; not rendering the
           bookmarklet.
@@ -127,8 +125,8 @@ export default function ClipperBookmarklet() {
       )}
 
       {error === null && token !== null && origin !== "" && tokenValid && (
-        <div className="mt-5 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="mt-4 space-y-3.5">
+          <div className="flex flex-col gap-2">
             <a
               ref={linkRef}
               href="#clip-to-job-tracker"
@@ -138,19 +136,19 @@ export default function ClipperBookmarklet() {
                 // dead hash. Dragging to the bookmarks bar still works.
                 event.preventDefault();
               }}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-bold text-primary shadow-xs hover:bg-primary/20 transition-colors cursor-grab active:cursor-grabbing w-fit"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3.5 py-2 text-xs sm:text-sm font-bold text-primary shadow-xs hover:bg-primary/20 transition-colors cursor-grab active:cursor-grabbing w-fit"
               title="Drag this link to your bookmarks bar"
             >
-              <Bookmark className="h-4 w-4" />
+              <Bookmark className="size-3.5" />
               Clip to Job Tracker
             </a>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-[11px] text-muted-foreground">
               ← Drag this button into your browser bookmarks bar
             </span>
           </div>
 
-          <details className="rounded-lg border border-border/70 bg-muted/20 p-4">
-            <summary className="cursor-pointer text-xs font-semibold text-muted-foreground hover:text-foreground">
+          <details className="rounded-lg border border-border/70 bg-muted/20 p-3 text-xs">
+            <summary className="cursor-pointer font-semibold text-muted-foreground hover:text-foreground">
               Browser extension setup (optional)
             </summary>
             <div className="mt-3 space-y-2">

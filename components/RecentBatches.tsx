@@ -32,14 +32,14 @@ export default function RecentBatches() {
   return (
     <section
       aria-labelledby="recent-batches-heading"
-      className="rounded-xl border border-border/70 bg-card p-6 shadow-xs text-card-foreground"
+      className="rounded-xl border border-border/70 bg-card/60 p-4 sm:p-5 shadow-xs backdrop-blur-xs text-card-foreground"
     >
-      <div className="border-b border-border/60 pb-4">
-        <h2 id="recent-batches-heading" className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-          <History className="h-5 w-5 text-primary" />
-          <span>Recent batches</span>
+      <div className="border-b border-border/60 pb-3">
+        <h2 id="recent-batches-heading" className="text-base sm:text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
+          <History className="size-4 text-primary" aria-hidden="true" />
+          <span>Recent Batches</span>
         </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-0.5 text-xs sm:text-sm text-muted-foreground">
           Track previously submitted URL batches, their progress, and scrape results.
         </p>
       </div>
@@ -47,15 +47,15 @@ export default function RecentBatches() {
       {error !== null && (
         <div
           role="alert"
-          className="mt-4 rounded-lg border border-destructive/20 bg-destructive/10 p-3.5 text-sm font-semibold text-destructive"
+          className="mt-3.5 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs sm:text-sm font-semibold text-destructive"
         >
           Could not load batches: {error}
         </div>
       )}
 
       {batches === null && error === null && (
-        <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-          <Sparkles className="h-4 w-4 animate-spin text-primary" />
+        <div className="mt-3.5 flex items-center gap-2 text-xs text-muted-foreground">
+          <Sparkles className="size-3.5 animate-spin text-primary" />
           <span>Loading batches…</span>
         </div>
       )}
