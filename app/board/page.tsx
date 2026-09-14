@@ -32,15 +32,7 @@ async function loadInitialBoard(): Promise<BoardView | null> {
 export default async function BoardPage() {
   const initialBoard = await loadInitialBoard();
   return (
-    <main id="main-content" tabIndex={-1} className="board-page mx-auto flex h-full min-h-0 w-full flex-col gap-5 overflow-hidden px-4 py-5 sm:px-6 lg:px-8 scroll-mt-20 focus:outline-none">
-      <div className="shrink-0 border-b border-border/60 pb-4">
-        <h1 className="text-2xl font-bold tracking-tight">Job Board</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Drag cards between stages, or open a card to review resumes, inspect
-          match facts, and record applications.
-        </p>
-      </div>
-
+    <main id="main-content" tabIndex={-1} className="board-page mx-auto flex h-full min-h-0 w-full flex-col overflow-hidden px-4 pt-3.5 pb-2 sm:px-6 lg:px-8 scroll-mt-20 focus:outline-none">
       <div className="min-h-0 flex-1">
         <Board initialData={initialBoard} />
       </div>

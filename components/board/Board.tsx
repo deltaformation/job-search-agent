@@ -14,6 +14,7 @@ import {
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpDown, Search, X } from "lucide-react";
 import type { BoardStatus } from "@/src/domain/enums";
 import type { BoardCardView, BoardView } from "@/src/server/board";
 import { Notice, useNotice, type NoticeVariant } from "../ui/notice";
@@ -84,9 +85,34 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
     void refresh();
   }
   const boardRef = useRef<BoardView | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     boardRef.current = board;
   });
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (
+        event.key === "/" &&
+        document.activeElement?.tagName !== "INPUT" &&
+        document.activeElement?.tagName !== "TEXTAREA"
+      ) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const activeCount = useMemo(
+    () => (board ? board.columns.filter((c) => c.status !== "REJECTED").reduce((n, c) => n + c.total, 0) : 0),
+    [board]
+  );
+  const awaitingReviewCount = useMemo(
+    () => (board ? board.columns.flatMap((c) => c.cards).filter((c) => c.resume?.reviewState === "AWAITING_REVIEW").length : 0),
+    [board]
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -317,42 +343,89 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 flex flex-wrap items-end gap-3 rounded-lg border border-border/70 bg-card p-3 shadow-xs">
-        <div className="flex flex-wrap items-center gap-3">
-          {board && <p className="font-mono tabular-nums text-xs text-muted-foreground">
-            {committedQuery ? "Matching active" : "Active"}: {board.columns.filter((c) => c.status !== "REJECTED").reduce((n, c) => n + c.total, 0)} jobs · {board.columns.flatMap((c) => c.cards).filter((c) => c.resume?.reviewState === "AWAITING_REVIEW").length} awaiting review in loaded cards
-          </p>}
+      <div className="shrink-0 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-border/70 bg-card/60 p-2.5 sm:px-3.5 shadow-xs backdrop-blur-xs">
+        {/* Left: Title + Status Indicators */}
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+          <h1 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
+            Job Board
+          </h1>
+          {board && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/80 px-2.5 py-0.5 text-xs font-medium text-secondary-foreground border border-border/60">
+                <span className="size-1.5 rounded-full bg-primary" />
+                <span>{committedQuery ? "Matching" : "Active"}:</span>
+                <span className="font-semibold text-foreground">{activeCount}</span>
+                <span>jobs</span>
+              </span>
+              {awaitingReviewCount > 0 && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 dark:bg-amber-500/20 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                  <span className="relative flex size-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full size-1.5 bg-amber-500" />
+                  </span>
+                  <span>{awaitingReviewCount} awaiting review</span>
+                </span>
+              )}
+            </div>
+          )}
         </div>
-        <div className="flex-1 min-w-48">
-          <label htmlFor="board-search" className="block text-xs font-semibold text-muted-foreground mb-1">
-            Search cards
-          </label>
-          <input
-            id="board-search"
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Title, company, or location…"
-            className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-        </div>
-        <div>
-          <label htmlFor="board-sort" className="block text-xs font-semibold text-muted-foreground mb-1">
-            Sort
-          </label>
-          <select
-            id="board-sort"
-            value={sort}
-            onChange={(event) => {
-              setSort(event.target.value as BoardSort);
-              setLoading(true);
-            }}
-            className="rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
-          >
-            <option value="rank">Manual order</option>
-            <option value="updated">Recently updated</option>
-            <option value="created">Recently added</option>
-          </select>
+
+        {/* Right: Search & Sort Controls */}
+        <div className="flex flex-1 sm:flex-initial items-center gap-2">
+          {/* Search Cards Input */}
+          <div className="relative flex-1 sm:w-64 md:w-72">
+            <label htmlFor="board-search" className="sr-only">
+              Search cards
+            </label>
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />
+            <input
+              ref={searchRef}
+              id="board-search"
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search title, company, location…"
+              className="h-9 w-full rounded-md border border-input bg-background/90 pl-8 pr-7 text-xs sm:text-sm placeholder:text-muted-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:bg-background transition-colors"
+            />
+            {query ? (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-none"
+                aria-label="Clear search query"
+              >
+                <X className="size-3.5" />
+              </button>
+            ) : (
+              <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center rounded border border-border/80 bg-muted/60 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground lg:inline-flex">
+                /
+              </kbd>
+            )}
+          </div>
+
+          {/* Sort Dropdown */}
+          <div className="relative flex shrink-0 items-center">
+            <label htmlFor="board-sort" className="sr-only">
+              Sort
+            </label>
+            <div className="flex h-9 items-center rounded-md border border-input bg-background/90 px-2.5 text-xs sm:text-sm text-muted-foreground focus-within:ring-2 focus-within:ring-ring transition-colors">
+              <ArrowUpDown className="mr-1.5 size-3.5 text-muted-foreground shrink-0" aria-hidden="true" />
+              <span className="hidden xl:inline text-xs font-medium text-muted-foreground mr-1">Sort:</span>
+              <select
+                id="board-sort"
+                value={sort}
+                onChange={(event) => {
+                  setSort(event.target.value as BoardSort);
+                  setLoading(true);
+                }}
+                className="cursor-pointer bg-transparent text-xs sm:text-sm font-medium text-foreground focus:outline-none"
+              >
+                <option value="rank">Manual order</option>
+                <option value="updated">Recently updated</option>
+                <option value="created">Recently added</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -391,7 +464,7 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
           onDragEnd={(event) => void onDragEnd(event)}
           onDragCancel={() => setActiveId(null)}
         >
-          <div className="board-canvas mt-5 flex min-h-0 flex-1 gap-4 overflow-x-auto overflow-y-hidden pb-4" role="group" aria-label="Kanban columns">
+          <div className="board-canvas mt-3 flex min-h-0 flex-1 gap-4 overflow-x-auto overflow-y-hidden pb-4" role="group" aria-label="Kanban columns">
             {board.columns.map((column) => (
               <BoardColumn
                 key={column.status}
