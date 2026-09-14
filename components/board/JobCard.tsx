@@ -1,6 +1,6 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ExternalLink,
   GripVertical,
+  History,
   MapPin,
   MessageSquare,
   Sparkles,
@@ -38,6 +39,35 @@ function pretty(value: string | null): string {
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
+const DAY_MS = 86_400_000;
+
+/**
+ * Derived follow-up nudge for applied cards, computed purely on the
+ * client from the recorded application timestamp — no database writes,
+ * no background jobs. Null for recent applications, missing or
+ * unparseable timestamps, future dates, and non-applied columns.
+ */
+function followUpLabel(status: string, appliedAt: string | null, now: number): string | null {
+  if (status !== "APPLIED" || appliedAt === null) {
+    return null;
+  }
+  const appliedMs = Date.parse(appliedAt);
+  if (Number.isNaN(appliedMs)) {
+    return null;
+  }
+  const days = Math.floor((now - appliedMs) / DAY_MS);
+  if (days >= 30) {
+    return "Follow-up suggested (30d+)";
+  }
+  if (days >= 14) {
+    return "Follow-up suggested (14d)";
+  }
+  if (days >= 7) {
+    return "Follow-up suggested (7d)";
+  }
+  return null;
+}
+
 interface JobCardProps {
   card: BoardCardView;
   onOpen: (jobId: string) => void;
@@ -50,6 +80,10 @@ function JobCard({ card, onOpen }: JobCardProps) {
   const headline = card.title ?? "Untitled posting";
   const salaryBadge = formatSalaryBadge(card);
   const hasMeta = card.location || card.arrangement || salaryBadge !== null;
+  // Clock read once per mount (render must stay pure): a session held open
+  // across midnight refreshes the nudge on the next remount or reload.
+  const [now] = useState(() => Date.now());
+  const followUp = followUpLabel(card.status, card.appliedAt, now);
 
   return (
     <li
@@ -167,6 +201,12 @@ function JobCard({ card, onOpen }: JobCardProps) {
                 Tailoring: {pretty(card.tailoringState)}
               </Badge>
             )}
+          {followUp !== null && (
+            <Badge variant="outline" className="gap-1 text-[11px] py-0.5 font-normal text-muted-foreground">
+              <History className="size-3.5" aria-hidden="true" />
+              <span>{followUp}</span>
+            </Badge>
+          )}
         </div>
 
         {/* Footer: Notes Count + Quick Review Prompt */}

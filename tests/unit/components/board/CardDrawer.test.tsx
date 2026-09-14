@@ -309,6 +309,8 @@ describe("CardDrawer tailoring status", () => {
           reviewState: "AWAITING_REVIEW",
           contentHash: "c".repeat(64),
           createdAt: "2026-09-11T12:00:00.000Z",
+          profileName: "staff-engineer",
+          profileDisplayName: "Staff Engineer",
           artifacts: [],
           reviews: [],
         },
@@ -578,6 +580,157 @@ describe("CardDrawer tailoring status", () => {
       openResumesTab();
       expect(await screen.findByText("Tailoring Guidance")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Re-tailor Resume" })).toBeEnabled();
+    });
+  });
+
+  describe("resumes hierarchy", () => {
+    const hierarchyProfiles = [
+      {
+        id: "profile-1",
+        name: "staff-engineer",
+        displayName: "Staff Engineer",
+        isDefault: true,
+        activeVersion: 2,
+        latestVersion: 2,
+      },
+    ];
+
+    function versionArtifacts(prefix: string) {
+      return (["DOCX", "MARKDOWN", "PDF"] as const).map((kind) => ({
+        id: `${prefix}-${kind.toLowerCase()}`,
+        kind,
+        mediaType: "application/octet-stream",
+        byteSize: 100,
+        sha256: "a".repeat(64),
+      }));
+    }
+
+    function hierarchyView(): JobDetailView {
+      const base = landedView();
+      return {
+        ...base,
+        resumes: [
+          {
+            id: "ver-1",
+            version: 1,
+            parentVersionId: null,
+            reviewState: "APPROVED",
+            contentHash: "c".repeat(64),
+            createdAt: "2026-09-11T12:00:00.000Z",
+            profileName: "staff-engineer",
+            profileDisplayName: "Staff Engineer",
+            artifacts: versionArtifacts("ver-1"),
+            reviews: [],
+          },
+          {
+            id: "ver-2",
+            version: 2,
+            parentVersionId: "ver-1",
+            reviewState: "AWAITING_REVIEW",
+            contentHash: "d".repeat(64),
+            createdAt: "2026-09-12T12:00:00.000Z",
+            profileName: "manager",
+            profileDisplayName: "Manager",
+            artifacts: versionArtifacts("ver-2"),
+            reviews: [],
+          },
+        ],
+      };
+    }
+
+    function setupHierarchy(view: JobDetailView = hierarchyView()) {
+      const fetchMock = vi.fn(async (url: string) => {
+        if (url === "/api/settings/profiles") {
+          return okJson({ profiles: hierarchyProfiles });
+        }
+        if (url.startsWith("/api/resumes/")) {
+          const segments = url.split("/");
+          const drilledId = segments[segments.length - 2] ?? "ver-1";
+          const payload = reviewPayload();
+          return okJson({ ...payload, version: { ...payload.version, id: drilledId } });
+        }
+        return okJson(view);
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      render(<CardDrawer {...drawerProps()} />);
+      return { fetchMock };
+    }
+
+    it("renders the master resume card with a new-tab preview link", async () => {
+      setupHierarchy();
+      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+      openResumesTab();
+      expect(await screen.findByText("Master Resume")).toBeInTheDocument();
+      expect(screen.getByText(/Staff Engineer · version 2/)).toBeInTheDocument();
+      const preview = screen.getByRole("link", { name: "Preview" });
+      expect(preview).toHaveAttribute("href", "/master-resume");
+      expect(preview).toHaveAttribute("target", "_blank");
+    });
+
+    it("guides empty states toward the tailoring panel below", async () => {
+      setupHierarchy({ ...hierarchyView(), resumes: [] });
+      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+      openResumesTab();
+      expect(
+        await screen.findByText(/no tailored resumes generated yet/i),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/choose your profile and keywords below/i)).toBeInTheDocument();
+      expect(screen.getByText("Tailoring Guidance")).toBeInTheDocument();
+    });
+
+    it("renders version cards with status, profile, and preview links", async () => {
+      setupHierarchy();
+      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+      openResumesTab();
+      const list = await screen.findByRole("list", { name: "Resume versions" });
+      expect(within(list).getByRole("button", { name: /version 1.*approved.*staff engineer/i })).toBeInTheDocument();
+      expect(
+        within(list).getByRole("button", { name: /version 2.*awaiting review.*manager/i }),
+      ).toBeInTheDocument();
+      const docxLinks = within(list).getAllByRole("link", { name: "[DOCX]" });
+      expect(docxLinks.map((link) => link.getAttribute("href"))).toEqual([
+        "/api/resumes/artifacts/ver-1-docx",
+        "/api/resumes/artifacts/ver-2-docx",
+      ]);
+      for (const link of docxLinks) {
+        expect(link).toHaveAttribute("target", "_blank");
+      }
+      expect(
+        within(list)
+          .getAllByRole("link", { name: "[MARKDOWN]" })
+          .map((link) => link.getAttribute("href")),
+      ).toEqual([
+        "/api/resumes/artifacts/ver-1-markdown",
+        "/api/resumes/artifacts/ver-2-markdown",
+      ]);
+      expect(
+        within(list)
+          .getAllByRole("link", { name: "[PDF]" })
+          .map((link) => link.getAttribute("href")),
+      ).toEqual(["/api/resumes/artifacts/ver-1-pdf", "/api/resumes/artifacts/ver-2-pdf"]);
+      expect(screen.queryByRole("link", { name: /download/i })).toBeNull();
+    });
+
+    it("selecting a version card swaps the drill-down audit", async () => {
+      const { fetchMock } = setupHierarchy();
+      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+      openResumesTab();
+      const list = await screen.findByRole("list", { name: "Resume versions" });
+      // Active version (ver-1) drills down first.
+      await waitFor(() =>
+        expect(
+          fetchMock.mock.calls.some(([url]) => url === "/api/resumes/ver-1/review"),
+        ).toBe(true),
+      );
+      fireEvent.click(within(list).getByRole("button", { name: /version 2/i }));
+      await waitFor(() =>
+        expect(
+          fetchMock.mock.calls.some(([url]) => url === "/api/resumes/ver-2/review"),
+        ).toBe(true),
+      );
+      expect(
+        within(list).getByRole("button", { name: /version 2/i }),
+      ).toHaveAttribute("aria-current", "true");
     });
   });
 });

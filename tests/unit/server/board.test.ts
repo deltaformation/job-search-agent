@@ -134,6 +134,28 @@ describe("getBoardView", () => {
     });
   });
 
+  it("projects the application timestamp onto cards", () => {
+    withDatabase((t) => {
+      const applied = seedJob(t.handle, { status: "APPLIED" });
+      const fresh = seedJob(t.handle, { status: "APPLIED" });
+      t.handle.db
+        .insert(applications)
+        .values({
+          id: newId(),
+          jobId: applied,
+          recordedBy: "human",
+          appliedAt: "2026-09-11T09:00:00.000Z",
+          confirmationNumber: null,
+        })
+        .run();
+      const board = getBoardView(t.handle, {});
+      const appliedColumn = board.columns.find((column) => column.status === "APPLIED");
+      const byId = new Map((appliedColumn?.cards ?? []).map((card) => [card.id, card]));
+      expect(byId.get(applied)?.appliedAt).toBe("2026-09-11T09:00:00.000Z");
+      expect(byId.get(fresh)?.appliedAt).toBeNull();
+    });
+  });
+
   it("searches title, company, and location with literal wildcards", () => {
     withDatabase((t) => {
       seedJob(t.handle, { title: "100% Remote Engineer" });
@@ -710,6 +732,8 @@ describe("getJobDetail", () => {
       expect(detail.resumes[0]).toMatchObject({
         version: 1,
         reviewState: "AWAITING_REVIEW",
+        profileName: "default",
+        profileDisplayName: "Primary Profile",
       });
       expect(detail.resumes[0].artifacts).toHaveLength(1);
       expect(detail.resumes[0].reviews[0]).toMatchObject({

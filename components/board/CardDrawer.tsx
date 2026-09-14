@@ -119,6 +119,8 @@ export default function CardDrawer({
     name: string;
     displayName: string;
     isDefault: boolean;
+    activeVersion: number | null;
+    latestVersion: number | null;
   }> | null>(null);
   const [profilesError, setProfilesError] = useState<string | null>(null);
   const [guideProfileId, setGuideProfileId] = useState("");
@@ -293,6 +295,7 @@ export default function CardDrawer({
           : { versionId: active.id, version: active.version, reviewState: active.reviewState },
       notesCount: view.notes.length,
       sourceUrl: view.source?.submittedUrl ?? null,
+      appliedAt: view.application?.appliedAt ?? null,
       createdAt: view.job.createdAt,
       updatedAt: view.job.updatedAt,
     };
@@ -343,9 +346,16 @@ export default function CardDrawer({
       return;
     }
     let cancelled = false;
-    apiGet<{ profiles: Array<{ id: string; name: string; displayName: string; isDefault: boolean }> }>(
-      "/api/settings/profiles",
-    ).then(
+    apiGet<{
+      profiles: Array<{
+        id: string;
+        name: string;
+        displayName: string;
+        isDefault: boolean;
+        activeVersion: number | null;
+        latestVersion: number | null;
+      }>;
+    }>("/api/settings/profiles").then(
       (data) => {
         if (!cancelled) {
           setProfiles(Array.isArray(data.profiles) ? data.profiles : []);
@@ -692,6 +702,61 @@ export default function CardDrawer({
     );
   };
 
+  const renderMasterResumeCard = () => {
+    const fallback = (message: string) => (
+      <div className="workspace-tab rounded-lg border border-border/80 bg-card p-4">
+        <p className="text-sm font-semibold">Master Resume</p>
+        <p className="mt-1 text-xs text-muted-foreground">{message}</p>
+      </div>
+    );
+    if (profilesError !== null) {
+      return fallback(`Could not load profiles: ${profilesError}`);
+    }
+    if (profiles === null) {
+      return fallback("Loading master resume…");
+    }
+    const master = profiles.find((profile) => profile.isDefault) ?? profiles[0] ?? null;
+    if (master === null) {
+      return fallback("No career profiles yet — create one in Settings first.");
+    }
+    const version = master.activeVersion ?? master.latestVersion ?? null;
+    return (
+      <div className="workspace-tab rounded-lg border border-border/80 bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold">Master Resume</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {master.displayName}
+              {version === null ? " · no versions yet" : ` · version ${version}`}
+            </p>
+          </div>
+          <a
+            href="/master-resume"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-8 items-center rounded-md border border-input bg-background px-3 text-xs font-medium"
+          >
+            Preview
+            <ExternalLink className="ml-1.5 size-3.5" aria-hidden="true" />
+          </a>
+        </div>
+      </div>
+    );
+  };
+
+  const renderVersionStatusBadge = (reviewState: string) => {
+    if (reviewState === "AWAITING_REVIEW") {
+      return <Badge variant="warning" className="text-[11px] py-0.5 font-medium">Awaiting review</Badge>;
+    }
+    if (reviewState === "APPROVED") {
+      return <Badge variant="success" className="text-[11px] py-0.5 font-medium">Approved</Badge>;
+    }
+    if (reviewState === "REVISION_REQUESTED") {
+      return <Badge variant="destructive" className="text-[11px] py-0.5 font-medium">Revision requested</Badge>;
+    }
+    return <Badge variant="outline" className="text-[11px] py-0.5 font-normal">{pretty(reviewState)}</Badge>;
+  };
+
   const renderResumes = (v: JobDetailView) => (
     <section aria-labelledby="drawer-resumes" className="space-y-4">
       <div className="flex items-center justify-between">
@@ -706,7 +771,7 @@ export default function CardDrawer({
         )}
       </div>
 
-      {renderTailoringGuidance(v)}
+      {renderMasterResumeCard()}
 
       {renderTailoringAlert(v)}
 
@@ -714,25 +779,69 @@ export default function CardDrawer({
 
       {v.resumes.length === 0 && (
         <div className="rounded-lg border border-dashed border-border/80 p-8 text-center">
-          <p className="text-sm text-muted-foreground">No tailored resume yet.</p>
+          <p className="text-sm text-muted-foreground">
+            No tailored resumes generated yet. Choose your profile and keywords below to tailor a
+            resume for this role.
+          </p>
         </div>
       )}
 
       {v.resumes.length > 0 && (() => {
         const resume = v.resumes.find((r) => r.id === selectedVersion)
           ?? v.resumes.find((r) => r.id === v.job.activeResumeVersionId) ?? v.resumes[0]!;
+        const previewFor = (version: JobDetailView["resumes"][number], kind: string) =>
+          version.artifacts.find((artifact) => artifact.kind === kind) ?? null;
         return <div className="space-y-4">
-          <label className="flex items-center gap-3 text-sm font-medium">
-            Resume version
-            <select value={resume.id} onChange={(e) => { setSelectedVersion(e.target.value); setMatchSummary("Loading requirement matches…"); resetSectionScroll(); }}
-              className="rounded-lg border border-input bg-background p-2">
-              {v.resumes.map((r) => <option key={r.id} value={r.id}>v{r.version} · {pretty(r.reviewState)}{r.id === v.job.activeResumeVersionId ? " · active" : ""}</option>)}
-            </select>
-          </label>
+          <ul aria-label="Resume versions" className="space-y-2">
+            {v.resumes.map((r) => {
+              const selected = r.id === resume.id;
+              return (
+                <li
+                  key={r.id}
+                  className={`rounded-lg border p-3 ${selected ? "border-primary/60 bg-primary/5" : "border-border/80 bg-card"}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedVersion(r.id);
+                      setMatchSummary("Loading requirement matches…");
+                      resetSectionScroll();
+                    }}
+                    aria-current={selected ? "true" : undefined}
+                    className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-left"
+                  >
+                    <span className="text-sm font-semibold">Version {r.version}</span>
+                    {renderVersionStatusBadge(r.reviewState)}
+                    <span className="text-xs text-muted-foreground">
+                      Profile &ldquo;{r.profileDisplayName ?? r.profileName ?? "Unknown profile"}&rdquo;
+                    </span>
+                  </button>
+                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+                    {(["DOCX", "MARKDOWN", "PDF"] as const).map((kind) => {
+                      const artifact = previewFor(r, kind);
+                      return artifact === null ? null : (
+                        <a
+                          key={kind}
+                          href={`/api/resumes/artifacts/${artifact.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-mono text-xs tabular-nums text-primary underline-offset-2 hover:underline"
+                        >
+                          [{kind}]
+                        </a>
+                      );
+                    })}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
           <ResumeReview key={resume.id} versionId={resume.id} refreshToken={refreshToken}
             onChanged={onChanged} onReviewed={() => void refreshDetail()} onSummary={setMatchSummary} />
         </div>;
       })()}
+
+      {renderTailoringGuidance(v)}
 
     </section>
   );

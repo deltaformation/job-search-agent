@@ -22,6 +22,7 @@ function card(overrides: Partial<BoardCardView> & { id: string; status: BoardCar
     resume: null,
     notesCount: 0,
     sourceUrl: "https://example.com/jobs/1",
+    appliedAt: null,
     createdAt: "2026-09-11T10:00:00.000Z",
     updatedAt: "2026-09-11T10:00:00.000Z",
     ...overrides,

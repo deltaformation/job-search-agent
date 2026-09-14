@@ -3,6 +3,12 @@ import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 // which resolves like the worker loader (no directory barrels).
 import type { DatabaseHandle } from "../db/client";
 import { getLatestAnalysisForJob, getLatestTailorAttempt } from "../db/tailoring";
+import {
+  candidateProfiles,
+  candidateProfileVersions,
+  candidateSnapshots,
+} from "../db/schema/candidates";
+import { jobAnalyses } from "../db/schema/analysis";
 import { applications, jobNotes, workflowEvents } from "../db/schema/workflow";
 import { intakeItems } from "../db/schema/intake";
 import {
@@ -123,6 +129,8 @@ export interface BoardCardView {
   notesCount: number;
   /** Validated posting URL for the "open original" action. */
   sourceUrl: string | null;
+  /** Manual application timestamp, or null when never applied. */
+  appliedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -230,11 +238,13 @@ export function getBoardView(
         resumeVersionId: resumeVersions.id,
         resumeVersion: resumeVersions.version,
         resumeReviewState: resumeVersions.reviewState,
+        appliedAt: applications.appliedAt,
         notesCount: sql<number>`(select count(*) from ${jobNotes} where ${jobNotes.jobId} = ${jobs.id})`,
       })
       .from(jobs)
       .leftJoin(jobSources, eq(jobSources.jobId, jobs.id))
       .leftJoin(resumeVersions, eq(resumeVersions.id, jobs.activeResumeVersionId))
+      .leftJoin(applications, eq(applications.jobId, jobs.id))
       .where(where)
       .orderBy(...order)
       .limit(limit)
@@ -275,6 +285,7 @@ export function getBoardView(
         resume,
         notesCount: row.notesCount,
         sourceUrl: safeHttpUrl(row.submittedUrl),
+        appliedAt: row.appliedAt,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       };
@@ -347,6 +358,9 @@ export interface ResumeVersionView {
   reviewState: string;
   contentHash: string;
   createdAt: string;
+  /** Career profile the version was tailored from; null when unresolvable. */
+  profileName: string | null;
+  profileDisplayName: string | null;
   artifacts: ResumeArtifactRef[];
   reviews: ResumeReviewView[];
 }
@@ -487,6 +501,31 @@ export function getJobDetail(
     .where(eq(resumeVersions.jobId, jobId))
     .orderBy(asc(resumeVersions.version))
     .all();
+  // One batched lineage lookup per detail read: version → analysis →
+  // candidate snapshot → profile version → career profile. Inner joins
+  // drop versions with broken lineage; those map to null below.
+  const profileByVersionId = new Map<string, { name: string; displayName: string }>();
+  if (versions.length > 0) {
+    const lineage = handle.db
+      .select({
+        versionId: resumeVersions.id,
+        name: candidateProfiles.name,
+        displayName: candidateProfiles.displayName,
+      })
+      .from(resumeVersions)
+      .innerJoin(jobAnalyses, eq(jobAnalyses.id, resumeVersions.analysisId))
+      .innerJoin(candidateSnapshots, eq(candidateSnapshots.id, jobAnalyses.candidateSnapshotId))
+      .innerJoin(
+        candidateProfileVersions,
+        eq(candidateProfileVersions.id, candidateSnapshots.profileVersionId),
+      )
+      .innerJoin(candidateProfiles, eq(candidateProfiles.id, candidateProfileVersions.profileId))
+      .where(eq(resumeVersions.jobId, jobId))
+      .all();
+    for (const row of lineage) {
+      profileByVersionId.set(row.versionId, { name: row.name, displayName: row.displayName });
+    }
+  }
   const notes = handle.db
     .select()
     .from(jobNotes)
@@ -648,6 +687,7 @@ export function getJobDetail(
         .where(eq(resumeReviews.resumeVersionId, version.id))
         .orderBy(asc(resumeReviews.createdAt), asc(resumeReviews.id))
         .all();
+      const lineage = profileByVersionId.get(version.id) ?? null;
       return {
         id: version.id,
         version: version.version,
@@ -655,6 +695,8 @@ export function getJobDetail(
         reviewState: version.reviewState,
         contentHash: version.contentHash,
         createdAt: version.createdAt,
+        profileName: lineage?.name ?? null,
+        profileDisplayName: lineage?.displayName ?? null,
         artifacts: versionArtifacts,
         reviews,
       };
