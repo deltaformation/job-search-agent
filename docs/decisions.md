@@ -117,3 +117,46 @@ when an active verified candidate profile and provider configuration exist. If
 either prerequisite is absent, the card remains `New` with a reason-coded
 blocked tailoring state. Automation ends at `AWAITING_REVIEW`; no automatic
 approval, application navigation, form filling, or submission follows.
+
+## R-ADR-012 — Multi-profile candidate persistence
+
+**Status:** accepted, 2026-09-14
+
+`candidate_profiles` holds multiple named career tracks (unique slug, one
+default flag, work preferences, executive narrative) instead of a single
+implicit profile. Profile versions, snapshots, facts, and resume lineage
+key off the owning profile row, while version immutability, fact-id
+uniqueness, activation, and the human review protocol are unchanged.
+Preferences steer tailoring emphasis only and never become resume claims.
+Implemented in migration `0005_multi_candidate_profiles` (`WO-1.1-E`,
+`WO-1.1-G`).
+
+## R-ADR-013 — Interactive tailoring envelope
+
+**Status:** accepted, 2026-09-14
+
+Human tailoring guidance — the selected career profile id, up to 20
+selected ATS keywords, and up to 1000 chars of directive notes — rides the
+`tailor-queue/v1` payload and the `tailoring-input/v1` envelope, and is
+hashed into `job_analyses.input_hash` with the rest of the inputs. Guided
+runs use a guidance-scoped idempotency key so new guidance enqueues a fresh
+run while identical guidance dedupes. Providers must treat guidance as
+ranking/wording steering subordinate to the evidence rules: claims still
+require approved `fact_id` citations and gaps stay gaps. Implemented in
+`WO-1.1-H`.
+
+## R-ADR-014 — Direct cloud providers (Google AI Studio & Meta Muse)
+
+**Status:** accepted, 2026-09-14
+
+Tailoring and salary-fact extraction may call Google AI Studio and Meta
+Muse directly through REST client adapters (`scripts/google-client.mjs`,
+`scripts/meta-client.mjs`) returning the same schema-validated JSON the
+OpenRouter path produces. `ACTIVE_AI_PROVIDER` (`openrouter` default,
+`google`, `meta`) routes all provider calls; keys live only in
+`.env.local` (`OPENROUTER_API_KEY`, `GEMINI_API_KEY`, `META_API_KEY`) and
+are never persisted, logged, or returned to clients — the UI sees
+fingerprints and a ping diagnostic. Cloud providers stay strictly
+optional: without a key the app boots, tailoring blocks with a reason
+code, and the deterministic no-key fallback keeps the pipeline testable.
+Implemented in `WO-1.1-F`.

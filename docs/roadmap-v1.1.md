@@ -1,8 +1,9 @@
 # Local Job Tracker — Release 1.1 Roadmap
 
-Status: Approved planning baseline  
+Status: Complete  
 Baseline: v1.0 release branch (`release/v1.0`)  
 Release theme: Faster review, interactive multi-profile tailoring, and responsive daily workflow  
+Completed: 2026-09-14 (package 1.1.0; execution log in [`work-orders-v1.1.md`](work-orders-v1.1.md))
 
 ## Release outcome
 
