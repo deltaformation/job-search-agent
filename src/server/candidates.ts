@@ -505,23 +505,39 @@ export function getOrCreateJdSnapshot(
  * missing: the candidate snapshot of the active profile version and the JD
  * snapshot of the active extraction text. Missing profile or description
  * fails with the reason code the tailoring worker reports as BLOCKED.
+ * An explicit `profileId` binds that profile's active version (a profile
+ * deleted after enqueue blocks as stale input).
  */
 export function resolveCurrentSnapshots(
   handle: DatabaseHandle,
   jobId: string,
+  options: { profileId?: string } = {},
 ): ResolveSnapshotsResult {
   const parsedJobId = EntityId.parse(jobId);
   const pointer = getJobDescriptionPointer(handle, parsedJobId);
   if (pointer === null) {
     return { ok: false, error: "job-not-found" };
   }
-  const active = getActiveProfileVersion(handle);
+  const selected =
+    options.profileId === undefined ? null : getProfile(handle, options.profileId);
+  if (options.profileId !== undefined && selected === null) {
+    return {
+      ok: false,
+      error: "blocked",
+      reason: "STALE_INPUT",
+      detail: `selected career profile '${options.profileId}' no longer exists`,
+    };
+  }
+  const active = getActiveProfileVersion(handle, options.profileId);
   if (active === null) {
     return {
       ok: false,
       error: "blocked",
       reason: "PROFILE_REQUIRED",
-      detail: "no active candidate profile version; import and activate one first",
+      detail:
+        selected === null
+          ? "no active candidate profile version; import and activate one first"
+          : `career profile '${selected.displayName}' has no active version; import and activate one first`,
     };
   }
   if (pointer.descriptionText === null || pointer.activeExtractionId === null) {

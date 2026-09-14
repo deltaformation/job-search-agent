@@ -56,10 +56,12 @@ export type BeginRunResult =
 /**
  * Open a run: fence the job, resolve current snapshots, and move the
  * job to RUNNING. Snapshot creation joins this transaction nest-safely.
+ * An explicit `profileId` binds that profile's active version instead of
+ * the default profile's.
  */
 export function beginTailorRun(
   handle: DatabaseHandle,
-  input: { jobId: string; extractionId: string; now: string },
+  input: { jobId: string; extractionId: string; now: string; profileId?: string },
 ): BeginRunResult {
   return withTransaction(handle.sqlite, () => {
     const job = getTailoringJob(handle, input.jobId);
@@ -95,7 +97,9 @@ export function beginTailorRun(
         detail: `tailoring cannot start from ${job.tailoringState}: ${planned.detail}`,
       } as const;
     }
-    const snapshots = resolveCurrentSnapshots(handle, input.jobId);
+    const snapshots = resolveCurrentSnapshots(handle, input.jobId, {
+      profileId: input.profileId,
+    });
     if (!snapshots.ok) {
       if (snapshots.error === "job-not-found") {
         return { ok: false, error: "job-not-found", detail: "job vanished mid-run" } as const;

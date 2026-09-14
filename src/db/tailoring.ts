@@ -392,6 +392,19 @@ export function getLatestTailorWorkItem(
   return row ?? null;
 }
 
+/** One TAILOR queue item's state by id, or null when unknown. */
+export function getTailorWorkItemState(
+  handle: DatabaseHandle,
+  workItemId: string,
+): string | null {
+  const row = handle.db
+    .select({ state: workItems.state })
+    .from(workItems)
+    .where(and(eq(workItems.id, workItemId), eq(workItems.kind, "TAILOR")))
+    .get();
+  return row?.state ?? null;
+}
+
 export interface LatestTailorAttempt {
   workItemId: string;
   attemptNumber: number;

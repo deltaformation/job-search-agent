@@ -186,4 +186,61 @@ describe("tailoring orchestration", () => {
     expect(result.reason).toBe("STALE_INPUT");
     expect(provider.receivedInputs).toHaveLength(0);
   });
+
+  it("binds human guidance into the hashed input envelope", async () => {
+    const deps = () => ({
+      provider: new TestProvider({ proposals: { "jd-e2e-1": e2eProposal("jd-e2e-1", "cs-e2e-1") } }),
+      renderPdf: async (html: string) => stubRenderPdf(html),
+      docxTemplateBytes: loadDocxTemplateBytes(),
+    });
+    const plain = await orchestrateTailoring(inputs(), deps());
+    const guided = await orchestrateTailoring(
+      {
+        ...inputs(),
+        profileId: "local",
+        selectedKeywords: ["Kubernetes", "Go"],
+        directives: "Emphasize scale.",
+      },
+      deps(),
+    );
+    expect(plain.ok).toBe(true);
+    expect(guided.ok).toBe(true);
+    if (!plain.ok || !guided.ok) {
+      throw new Error("expected success");
+    }
+    // Guidance reaches the provider envelope verbatim ...
+    const guidedProvider = new TestProvider({
+      proposals: { "jd-e2e-1": e2eProposal("jd-e2e-1", "cs-e2e-1") },
+    });
+    await orchestrateTailoring(
+      { ...inputs(), selectedKeywords: ["Kubernetes"], directives: "Emphasize scale." },
+      {
+        provider: guidedProvider,
+        renderPdf: async (html) => stubRenderPdf(html),
+        docxTemplateBytes: loadDocxTemplateBytes(),
+      },
+    );
+    expect(guidedProvider.receivedInputs).toHaveLength(1);
+    expect(guidedProvider.receivedInputs[0]).toMatchObject({
+      selectedKeywords: ["Kubernetes"],
+      directives: "Emphasize scale.",
+    });
+    // ... and forks the input hash recorded on the analysis.
+    expect(guided.value.inputHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(guided.value.inputHash).not.toBe(plain.value.inputHash);
+    const repeat = await orchestrateTailoring(
+      {
+        ...inputs(),
+        profileId: "local",
+        selectedKeywords: ["Kubernetes", "Go"],
+        directives: "Emphasize scale.",
+      },
+      deps(),
+    );
+    expect(repeat.ok).toBe(true);
+    if (!repeat.ok) {
+      throw new Error("expected success");
+    }
+    expect(repeat.value.inputHash).toBe(guided.value.inputHash);
+  });
 });

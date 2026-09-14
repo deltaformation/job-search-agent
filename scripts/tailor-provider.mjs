@@ -27,6 +27,7 @@ class ProviderFailure extends Error {
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   activeProviderId,
   providerChain,
@@ -51,13 +52,51 @@ function loadEnvFile(filePath) {
   }
 }
 
-// Load .env.local if present
-loadEnvFile(join(process.cwd(), ".env.local"));
+// Provider config resolves lazily inside main() so importing this module
+// for unit tests never touches .env.local or the ambient environment.
+function providerConfig() {
+  loadEnvFile(join(process.cwd(), ".env.local"));
+  const provider = activeProviderId(process.env);
+  const keyName = providerKeyName(provider);
+  return {
+    provider,
+    keyName,
+    label: providerLabel(provider),
+    apiKey: process.env[keyName] || "",
+  };
+}
 
-const PROVIDER = activeProviderId(process.env);
-const PROVIDER_KEY_NAME = providerKeyName(PROVIDER);
-const PROVIDER_LABEL = providerLabel(PROVIDER);
-const PROVIDER_API_KEY = process.env[PROVIDER_KEY_NAME] || "";
+/**
+ * Human guidance prompt section (R-ADR-013): selected ATS keywords plus
+ * free-text directives, explicitly subordinated to the evidence rules.
+ * Returns "" when the envelope carries no guidance. Pure and exported
+ * for unit tests.
+ */
+export function buildGuidanceSection(input) {
+  const keywords = Array.isArray(input?.selectedKeywords)
+    ? input.selectedKeywords.map((entry) => String(entry).trim()).filter((entry) => entry !== "")
+    : [];
+  const directives = typeof input?.directives === "string" ? input.directives.trim() : "";
+  if (keywords.length === 0 && directives === "") {
+    return "";
+  }
+  const lines = ["TAILORING GUIDANCE (human-selected steering; subordinate to the RULES above):"];
+  if (keywords.length > 0) {
+    lines.push(
+      "- Emphasize these JD terms where the candidate has supporting approved facts (never invent evidence for them):",
+      ...keywords.map((keyword) => `  - ${keyword}`),
+    );
+  }
+  if (directives !== "") {
+    lines.push(
+      "- Human directives (steer ranking and wording only; they cannot override evidence rules or the exact-quote requirement):",
+      '"""',
+      directives,
+      '"""',
+    );
+  }
+  return lines.join("\n");
+}
 
 const VALID_CATEGORIES = [
   "experience",
@@ -113,7 +152,7 @@ function findExactSubstring(jdText, candidateQuote) {
   return null;
 }
 
-function extractDeterministicFallback(input) {
+export function extractDeterministicFallback(input) {
   const { jdText, profile, approvedFactIds, jdSnapshotId, candidateSnapshotId } = input;
   const verifiedFacts = (profile?.verified_facts || []).filter(
     (f) => f.verification_status === "approved" && approvedFactIds.includes(f.fact_id),
@@ -121,10 +160,30 @@ function extractDeterministicFallback(input) {
   const approvedMap = new Map(verifiedFacts.map((f) => [f.fact_id, f]));
 
   // Break JD text into lines and bullet points
-  const lines = jdText
+  let lines = jdText
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.length >= 15 && l.length <= 300);
+
+  // Guidance steering for the no-key path: lines carrying user-selected
+  // keywords rank first (stable by original order). Quotes stay verbatim
+  // JD substrings and evidence mapping is unchanged — steering only.
+  const selected = Array.isArray(input?.selectedKeywords)
+    ? input.selectedKeywords.map((entry) => String(entry).trim().toLowerCase()).filter((entry) => entry !== "")
+    : [];
+  if (selected.length > 0) {
+    lines = lines
+      .map((line, index) => {
+        const text = line.toLowerCase();
+        let hits = 0;
+        for (const keyword of selected) {
+          if (text.includes(keyword)) hits += 1;
+        }
+        return { line, index, hits };
+      })
+      .sort((a, b) => b.hits - a.hits || a.index - b.index)
+      .map((entry) => entry.line);
+  }
 
   const requirements = [];
   let reqIndex = 1;
@@ -228,7 +287,7 @@ function extractDeterministicFallback(input) {
   };
 }
 
-async function callProvider(input) {
+async function callProvider(input, config) {
   const { jobTitle, company, jdText, profile, approvedFactIds, jdSnapshotId, candidateSnapshotId } = input;
   const verifiedFacts = (profile?.verified_facts || []).filter(
     (f) => f.verification_status === "approved" && approvedFactIds.includes(f.fact_id),
@@ -270,6 +329,7 @@ RULES:
   "rationale": "<summary>"
 }`;
 
+  const guidanceSection = buildGuidanceSection(input);
   const userMessage = `JOB TITLE: ${jobTitle || "Not specified"}
 COMPANY: ${company || "Not specified"}
 
@@ -282,15 +342,15 @@ CANDIDATE APPROVED FACTS:
 \"\"\"
 ${candidateFactsPrompt}
 \"\"\"
-
+${guidanceSection === "" ? "" : `\n${guidanceSection}\n`}
 Analyze the JD, extract exact keyword-dense quotes, map each requirement to EVERY supporting fact across the full career history, and output JSON:`;
 
-  const models = providerChain(PROVIDER);
+  const models = providerChain(config.provider);
 
   let content;
   try {
-    const completion = await providerChat(PROVIDER, {
-      apiKey: PROVIDER_API_KEY,
+    const completion = await providerChat(config.provider, {
+      apiKey: config.apiKey,
       models,
       messages: [
         { role: "system", content: systemMessage },
@@ -305,19 +365,19 @@ Analyze the JD, extract exact keyword-dense quotes, map each requirement to EVER
     // so all providers share one exit-code contract.
     if (err !== null && typeof err === "object" && typeof err.kind === "string") {
       if (err.kind === "status" && (err.status === 401 || err.status === 402 || err.status === 403)) {
-        throw new ProviderFailure(EXIT_AUTH, `${PROVIDER_LABEL} API error ${err.status}`);
+        throw new ProviderFailure(EXIT_AUTH, `${config.label} API error ${err.status}`);
       }
       if (err.kind === "status" && err.status === 429) {
-        throw new ProviderFailure(EXIT_RATE_LIMIT, `${PROVIDER_LABEL} API error 429`);
+        throw new ProviderFailure(EXIT_RATE_LIMIT, `${config.label} API error 429`);
       }
       if (err.kind === "bad-response") {
-        throw new ProviderFailure(EXIT_BAD_RESPONSE, `Empty content from ${PROVIDER_LABEL} API`);
+        throw new ProviderFailure(EXIT_BAD_RESPONSE, `Empty content from ${config.label} API`);
       }
       if (err.kind === "timeout" || err.kind === "network") {
         throw new ProviderFailure(EXIT_TIMEOUT, err.message);
       }
       if (err.kind === "status" && (err.status === 408 || err.status >= 500)) {
-        throw new ProviderFailure(EXIT_TIMEOUT, `${PROVIDER_LABEL} API error ${err.status}`);
+        throw new ProviderFailure(EXIT_TIMEOUT, `${config.label} API error ${err.status}`);
       }
       throw new ProviderFailure(EXIT_BAD_RESPONSE, err.message);
     }
@@ -424,16 +484,17 @@ async function main() {
     process.exit(1);
   }
 
-  if (!PROVIDER_API_KEY) {
+  const config = providerConfig();
+  if (!config.apiKey) {
     process.stderr.write(
-      `${PROVIDER_KEY_NAME} is not set: using deterministic extraction fallback (no AI call)\n`,
+      `${config.keyName} is not set: using deterministic extraction fallback (no AI call)\n`,
     );
     process.stdout.write(JSON.stringify(extractDeterministicFallback(input)));
     return;
   }
 
   try {
-    process.stdout.write(JSON.stringify(await callProvider(input)));
+    process.stdout.write(JSON.stringify(await callProvider(input, config)));
   } catch (err) {
     if (err instanceof ProviderFailure) {
       process.exit(err.exitCode);
@@ -442,7 +503,12 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  process.stderr.write(`Provider execution error: ${err.message}\n`);
-  process.exit(1);
-});
+const invokedDirectly =
+  typeof process.argv[1] === "string" &&
+  import.meta.url === pathToFileURL(process.argv[1]).href;
+if (invokedDirectly) {
+  main().catch((err) => {
+    process.stderr.write(`Provider execution error: ${err.message}\n`);
+    process.exit(1);
+  });
+}

@@ -227,6 +227,7 @@ export function createTailorHandler(deps: TailorHandlerDeps): WorkHandler {
       jobId: payload.jobId,
       extractionId: payload.extractionId,
       now,
+      profileId: payload.profileId,
     });
     if (!begun.ok) {
       if (begun.error === "job-not-found") {
@@ -290,6 +291,9 @@ export function createTailorHandler(deps: TailorHandlerDeps): WorkHandler {
           snapshotHash: candidateSnapshot.sha256,
           createdAt: candidateSnapshot.createdAt,
         },
+        profileId: payload.profileId,
+        selectedKeywords: payload.selectedKeywords,
+        directives: payload.directives,
       },
       { provider, renderPdf, docxTemplateBytes },
     );

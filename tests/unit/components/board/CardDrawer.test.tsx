@@ -465,4 +465,119 @@ describe("CardDrawer tailoring status", () => {
     expect(screen.queryByText("Compensation highlights")).toBeNull();
     expect(screen.queryByText("Top 5 ATS keywords")).toBeNull();
   });
+
+  describe("tailoring guidance", () => {
+    const guideProfiles = [
+      { id: "profile-1", name: "staff-engineer", displayName: "Staff Engineer", isDefault: true },
+      { id: "profile-2", name: "manager", displayName: "Manager", isDefault: false },
+    ];
+
+    function guidedView(): JobDetailView {
+      const base = failedView();
+      return {
+        ...base,
+        job: {
+          ...base.job,
+          descriptionText:
+            "Senior platform role. Kubernetes and PostgreSQL required. " +
+            "Kubernetes experience required. PostgreSQL required. AWS preferred. " +
+            "Lead the team to production excellence.",
+        },
+      };
+    }
+
+    function setupGuidance(options: {
+      view?: JobDetailView;
+      onPost?: (url: string) => unknown;
+    } = {}) {
+      const view = options.view ?? guidedView();
+      const fetchMock = vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
+        if (url === "/api/settings/profiles") {
+          return okJson({ profiles: guideProfiles });
+        }
+        if (url.startsWith("/api/resumes/")) {
+          return okJson(reviewPayload());
+        }
+        if (init?.method === "POST") {
+          return okJson(options.onPost?.(url) ?? { workItemId: "work-9", action: "enqueued" });
+        }
+        return okJson(view);
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const props = drawerProps();
+      render(<CardDrawer {...props} />);
+      return { fetchMock, props };
+    }
+
+    it("renders profiles, keyword chips, and directive starters", async () => {
+      setupGuidance();
+      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+      openResumesTab();
+      expect(await screen.findByText("Tailoring Guidance")).toBeInTheDocument();
+      const profileSelect = screen.getByLabelText("Career profile") as HTMLSelectElement;
+      expect(profileSelect.options[0]?.text).toBe("Default profile");
+      expect(profileSelect.options[1]?.text).toBe("Staff Engineer (default)");
+      expect(profileSelect.options[2]?.text).toBe("Manager");
+      const kubernetes = screen.getByRole("button", { name: "Kubernetes" });
+      expect(kubernetes).toHaveAttribute("aria-pressed", "false");
+      fireEvent.click(kubernetes);
+      expect(screen.getByRole("button", { name: "✓ Kubernetes" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      fireEvent.click(screen.getByRole("button", { name: /Emphasize profile skills/ }));
+      fireEvent.click(screen.getByRole("button", { name: /Prioritize B2B SaaS experience/ }));
+      expect(screen.getByLabelText("Directive notes")).toHaveValue(
+        "Emphasize profile skills\nPrioritize B2B SaaS experience",
+      );
+      expect(screen.getByRole("button", { name: /Tailor Resume/ })).toBeEnabled();
+    });
+
+    it("dispatches a guided run with profile, keywords, and directives", async () => {
+      const { fetchMock, props } = setupGuidance();
+      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+      openResumesTab();
+      expect(await screen.findByText("Tailoring Guidance")).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText("Career profile"), {
+        target: { value: "profile-2" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Kubernetes" }));
+      fireEvent.click(screen.getByRole("button", { name: "PostgreSQL" }));
+      fireEvent.change(screen.getByLabelText("Directive notes"), {
+        target: { value: "Emphasize scale." },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Tailor Resume" }));
+      await waitFor(() => expect(props.onChanged).toHaveBeenCalled());
+      const post = fetchMock.mock.calls.find(
+        ([url, init]) =>
+          url === "/api/jobs/job-1/tailor/retry" &&
+          (init as { method?: string } | undefined)?.method === "POST",
+      ) as [string, { body: string } | undefined] | undefined;
+      expect(post).toBeDefined();
+      expect(JSON.parse(post?.[1]?.body ?? "{}")).toEqual({
+        profileId: "profile-2",
+        selectedKeywords: ["Kubernetes", "PostgreSQL"],
+        directives: "Emphasize scale.",
+      });
+      expect(await screen.findByText(/tailoring with your guidance/i)).toBeInTheDocument();
+    });
+
+    it("disables guided tailoring while a run is live", async () => {
+      setupGuidance({ view: runningView() });
+      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+      openResumesTab();
+      expect(await screen.findByText("Tailoring Guidance")).toBeInTheDocument();
+      const button = screen.getByRole("button", { name: "Tailor Resume" });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute("title", "A tailoring run is already in flight");
+    });
+
+    it("offers re-tailoring once resumes exist", async () => {
+      setupGuidance({ view: landedView() });
+      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+      openResumesTab();
+      expect(await screen.findByText("Tailoring Guidance")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Re-tailor Resume" })).toBeEnabled();
+    });
+  });
 });

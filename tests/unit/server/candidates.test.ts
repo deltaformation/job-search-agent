@@ -13,7 +13,7 @@ import {
   type DatabaseHandle,
   type TestDatabase,
 } from "../../../src/db";
-import { listSnapshotFacts, setFactVerification } from "../../../src/db/candidates";
+import { createProfile, listSnapshotFacts, setFactVerification } from "../../../src/db/candidates";
 import {
   candidateFacts,
   candidateProfileVersions,
@@ -348,6 +348,40 @@ describe("resolveCurrentSnapshots", () => {
       expect(resolveCurrentSnapshots(t.handle, newId())).toEqual({
         ok: false,
         error: "job-not-found",
+      });
+    });
+  });
+
+  it("binds an explicit profile's active version instead of the default", () => {
+    withDatabase((t) => {
+      const { jobId } = seedJobWithExtraction(t.handle);
+      createProfile(t.handle, { name: "empty-default", displayName: "Empty Default" });
+      const second = createProfile(t.handle, { name: "second", displayName: "Second" });
+      const imported = importCandidate(t.handle, {
+        document: fixtureDocument(),
+        actor: "human",
+        now: NOW,
+        profileId: second.id,
+      });
+      expect(imported.ok).toBe(true);
+      if (!imported.ok) {
+        throw new Error(`fixture import failed: ${imported.error}`);
+      }
+      activateProfileVersion(t.handle, { versionId: imported.versionId, actor: "human", now: NOW });
+      // The default profile has no versions, so unscoped resolution blocks ...
+      expect(resolveCurrentSnapshots(t.handle, jobId)).toMatchObject({
+        ok: false,
+        error: "blocked",
+        reason: "PROFILE_REQUIRED",
+      });
+      // ... while the explicit profile resolves, and a deleted one is stale.
+      expect(resolveCurrentSnapshots(t.handle, jobId, { profileId: second.id })).toMatchObject({
+        ok: true,
+      });
+      expect(resolveCurrentSnapshots(t.handle, jobId, { profileId: "gone" })).toMatchObject({
+        ok: false,
+        error: "blocked",
+        reason: "STALE_INPUT",
       });
     });
   });

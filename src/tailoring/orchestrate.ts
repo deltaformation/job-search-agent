@@ -111,6 +111,10 @@ export interface OrchestrationInputs {
   profile: CandidateProfileInput;
   jdSnapshot: { id: string; jdText: string; createdAt: string };
   candidateSnapshot: { id: string; snapshotHash: string; createdAt: string };
+  /** Human guidance; bound into the hashed envelope when present. */
+  profileId?: string;
+  selectedKeywords?: string[];
+  directives?: string;
 }
 
 export interface OrchestrationDeps {
@@ -158,6 +162,9 @@ export async function orchestrateTailoring(
       profile: inputs.profile,
       approvedFactIds,
       promptVersion: TAILOR_PROMPT_VERSION,
+      ...(inputs.profileId === undefined ? {} : { profileId: inputs.profileId }),
+      ...(inputs.selectedKeywords === undefined ? {} : { selectedKeywords: inputs.selectedKeywords }),
+      ...(inputs.directives === undefined ? {} : { directives: inputs.directives }),
     });
   } catch (error: unknown) {
     return fail(

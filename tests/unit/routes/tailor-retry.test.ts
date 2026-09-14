@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { POST as retry } from "../../../app/api/jobs/[id]/tailor/retry/route";
+import { createProfile } from "../../../src/db/candidates";
 import {
   jobExtractions,
   jobs,
@@ -143,6 +144,128 @@ describe("POST /api/jobs/[id]/tailor/retry", () => {
         .prepare("SELECT state FROM work_items WHERE id = ?")
         .get(itemId) as { state: string };
       expect(state.state).toBe("QUEUED");
+    });
+  });
+
+  describe("guided runs", () => {
+    function seedProfile(): string {
+      return withDb((handle) => {
+        return createProfile(handle, { name: "guide-target", displayName: "Guide Target" }).id;
+      });
+    }
+
+    function payloadFor(workItemId: string): Record<string, unknown> {
+      return withDb(
+        (handle) =>
+          JSON.parse(
+            String(
+              (
+                handle.sqlite
+                  .prepare("SELECT payload_json AS payloadJson FROM work_items WHERE id = ?")
+                  .get(workItemId) as { payloadJson: string }
+              ).payloadJson,
+            ),
+          ) as Record<string, unknown>,
+      );
+    }
+
+    it("enqueues a guidance-scoped run with profile, keywords, and directives", async () => {
+      const { jobId } = seedJobWithExtraction();
+      const profileId = seedProfile();
+      const guidance = {
+        profileId,
+        selectedKeywords: ["Kubernetes", "Go"],
+        directives: "Emphasize scale.",
+      };
+      const response = await retry(
+        postRequest(`/api/jobs/${jobId}/tailor/retry`, guidance),
+        routeParams(jobId),
+      );
+      expect(response.status).toBe(200);
+      const body = await readJson(response);
+      expect(body["action"]).toBe("enqueued");
+      expect(payloadFor(String(body["workItemId"]))).toMatchObject(guidance);
+    });
+
+    it("dedupes identical guidance and forks on changed guidance", async () => {
+      const { jobId } = seedJobWithExtraction();
+      const first = await retry(
+        postRequest(`/api/jobs/${jobId}/tailor/retry`, { selectedKeywords: ["Kubernetes"] }),
+        routeParams(jobId),
+      );
+      const firstBody = await readJson(first);
+      expect(firstBody["action"]).toBe("enqueued");
+      const same = await retry(
+        postRequest(`/api/jobs/${jobId}/tailor/retry`, { selectedKeywords: ["Kubernetes"] }),
+        routeParams(jobId),
+      );
+      expect(await readJson(same)).toEqual({
+        workItemId: firstBody["workItemId"],
+        action: "already_queued",
+      });
+      const changed = await retry(
+        postRequest(
+          `/api/jobs/${jobId}/tailor/retry`,
+          { selectedKeywords: ["Kubernetes"], directives: "New note." },
+        ),
+        routeParams(jobId),
+      );
+      // A run is already queued: guidance never strands a duplicate run.
+      expect(await readJson(changed)).toEqual({
+        workItemId: firstBody["workItemId"],
+        action: "already_queued",
+      });
+    });
+
+    it("enqueues a fresh guided run after a FAILED legacy run", async () => {
+      const { jobId, extractionId } = seedJobWithExtraction();
+      const legacyId = withDb((handle) => {
+        const enqueued = requestTailoring(handle, { jobId, extractionId });
+        handle.sqlite.prepare("UPDATE work_items SET state = 'FAILED' WHERE id = ?").run(enqueued.workItemId);
+        return enqueued.workItemId;
+      });
+      const response = await retry(
+        postRequest(`/api/jobs/${jobId}/tailor/retry`, { selectedKeywords: ["Go"] }),
+        routeParams(jobId),
+      );
+      expect(response.status).toBe(200);
+      const body = await readJson(response);
+      expect(body["action"]).toBe("enqueued");
+      expect(body["workItemId"]).not.toBe(legacyId);
+      expect(payloadFor(String(body["workItemId"]))).toMatchObject({ selectedKeywords: ["Go"] });
+    });
+
+    it("returns 404 for unknown profiles and 400 for invalid guidance", async () => {
+      const { jobId } = seedJobWithExtraction();
+      const unknown = await retry(
+        postRequest(`/api/jobs/${jobId}/tailor/retry`, { profileId: "no-such-profile" }),
+        routeParams(jobId),
+      );
+      expect(unknown.status).toBe(404);
+      expect(await readJson(unknown)).toMatchObject({ error: "profile not found" });
+      const invalid = await retry(
+        postRequest(
+          `/api/jobs/${jobId}/tailor/retry`,
+          { selectedKeywords: Array.from({ length: 21 }, (_, index) => `k${index}`) },
+        ),
+        routeParams(jobId),
+      );
+      expect(invalid.status).toBe(400);
+    });
+
+    it("refuses guided re-tailoring once the job is tailored", async () => {
+      const { jobId, extractionId } = seedJobWithExtraction();
+      withDb((handle) => {
+        const enqueued = requestTailoring(handle, { jobId, extractionId });
+        handle.sqlite.prepare("UPDATE work_items SET state = 'SUCCEEDED' WHERE id = ?").run(enqueued.workItemId);
+        handle.db.update(jobs).set({ tailoringState: "AWAITING_REVIEW" }).where(eq(jobs.id, jobId)).run();
+      });
+      const response = await retry(
+        postRequest(`/api/jobs/${jobId}/tailor/retry`, { directives: "Try again." }),
+        routeParams(jobId),
+      );
+      expect(response.status).toBe(409);
+      expect(await readJson(response)).toMatchObject({ error: "tailoring already succeeded" });
     });
   });
 });

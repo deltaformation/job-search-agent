@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { BoardStatus } from "@/src/domain/enums";
+import { extractAtsKeywords } from "@/src/domain/atsKeywords";
 import type { BoardCardView, JobDetailView } from "@/src/server/board";
 import { apiGet, apiPost, errorMessage } from "../api";
 import AddNoteForm from "./AddNoteForm";
@@ -41,6 +42,14 @@ const ORDINARY_TARGETS: Record<BoardStatus, BoardStatus[]> = {
   INTERVIEWED: ["REJECTED"],
   REJECTED: [],
 };
+
+const DIRECTIVE_STARTERS: readonly string[] = [
+  "Emphasize profile skills",
+  "Prioritize B2B SaaS experience",
+  "Highlight quantifiable KPI results and metrics",
+];
+
+const MAX_DIRECTIVES_CHARS = 1000;
 
 function pretty(value: string | null): string {
   if (value === null || value === "") {
@@ -105,8 +114,30 @@ export default function CardDrawer({
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState<Array<{
+    id: string;
+    name: string;
+    displayName: string;
+    isDefault: boolean;
+  }> | null>(null);
+  const [profilesError, setProfilesError] = useState<string | null>(null);
+  const [guideProfileId, setGuideProfileId] = useState("");
+  const [guideKeywords, setGuideKeywords] = useState<string[]>([]);
+  const [guideDirectives, setGuideDirectives] = useState("");
+  const [guideJobId, setGuideJobId] = useState(jobId);
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const centerScrollRef = useRef<HTMLDivElement>(null);
+
+  // Guidance selections belong to one job: reset during render when the
+  // drawer retargets (the sanctioned render-time adjustment pattern).
+  if (guideJobId !== jobId) {
+    setGuideJobId(jobId);
+    setProfiles(null);
+    setProfilesError(null);
+    setGuideProfileId("");
+    setGuideKeywords([]);
+    setGuideDirectives("");
+  }
 
   function resetSectionScroll(): void {
     // Section switches start at the top: without a reset, newly shown
@@ -182,6 +213,61 @@ export default function CardDrawer({
     }
   }
 
+  function toggleGuideKeyword(keyword: string): void {
+    setGuideKeywords((current) =>
+      current.includes(keyword)
+        ? current.filter((entry) => entry !== keyword)
+        : [...current, keyword].slice(0, 20),
+    );
+  }
+
+  function appendStarter(starter: string): void {
+    setGuideDirectives((current) => {
+      const trimmed = current.trimEnd();
+      const joined = trimmed === "" ? starter : `${trimmed}\n${starter}`;
+      return joined.slice(0, MAX_DIRECTIVES_CHARS);
+    });
+  }
+
+  async function onGuidedTailoring(hasResumes: boolean): Promise<void> {
+    setRetrying(true);
+    setRetryNotice(null);
+    setActionError(null);
+    try {
+      const body: {
+        profileId?: string;
+        selectedKeywords?: string[];
+        directives?: string;
+      } = {};
+      if (guideProfileId !== "") {
+        body.profileId = guideProfileId;
+      }
+      if (guideKeywords.length > 0) {
+        body.selectedKeywords = guideKeywords;
+      }
+      if (guideDirectives.trim() !== "") {
+        body.directives = guideDirectives.trim();
+      }
+      const result = await apiPost<{ workItemId: string; action: string }>(
+        `/api/jobs/${jobId}/tailor/retry`,
+        body,
+      );
+      setRetryNotice(
+        result.action === "requeued" || result.action === "enqueued"
+          ? hasResumes
+            ? "Re-tailoring with your guidance — watching for the new run."
+            : "Tailoring with your guidance — watching for the new run."
+          : `Tailoring already ${result.action.replace("already_", "")} — watching for updates.`,
+      );
+      onChanged();
+      await refreshDetail();
+    } catch (retryError: unknown) {
+      setActionError(errorMessage(retryError));
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   function asCard(view: JobDetailView): BoardCardView {
     const active = view.resumes.find((resume) => resume.id === view.job.activeResumeVersionId);
     return {
@@ -246,6 +332,35 @@ export default function CardDrawer({
   // function runs, so opening the drawer never builds the two hidden trees.
   const currentTab =
     activeTab ?? (view !== null && view.resumes.length > 0 ? "resumes" : "overview");
+
+  const suggestedKeywords = useMemo(
+    () => extractAtsKeywords(detail?.job.descriptionText ?? ""),
+    [detail?.job.descriptionText],
+  );
+
+  useEffect(() => {
+    if (currentTab !== "resumes" || profiles !== null || profilesError !== null) {
+      return;
+    }
+    let cancelled = false;
+    apiGet<{ profiles: Array<{ id: string; name: string; displayName: string; isDefault: boolean }> }>(
+      "/api/settings/profiles",
+    ).then(
+      (data) => {
+        if (!cancelled) {
+          setProfiles(Array.isArray(data.profiles) ? data.profiles : []);
+        }
+      },
+      (fetchError: unknown) => {
+        if (!cancelled) {
+          setProfilesError(errorMessage(fetchError));
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTab, profiles, profilesError, jobId]);
 
   const renderOverview = (v: JobDetailView) => (
     <div className="space-y-4">
@@ -455,6 +570,128 @@ export default function CardDrawer({
     return null;
   };
 
+  const renderTailoringGuidance = (v: JobDetailView) => {
+    const live = v.job.tailoringState === "PENDING" || v.job.tailoringState === "RUNNING";
+    return (
+      <section
+        aria-labelledby="drawer-guidance"
+        className="workspace-tab rounded-lg border border-border/80 bg-card p-4 space-y-3"
+      >
+        <h4 id="drawer-guidance" className="font-semibold text-sm flex items-center gap-2">
+          <Sparkles className="size-4 text-primary" aria-hidden="true" />
+          <span>Tailoring Guidance</span>
+        </h4>
+        <div className="grid gap-1.5">
+          <label htmlFor="guide-profile" className="text-xs font-medium">
+            Career profile
+          </label>
+          {profilesError !== null ? (
+            <p role="alert" className="text-xs text-destructive">
+              Could not load profiles: {profilesError}
+            </p>
+          ) : profiles === null ? (
+            <p className="text-xs text-muted-foreground">Loading profiles…</p>
+          ) : (
+            <select
+              id="guide-profile"
+              value={guideProfileId}
+              onChange={(event) => setGuideProfileId(event.target.value)}
+              disabled={retrying}
+              className="rounded-lg border border-input bg-background p-2 text-sm"
+            >
+              <option value="">Default profile</option>
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.displayName}
+                  {profile.isDefault ? " (default)" : ""}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        <div className="grid gap-1.5">
+          <span id="guide-keywords-label" className="text-xs font-medium">
+            Top ATS keywords
+          </span>
+          {suggestedKeywords.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No keyword suggestions — this job has no extracted description text yet.
+            </p>
+          ) : (
+            <div role="group" aria-labelledby="guide-keywords-label" className="flex flex-wrap gap-1.5">
+              {suggestedKeywords.map((entry) => {
+                const selected = guideKeywords.includes(entry.keyword);
+                return (
+                  <button
+                    key={entry.keyword}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => toggleGuideKeyword(entry.keyword)}
+                    disabled={retrying}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
+                      selected
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border/80 bg-background text-muted-foreground"
+                    }`}
+                  >
+                    {selected ? `✓ ${entry.keyword}` : entry.keyword}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <div className="grid gap-1.5">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Directive starters">
+            {DIRECTIVE_STARTERS.map((starter) => (
+              <button
+                key={starter}
+                type="button"
+                onClick={() => appendStarter(starter)}
+                disabled={retrying}
+                className="rounded-full border border-border/80 bg-muted/30 px-2.5 py-1 text-xs text-muted-foreground"
+              >
+                🏷️ {starter}
+              </button>
+            ))}
+          </div>
+          <label htmlFor="guide-directives" className="text-xs font-medium">
+            Directive notes
+          </label>
+          <textarea
+            id="guide-directives"
+            rows={3}
+            maxLength={MAX_DIRECTIVES_CHARS}
+            value={guideDirectives}
+            onChange={(event) => setGuideDirectives(event.target.value)}
+            disabled={retrying}
+            placeholder="Custom instructions for this run…"
+            className="rounded-lg border border-input bg-background p-2 text-sm"
+          />
+          <p className="text-[11px] tabular-nums text-muted-foreground" aria-live="polite">
+            {guideDirectives.length}/{MAX_DIRECTIVES_CHARS}
+          </p>
+        </div>
+        <div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void onGuidedTailoring(v.resumes.length > 0)}
+            disabled={retrying || live}
+            title={live ? "A tailoring run is already in flight" : undefined}
+          >
+            <RotateCcw className={`size-3.5 mr-1 ${retrying ? "animate-spin" : ""}`} aria-hidden="true" />
+            {retrying ? "Starting…" : v.resumes.length > 0 ? "Re-tailor Resume" : "Tailor Resume"}
+          </Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Guidance steers ranking and wording only — every claim still cites approved facts, and
+          unsupported requirements stay explicit gaps.
+        </p>
+      </section>
+    );
+  };
+
   const renderResumes = (v: JobDetailView) => (
     <section aria-labelledby="drawer-resumes" className="space-y-4">
       <div className="flex items-center justify-between">
@@ -468,6 +705,8 @@ export default function CardDrawer({
           </Badge>
         )}
       </div>
+
+      {renderTailoringGuidance(v)}
 
       {renderTailoringAlert(v)}
 

@@ -35,6 +35,13 @@ export const TailoringInputV1 = z
     profile: CandidateProfileInput,
     approvedFactIds: z.array(z.string().min(1)).max(500),
     promptVersion: z.literal(TAILOR_PROMPT_VERSION),
+    // Human guidance (R-ADR-013): hashed into input_hash with the rest of
+    // the envelope, so every run's steering is lineage-bound. The provider
+    // must treat these as ranking/wording steers only — claims still
+    // require approved fact evidence.
+    profileId: z.string().trim().min(1).max(64).optional(),
+    selectedKeywords: z.array(z.string().trim().min(1).max(128)).max(20).optional(),
+    directives: z.string().trim().max(1000).optional(),
   })
   .strict();
 export type TailoringInputV1 = z.infer<typeof TailoringInputV1>;
