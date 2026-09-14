@@ -747,3 +747,132 @@ Safety/human checkpoint:
   - Profiles stay steering metadata only (no claim/fact path touched); upload validates before writing and re-syncs through the human-actor import path; no keys, paths, or secrets serialized; mutations stay behind the Host/Origin gate; no ATS/application behavior changed.
 ```
 
+---
+
+## Record 9: Interactive Tailoring in Job Workspace
+
+**Work Order ID:** `WO-1.1-H`  
+**Phase:** Phase 2.4  
+**Commit:** `ab1b98f`  
+
+### Prompt Given to Agent
+```markdown
+You are working on the Local Job Tracker repository on branch `release/v1.0`.
+We are implementing Phase 2.4 of `docs/roadmap-v1.1.md` (Interactive Tailoring in Job Workspace: Profile Selector, ATS Keywords & Directives).
+
+### Mandatory Context & Rules
+1. Inspect before modifying:
+   - `components/board/CardDrawer.tsx` (Tailoring & Resumes tab)
+   - `src/server/tailoring.ts` and `src/tailoring/enqueue.ts` (`TailorPayloadV1`, `requestTailoring`)
+   - `src/tailoring/orchestrate.ts` and `src/tailoring/provider.ts` (`TailorInputV1`, prompt construction, and `input_hash` calculation)
+   - `src/db/schema/analysis.ts` and `src/db/candidates.ts` (retrieving profile version & candidate snapshot for selected `profileId`)
+2. Follow `AGENTS.md` and `PROJECT.md`.
+3. Non-negotiable truth boundary: Selected keywords and directives steer ranking and wording, but MUST NOT invent unapproved candidate facts. All claims must cite approved `fact_id`s. Unsupported requirements must remain explicit gaps.
+4. Lineage & Auditability: Selected `profileId`, `selectedKeywords`, and `directives` must be recorded in the tailoring input and hashed into `input_hash`.
+5. Run `node scripts/check-project-context.mjs` before and after.
+
+---
+
+### Work Order Scope: Phase 2.4 Interactive Tailoring in Job Workspace
+
+#### 1. ATS Keywords Extraction Helper
+- Implement deterministic ATS keywords extractor from the job description text/extraction:
+  - Extracts frequency/significance-ranked technical keywords, frameworks, and domain concepts (Top 10).
+  - Expose via API or lightweight client utility for the drawer.
+
+#### 2. Tailoring Queue & Envelope Updates (`R-ADR-013`)
+- In `src/tailoring/enqueue.ts`:
+  - Extend `TailorPayloadV1` to include:
+    - `profileId`: optional `ProfileId` (defaults to active default profile)
+    - `selectedKeywords`: optional array of strings (max 20)
+    - `directives`: optional string (max 1000 chars)
+  - Ensure idempotency key remains distinct when user requests re-tailoring with new directives/profile.
+- In `src/tailoring/orchestrate.ts` & `provider.ts`:
+  - Incorporate `selectedKeywords` and `directives` into the prompt construction for the AI provider.
+  - Bind candidate facts from the chosen `profileId`'s active version.
+  - Include `profileId`, `selectedKeywords`, and `directives` in the canonical JSON hashed into `job_analyses.input_hash`.
+
+#### 3. Tailoring Route Updates (`app/api/jobs/[id]/tailor/` or `tailor-retry`)
+- Allow passing `{ profileId, selectedKeywords, directives }` in the POST body to trigger tailoring or re-tailoring.
+
+#### 4. Job Workspace UI in Card Drawer (`components/board/CardDrawer.tsx`)
+- In the **Tailoring & Resumes** tab, add the **Tailoring Guidance** panel:
+  - **Career Profile Selector**: Dropdown showing all profiles with their display name and default badge.
+  - **Top 10 ATS Keywords**: Extracted from the job description, displayed as clickable toggle chips (`[Kubernetes ✓]`, `[PostgreSQL]`).
+  - **Directive Notes**: Textarea for custom instructions with 3 one-click starter pills above:
+    1. 🏷️ *"Emphasize profile skills"*
+    2. 🏷️ *"Prioritize B2B SaaS experience"*
+    3. 🏷️ *"Highlight quantifiable KPI results and metrics"*
+    - Clicking a pill appends that text into the textarea.
+  - **Tailor / Re-Tailor Button**: Dispatches the tailoring run with the chosen profile, keywords, and directives. Displays inline progress/status.
+
+#### 5. Automated Verification & Tests
+- Unit tests for ATS keyword extraction.
+- Unit tests for queue payload validation, idempotency, and envelope hashing with directives/keywords.
+- Test tailoring route with profile selection and directives payload.
+- Update `CardDrawer.test.tsx` to verify interactive tailoring controls.
+- Run full non-browser vitest suite (`npx vitest run --exclude '**/browser/**'`).
+- Run `npm run typecheck`, `npm run lint`, and `node scripts/check-project-context.mjs`.
+
+---
+
+### Expected Handoff Output
+Provide the completed handoff block required by `AGENTS.md`:
+
+Task: Phase 2.4 interactive tailoring in job workspace
+Outcome:
+Status: implemented | needs-review | blocked
+Files changed:
+Migrations/data effects:
+Verification performed and exact result:
+Acceptance criteria not yet proven:
+Decisions or deviations:
+Safety/human checkpoint:
+```
+
+### Official Handoff
+```text
+Task: Phase 2.4 interactive tailoring in job workspace
+Outcome: Tailoring Guidance panel in the drawer (profile selector, Top-10 ATS keyword chips, directive starters + notes, Tailor/Re-tailor button) backed by guidance-scoped queue payloads, envelope hashing, targeted candidate binding, provider prompt steering, and a guided retry route.
+Status: implemented
+Files changed:
+  - src/domain/atsKeywords.ts (new)
+  - src/tailoring/enqueue.ts
+  - src/tailoring/contract.ts
+  - src/tailoring/orchestrate.ts
+  - src/tailoring/handler.ts
+  - src/tailoring/persist.ts
+  - src/server/candidates.ts
+  - src/server/tailoring.ts
+  - app/api/jobs/[id]/tailor/retry/route.ts
+  - src/db/tailoring.ts
+  - scripts/tailor-provider.mjs
+  - components/board/CardDrawer.tsx
+  - tests/unit/domain/atsKeywords.test.ts (new)
+  - tests/unit/tailoring/enqueue.test.ts (new)
+  - tests/unit/scripts/tailor-provider.test.ts (new)
+  - tests/unit/components/board/CardDrawer.test.tsx
+  - tests/unit/routes/tailor-retry.test.ts
+  - tests/unit/server/candidates.test.ts
+  - tests/unit/tailoring/orchestrate.test.ts
+Migrations/data effects: none (input_hash column already stores the envelope hash; guidance rides existing payload/snapshot machinery)
+Verification performed and exact result:
+  - Extractor 6/6, enqueue 8/8, provider script 6/6, orchestrate 9/9 (incl. guidance hash fork + determinism), retry route 9/9, drawer 16/16, candidates server 15/15.
+  - Full non-browser suite: 119 files / 931 tests pass, twice consecutively.
+  - npm run typecheck: 0 errors.
+  - npm run lint: 0 warnings.
+  - node scripts/check-project-context.mjs: 11/11 before and after.
+  - CLI smoke: guided envelope through tailor-provider.mjs exits 0 with a valid resume-proposal/v1 on both the live path (repo .env.local key) and the no-key fallback path.
+Acceptance criteria not yet proven:
+  - Guidance-panel layout at 13in/4K viewports (no browser in sandbox).
+  - Live guided run end-to-end through the worker (covered at enqueue/orchestrate/route/component levels only).
+Decisions or deviations:
+  - Work-order names corrected to the code (TailoringInputV1 in contract.ts; no src/tailoring/provider.ts — the prompt lives in scripts/tailor-provider.mjs).
+  - Guided re-tailoring on AWAITING_REVIEW/APPROVED jobs is a 409 directing to the revision flow; no fake review transitions.
+  - Legacy unguided path byte-identical (same key, same payload shape); old queued payloads still parse (tested).
+  - No-key fallback prioritizes keyword-bearing lines (stable, deterministic) so guidance is effective offline; directives there are record-only.
+  - Retry body now validated (was ignored); all callers already post JSON.
+Safety/human checkpoint:
+  - Guidance steers ranking/wording only: prompt section subordinated to evidence rules, quotes stay verbatim, gaps stay gaps, claims still require approved fact_ids; profileId/keywords/directives hashed into input_hash for lineage; no ATS/application behavior changed.
+```
+
