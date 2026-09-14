@@ -51,4 +51,29 @@ describe("create-desktop-app CLI validation", () => {
     expect(result.status, result.stderr).not.toBe(0);
     expect(result.stderr).toMatch(/unknown argument/);
   });
+
+  it("generates Info.plist with arm64 LSArchitecturePriority", async () => {
+    const { buildInfoPlist } = await import("../../../scripts/create-desktop-app.mjs");
+    const plist = buildInfoPlist({ version: "1.1.0" });
+    expect(plist).toContain("<key>LSArchitecturePriority</key>");
+    expect(plist).toContain("<string>arm64</string>");
+  });
+
+  it("generates launcher with arm64 re-exec guard and Chrome isolation flags", async () => {
+    const { buildLauncher } = await import("../../../scripts/create-desktop-app.mjs");
+    const script = buildLauncher({
+      nodeBin: "/usr/local/bin/node",
+      nodeMajor: "24",
+      projectDir: "/test/project",
+      host: "127.0.0.1",
+      port: 3000,
+      serverCmd: "start",
+    });
+    expect(script).toContain("arch -arm64");
+    expect(script).toContain("--disable-session-crashed-bubble");
+    expect(script).toContain("--disable-background-networking");
+    expect(script).toContain("--disable-component-update");
+    expect(script).toContain("Sessions");
+  });
 });
+
