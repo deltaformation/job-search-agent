@@ -876,3 +876,120 @@ Safety/human checkpoint:
   - Guidance steers ranking/wording only: prompt section subordinated to evidence rules, quotes stay verbatim, gaps stay gaps, claims still require approved fact_ids; profileId/keywords/directives hashed into input_hash for lineage; no ATS/application behavior changed.
 ```
 
+---
+
+## Record 10: Resumes Section Hierarchy & Derived Follow-Up Indicators
+
+**Work Order ID:** `WO-1.1-I`  
+**Phase:** Phase 3.1 & 3.4  
+**Commit:** `3de1956`  
+
+### Prompt Given to Agent
+```markdown
+You are working on the Local Job Tracker repository on branch `release/v1.0`.
+We are implementing Phase 3.1 and Phase 3.4 of `docs/roadmap-v1.1.md` (Resumes Section Hierarchy & Derived Follow-Up Indicators).
+
+### Mandatory Context & Rules
+1. Inspect before modifying:
+   - `components/board/CardDrawer.tsx` (`renderResumes` section)
+   - `components/board/ResumeReview.tsx` (version review layout, artifacts links, approve/revise action bar)
+   - `components/board/JobCard.tsx` (card rendering, applied status, badge placement)
+   - `src/domain/board.ts` (card view model, `appliedAt` field)
+2. Follow `AGENTS.md` and `PROJECT.md`.
+3. Non-negotiable truth boundary: All document preview links open generated artifacts via safe artifact IDs in new browser tabs (`target="_blank"`). Manual human approval and manual application remain strictly required.
+4. Run `node scripts/check-project-context.mjs` before and after.
+
+---
+
+### Work Order Scope: Phase 3.1 & 3.4
+
+#### 1. Master Resume Preview & Empty State (Phase 3.1)
+- In `components/board/CardDrawer.tsx`:
+  - Add a **Master Resume** card at the top of the Resumes tab showing the active master profile name, version, and a direct `[Preview]` button opening the master resume preview in a new tab.
+  - If `v.resumes.length === 0`: Display a helpful empty state guiding the user: *"No tailored resumes generated yet. Choose your profile and keywords below to tailor a resume for this role."*
+
+#### 2. Scannable Resume Version List & Drill-Down (Phase 3.1)
+- Replace the legacy `<select>` dropdown with a list of version cards:
+  - Each version card displays:
+    - Version label (e.g. `Version 2`)
+    - Review status badge (`Awaiting review`, `Approved`, `Revision requested`)
+    - Associated profile name (e.g. `Profile "Primary Profile"`)
+    - Direct preview buttons: `[DOCX]`, `[MARKDOWN]`, `[PDF]` that open the artifact directly in a new tab (download buttons removed to eliminate visual clutter).
+  - Clicking a version card selects it as the active version for deep audit drill-down:
+    - Displays Requirements Match Status (Matched, Partial, Gap).
+    - Displays Selected ATS Keywords and cited facts.
+    - Displays Proposed Changes & Summary.
+    - Action bar with Approve / Revise controls.
+
+#### 3. Derived Follow-Up Badges on Applied Cards (Phase 3.4)
+- In `components/board/JobCard.tsx`:
+  - For cards in the `APPLIED` column:
+    - Calculate elapsed days since `card.appliedAt`.
+    - If $\ge 7$ days: display a clean, subtle badge:
+      - $\ge 30$ days: `Follow-up suggested (30d+)`
+      - $\ge 14$ days: `Follow-up suggested (14d)`
+      - $\ge 7$ days: `Follow-up suggested (7d)`
+    - Omit badge if applied within the last 6 days or if `appliedAt` is absent.
+  - Derived purely on the client with zero database mutations or background jobs.
+
+#### 4. Automated Verification & Tests
+- Add/update unit tests in `tests/unit/components/board/JobCard.test.tsx` (or `mutate.test.ts` / new test file) verifying:
+  - Follow-up badge renders correctly at 7d, 14d, 30d thresholds.
+  - Follow-up badge does not render on recent applications (< 7d) or non-Applied columns.
+- Update `CardDrawer.test.tsx` and `ResumeReview.test.tsx` verifying:
+  - Master resume preview card renders with new tab link.
+  - Version cards render with preview links `[DOCX]`, `[MARKDOWN]`, `[PDF]`.
+  - Selecting a version card updates drill-down audit and review controls.
+- Run full non-browser vitest suite (`npx vitest run --exclude '**/browser/**'`).
+- Run `npm run typecheck`, `npm run lint`, and `node scripts/check-project-context.mjs`.
+
+---
+
+### Expected Handoff Output
+Provide the completed handoff block required by `AGENTS.md`:
+
+Task: Phase 3.1 resumes section hierarchy and Phase 3.4 derived follow-up indicators
+Outcome:
+Status: implemented | needs-review | blocked
+Files changed:
+Migrations/data effects:
+Verification performed and exact result:
+Acceptance criteria not yet proven:
+Decisions or deviations:
+Safety/human checkpoint:
+```
+
+### Official Handoff
+```text
+Task: Phase 3.1 resumes section hierarchy and Phase 3.4 derived follow-up indicators
+Outcome: Resumes tab rebuilt with a Master Resume card (profile, version, new-tab preview page), scannable version cards with status/profile and [DOCX]/[MARKDOWN]/[PDF] new-tab previews plus click-to-select audit drill-down, guided empty state, and client-derived follow-up badges on stale Applied cards.
+Status: implemented
+Files changed:
+  - app/master-resume/page.tsx (new: server-rendered, React-escaped master resume preview of the default profile's active version)
+  - src/server/board.ts (BoardCardView.appliedAt via LEFT JOIN, same query count; ResumeVersionView profileName/profileDisplayName via one batched version->analysis->snapshot->profile lineage query)
+  - components/board/CardDrawer.tsx (master card, version cards replacing the select, new empty state, guidance panel moved below versions)
+  - components/board/JobCard.tsx (follow-up badge at 7d/14d/30d+)
+  - tests: unit/components/board/JobCard.test.tsx (new), CardDrawer hierarchy suite, board server appliedAt/lineage assertions, fixture updates for the new view fields
+Migrations/data effects: none (read-model joins only)
+Verification performed and exact result:
+  - JobCard 9/9 (thresholds, recency, non-applied, absent/future/invalid).
+  - CardDrawer 20/20 (master card + Preview target, empty-state copy, version cards + preview hrefs/targets, selection swaps drill-down).
+  - Board server incl. lineage/appliedAt assertions green; ResumeReview suite green unchanged; board-perf query budget green.
+  - Full non-browser suite: 120 files / 945 tests pass, three consecutive runs (known queries.test.ts flake absent this round).
+  - npm run typecheck: 0 errors.
+  - npm run lint: clean, exit 0.
+  - node scripts/check-project-context.mjs: 11/11 before and after.
+Acceptance criteria not yet proven:
+  - Visual hierarchy at 13in/4K viewports (no browser in sandbox).
+  - Preview page render against a real database (covered by code review; no page-level test harness exists).
+Decisions or deviations:
+  - New /master-resume page instead of reusing the JSON download: the work order requires a preview, and a server page auto-escapes.
+  - Guidance panel moved below the versions list so the empty-state "below" copy is literally true.
+  - Download removal scoped to version cards only; ResumeReview keeps Preview+Download (review evidence + approval flow need files).
+  - ResumeReview.tsx untouched (no changes needed); selection coverage lives in CardDrawer.test.tsx.
+  - Follow-up clock read once per mount (render purity rule); midnight staleness refreshes on remount/reload.
+  - Lint fixes: inlined version-select handler (rule traces named helpers to ref reads), useState clock init, dropped dead disable directive.
+Safety/human checkpoint:
+  - All previews open by artifact id / fixed route in new tabs with rel="noreferrer"; no paths serialized; approval and application stay manual; badge is a read-only client derivation (zero mutations).
+```
+
