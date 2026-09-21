@@ -4371,3 +4371,59 @@ Readiness: WO-1.3-I8 is complete and implemented. I8/I5 are
   with named owners. No further I8 work remains; stopped
   after I8 per scope.
 ```
+
+## 2026-09-21 — Repository checkpoint and push
+
+Prompt: “Let's make a commit and push to git of the latest changes”
+
+Outcome: implemented. The full current working tree was reviewed, staged,
+committed as `1941fff` (`feat: integrate v1.2 and v1.3 resume workflows`),
+and pushed to `origin/release/v1.0`. Portable project tool configuration was
+included; CodeGraph's generated database, logs, PID, and socket remained
+ignored. A credential-pattern review found only documented placeholders and
+synthetic test values. Trailing-whitespace and extra-EOF-newline defects were
+removed before the commit.
+
+```text
+Task: Commit and push the latest integrated v1.2/v1.3 workspace changes.
+Outcome: release bundle committed as 1941fff and pushed to
+  origin/release/v1.0.
+Status: implemented
+Files changed:
+  - Main checkpoint: the 434-file accumulated release bundle already present
+    in the working tree, including migrations 0006–0011, product code, tests,
+    acceptance evidence, and portable agent/tool configuration.
+  - Formatting-only cleanup: trailing whitespace and extra blank lines at EOF
+    in the files reported by `git diff --check`.
+  - docs/execution-log-v1.2.md (this administrative handoff record).
+Migrations/data effects: migrations 0006–0011 were committed but not executed
+  by this checkpoint task. No live database or artifact data was changed.
+Verification performed and exact result:
+  - `git diff --cached --check` → clean before commit.
+  - Staged credential-pattern scan → only documentation placeholders and
+    synthetic test keys; no environment or private-key file committed.
+  - `npm run typecheck` → PASS (exit 0).
+  - `npm run lint` → PASS (exit 0).
+  - `node scripts/check-project-context.mjs` → PASS: 16 required files,
+    16 active entrypoints, retired harness absent.
+  - `npm test` → 223 files passed, 2 browser suites failed to launch under the
+    sandbox, 1 file failed on the documented tailor-retry mismatch; 2018 tests
+    passed, 1 expected failure, 18 skipped, 1 failed. The failing assertion
+    expected 409 and received 422. The prior recorded unsandboxed browser run
+    remains 24/24.
+  - `git push origin release/v1.0` → bd7a227..1941fff pushed successfully.
+Acceptance criteria not yet proven:
+  - The pre-existing tailor-retry expected-409/received-422 unit failure remains
+    open under its existing owner.
+  - Browser-backed unit suites could not be rerun in this sandbox; their latest
+    unsandboxed results are recorded in the immediately preceding handoff.
+  - Release acceptance items already listed in docs/status.md remain open.
+Decisions or deviations:
+  - All non-ignored current workspace changes were treated as the requested
+    latest changes. Generated CodeGraph state stayed local through
+    `.codegraph/.gitignore`.
+  - This log record follows the main checkpoint as a documentation-only commit
+    so the handoff can truthfully name the completed commit and push result.
+Safety/human checkpoint: no migrations were run, no live data was opened, no
+  resume was approved, and no application or provider action was performed.
+```
