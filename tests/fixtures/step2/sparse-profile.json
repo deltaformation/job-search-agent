@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "candidate-profile/v1",
+  "identity": { "fullName": "Jo Lee" },
+  "employment": [
+    {
+      "id": "emp-acme",
+      "company": "Acme Corp",
+      "role": "Support Agent",
+      "startDate": "2024-01-08",
+      "isCurrent": true
+    }
+  ],
+  "achievements": [
+    {
+      "factId": "fact-acme-1",
+      "employmentId": "emp-acme",
+      "category": "support",
+      "text": "Resolved customer tickets across email and chat",
+      "technologies": [],
+      "metrics": [],
+      "verification": "APPROVED"
+    }
+  ]
+}

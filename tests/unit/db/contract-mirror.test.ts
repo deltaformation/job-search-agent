@@ -12,8 +12,10 @@ import {
   ReviewState,
   ScrapeState,
   SourceArtifactKind,
+  SourceOrigin,
   TailoringState,
   Verification,
+  WorkAttemptState,
   WorkKind,
   WorkState,
 } from "../../../src/domain";
@@ -36,7 +38,7 @@ const MIRRORS: ReadonlyArray<{
   { table: "workflow_events", constraint: "workflow_events_from_status", schema: BoardStatus },
   { table: "workflow_events", constraint: "workflow_events_to_status", schema: BoardStatus },
   { table: "scrape_attempts", constraint: "scrape_attempts_outcome", schema: AttemptResult },
-  { table: "work_attempts", constraint: "work_attempts_result", schema: AttemptResult },
+  { table: "work_attempts", constraint: "work_attempts_result", schema: WorkAttemptState },
   { table: "source_artifacts", constraint: "source_artifacts_kind", schema: SourceArtifactKind },
   { table: "work_items", constraint: "work_items_kind", schema: WorkKind },
   { table: "work_items", constraint: "work_items_state", schema: WorkState },
@@ -45,6 +47,7 @@ const MIRRORS: ReadonlyArray<{
   { table: "resume_versions", constraint: "resume_versions_review_state", schema: ReviewState },
   { table: "resume_artifacts", constraint: "resume_artifacts_kind", schema: ResumeArtifactKind },
   { table: "resume_reviews", constraint: "resume_reviews_action", schema: ReviewAction },
+  { table: "candidate_sources", constraint: "candidate_sources_origin", schema: SourceOrigin },
 ];
 
 function checkValues(sqlite: SqliteConnection, table: string, constraint: string): string[] {

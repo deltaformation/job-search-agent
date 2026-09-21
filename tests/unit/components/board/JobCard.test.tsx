@@ -1,6 +1,6 @@
 import { DndContext } from "@dnd-kit/core";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BoardCardView } from "../../../../src/server/board";
 import JobCard from "../../../../components/board/JobCard";
 
@@ -25,6 +25,8 @@ function card(overrides: Partial<BoardCardView> = {}): BoardCardView {
     tailoringState: "PENDING",
     tailoringReasonCode: null,
     resume: null,
+    selectedApprovedPdfArtifactId: null,
+    selectedApprovedPdfSha256: null,
     notesCount: 0,
     sourceUrl: null,
     appliedAt: null,
@@ -88,5 +90,74 @@ describe("JobCard follow-up badge", () => {
     unmount();
     setup(card({ appliedAt: new Date(Date.now() + DAY_MS).toISOString() }));
     expect(screen.queryByText(/follow-up suggested/i)).toBeNull();
+  });
+});
+
+describe("JobCard Download Resume (H3/H4/H5)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const approved = () =>
+    card({
+      status: "TAILORED",
+      tailoringState: "AWAITING_REVIEW",
+      resume: { versionId: "ver-1", version: 1, reviewState: "APPROVED" },
+      selectedApprovedPdfArtifactId: "art-pdf-1",
+      selectedApprovedPdfSha256: "a".repeat(64),
+    });
+
+  it("links the exact batched artifact with download semantics", () => {
+    setup(approved());
+    const link = screen.getByRole("link", { name: "Download approved resume for Staff Engineer" });
+    expect(link).toHaveAttribute("href", "/api/resumes/artifacts/art-pdf-1?download=1");
+    expect(screen.queryByText("Unavailable")).toBeNull();
+  });
+
+  it("click and Enter on Download never open the card (H5)", () => {
+    const { onOpen } = setup(approved());
+    const link = screen.getByRole("link", { name: "Download approved resume for Staff Engineer" });
+    fireEvent.click(link);
+    expect(onOpen).not.toHaveBeenCalled();
+    fireEvent.keyDown(link, { key: "Enter" });
+    expect(onOpen).not.toHaveBeenCalled();
+    // A plain anchor: not a button, not the drag handle.
+    expect(link.tagName).toBe("A");
+    expect(link).not.toHaveAttribute("aria-describedby", "board-dnd-context");
+  });
+
+  it("Space/drag on Download neither opens the card nor issues board queries (H5)", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { onOpen } = setup(approved());
+    const link = screen.getByRole("link", { name: "Download approved resume for Staff Engineer" });
+    fireEvent.keyDown(link, { key: " " });
+    fireEvent.keyUp(link, { key: " " });
+    fireEvent.dragStart(link);
+    fireEvent.mouseDown(link, { button: 0 });
+    expect(onOpen).not.toHaveBeenCalled();
+    // No app fetch: activation is exactly one browser artifact GET, so Q1/Q4 are untouched.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(link).toHaveAttribute("href", "/api/resumes/artifacts/art-pdf-1?download=1");
+  });
+
+  it("renders explicit unavailable state with versions but no selection (H4)", () => {
+    setup(
+      card({
+        status: "NEW",
+        tailoringState: "AWAITING_REVIEW",
+        resume: { versionId: "ver-1", version: 1, reviewState: "AWAITING_REVIEW" },
+      }),
+    );
+    expect(screen.getByText("Unavailable")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /download approved resume/i }),
+    ).toBeNull();
+  });
+
+  it("renders no download UI before any version exists", () => {
+    setup(card({}));
+    expect(screen.queryByText("Unavailable")).toBeNull();
+    expect(screen.queryByText("Resume")).toBeNull();
   });
 });

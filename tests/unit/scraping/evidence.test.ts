@@ -347,7 +347,7 @@ describe("fetch persistence", () => {
     });
   });
 
-  it("requests tailoring exactly once per new extraction", () => {
+  it("queues no tailoring on extraction and rests the job in READY (D1)", () => {
     withEvidence((t, evidenceDir) => {
       const payload = payloadFor(13);
       const shell = ensureFetchShell(t.handle, { payload, now: T0 });
@@ -391,21 +391,17 @@ describe("fetch persistence", () => {
         },
         now: T0,
       });
+      expect(result.extractionId).toBeTruthy();
+      // D1: extraction persists evidence only. Generation starts through
+      // an explicit user command; the job rests READY until then.
       const items = t.handle.db
         .select()
         .from(workItems)
         .where(eq(workItems.kind, "TAILOR"))
         .all();
-      expect(items).toHaveLength(1);
-      expect(items[0]).toMatchObject({
-        jobId: shell.jobId,
-        idempotencyKey: `tailor:v1:${shell.jobId}:${result.extractionId}`,
-      });
-      expect(JSON.parse(items[0]?.payloadJson as string)).toEqual({
-        schemaVersion: "tailor-queue/v1",
-        jobId: shell.jobId,
-        extractionId: result.extractionId,
-      });
+      expect(items).toHaveLength(0);
+      const job = t.handle.db.select().from(jobs).where(eq(jobs.id, shell.jobId)).get();
+      expect(job).toMatchObject({ tailoringState: "READY", activeExtractionId: result.extractionId });
     });
   });
 

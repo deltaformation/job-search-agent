@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { DatabaseHandle } from "../db/client";
-import { candidateFacts } from "../db/schema/candidates";
-import { jobAnalyses } from "../db/schema/analysis";
+import { getActiveProfileVersion } from "../db/candidates";
+import { getGenerationRequest, getLiveGenerationRequest } from "../db/generation";
+import { candidateFacts, candidateProfileVersions } from "../db/schema/candidates";
+import { jdSnapshots, jobAnalyses } from "../db/schema/analysis";
+import { generationRequests } from "../db/schema/generation";
+import { workItems } from "../db/schema/queue";
 import {
   resumeArtifacts,
   resumeClaimFacts,
@@ -19,18 +23,26 @@ import {
   getTailoringJob,
   type TailoringJobRow,
 } from "../db/tailoring";
+import { readPlan, readPreparationById, readStep2GenerationInputs } from "../db/step2";
+import { readRequestInputs } from "../db/tailoringWorkspace";
 import { withTransaction } from "../db/transactions";
+import { appendWorkflowEvent, casUpdateJobBoard, getJobBoardRow } from "../db/workflow";
 import { newId, utcNow } from "../db/utils";
-import { checkRowVersion } from "../domain/board";
+import { checkRowVersion, planBoardMove } from "../domain/board";
 import { CandidateSnapshotV1 } from "../domain/candidate";
 import { canonicalJson } from "../domain/canonical";
 import { EntityId, IsoUtcDateTime, RowVersion } from "../domain/fields";
 import { planReviewTransition } from "../domain/review";
+import type { WorkflowReviewV2 } from "../domain/workflowReview";
 import { planTailoringTransition } from "../domain/tailoring";
 import type { ReviewState, TailoringState } from "../domain/enums";
 import { resolveArtifactPath } from "../security/paths";
 import { adaptSnapshotProfile } from "../tailoring/adapt";
-import { requestRevisionRun } from "../tailoring/enqueue";
+import {
+  COACHING_OUTCOMES_VERSION,
+  evaluateDirectiveOutcomes,
+  evaluateTermOutcomes,
+} from "../tailoring/coaching";
 import type { CandidateProfileInput } from "../tailoring/schemas";
 import {
   locateKeywordPlacements,
@@ -38,19 +50,34 @@ import {
   selectTopKeywords,
   type KeywordPlacement,
 } from "../tailoring/keywords";
+import { SteeringSnapshotV1 } from "../tailoring/requests";
+import {
+  resumeIdentityHash,
+  storedArtifactDigests,
+  type ArtifactDigests,
+} from "./resumeDigests";
+
+export { resumeIdentityHash };
+import { requestGeneration, type RequestGenerationResult } from "./tailoring";
+import { verifyCapturedEvidence } from "./preparation";
 import { approveTailored, type WorkflowCommandFailure } from "./workflow";
+import { buildWorkflowReview } from "./workflowReview";
 
 /**
- * Resume review commands and read model (R4-F).
+ * Resume review commands and read model (R4-F, WO-1.2-D).
  *
  * Approval is exact-version and human-only: the service re-hashes the three
- * stored artifacts from disk, verifies every binding (job NEW, tailoring
- * AWAITING_REVIEW, active pointer, version AWAITING_REVIEW), records an
- * append-only review binding resume/content/artifact hashes, and lets the
- * R3-A Tailored gate move the card — all in one transaction. A revision
- * request records a REVISION_REQUESTED review and enqueues a follow-up
- * TAILOR run in the same transaction, so every revision leads to a new
- * child version.
+ * stored artifacts from disk, verifies every binding (job NEW/TAILORED/
+ * APPLIED/INTERVIEWED, tailoring AWAITING_REVIEW, active pointer, version
+ * AWAITING_REVIEW), records an append-only review binding resume/content/
+ * artifact hashes, and either lets the R3-A Tailored gate move the card
+ * (NEW) or binds the version as the job's selected resume without moving
+ * anything (post-board) — all in one transaction. A revision request runs
+ * the full generation preflight and records a REVISION_REQUESTED review
+ * plus a follow-up REVISION run in the same transaction, so every
+ * revision leads to a new child version. A decline records a DECLINED
+ * review, freezes the version, and moves tailoring to DECLINED with no
+ * follow-up work and no board move.
  *
  * The actor is pinned to `human` at the schema level, and routes force it
  * server-side: no request body can approve as an agent. Filesystem reads
@@ -84,10 +111,27 @@ export const RequestRevisionInput = z
     actor: HumanActor,
     /** The human must say what is wrong; the note persists on the review. */
     note: ReviewNote,
+    /** Optional guidance for the follow-up REVISION run (mirrors generation). */
+    profileId: z.string().trim().min(1).max(64).optional(),
+    selectedKeywords: z.array(z.string().trim().min(1).max(128)).max(20).optional(),
+    directives: z.string().trim().max(1000).optional(),
     now: IsoUtcDateTime.optional(),
   })
   .strict();
 export type RequestRevisionInput = z.infer<typeof RequestRevisionInput>;
+
+export const DeclineVersionInput = z
+  .object({
+    jobId: EntityId,
+    resumeVersionId: EntityId,
+    observedRowVersion: RowVersion,
+    actor: HumanActor,
+    /** The human must say why; the note persists on the review. */
+    note: ReviewNote,
+    now: IsoUtcDateTime.optional(),
+  })
+  .strict();
+export type DeclineVersionInput = z.infer<typeof DeclineVersionInput>;
 
 export type ReviewCommandError =
   | "unknown-job"
@@ -124,7 +168,10 @@ export type ApproveResumeResult =
       resumeVersionId: string;
       version: number;
       reviewId: string;
-      eventId: string;
+      /** Null on bind-only approvals: no board move means no event. */
+      eventId: string | null;
+      /** `move` flipped NEW→TAILORED; `select` bound the version in place. */
+      approvalCase: "move" | "select";
       newRowVersion: number;
       resumeHash: string;
       contentHash: string;
@@ -139,57 +186,22 @@ export type RequestRevisionResult =
       resumeVersionId: string;
       version: number;
       reviewId: string;
+      requestId: string;
       workItemId: string;
-      /** True when the follow-up run already existed (retried command). */
-      deduped: boolean;
       newRowVersion: number;
     }
   | ReviewCommandFailure;
 
-/**
- * Lineage-binding resume hash recorded on every review. `contentHash`
- * identifies the rendered bytes; `resumeHash` identifies the exact version
- * row those bytes came from — id, job, number, parent, analysis, and every
- * template/ranker/policy/config lineage field — so a review row alone
- * proves what was approved without trusting a bare version id.
- */
-export function resumeIdentityHash(version: {
-  id: string;
-  jobId: string;
-  version: number;
-  parentVersionId: string | null;
-  analysisId: string;
-  templateId: string;
-  templateVersion: string;
-  templateHash: string;
-  rankerVersion: string;
-  policyVersion: string;
-  configVersion: string;
-  renderSchemaVersion: string;
-  contentHash: string;
-}): string {
-  return createHash("sha256")
-    .update(
-      canonicalJson({
-        schemaVersion: "resume-identity/v1",
-        resumeVersionId: version.id,
-        jobId: version.jobId,
-        version: version.version,
-        parentVersionId: version.parentVersionId,
-        analysisId: version.analysisId,
-        templateId: version.templateId,
-        templateVersion: version.templateVersion,
-        templateHash: version.templateHash,
-        rankerVersion: version.rankerVersion,
-        policyVersion: version.policyVersion,
-        configVersion: version.configVersion,
-        renderSchemaVersion: version.renderSchemaVersion,
-        contentHash: version.contentHash,
-      }),
-      "utf8",
-    )
-    .digest("hex");
-}
+export type DeclineVersionResult =
+  | {
+      ok: true;
+      jobId: string;
+      resumeVersionId: string;
+      version: number;
+      reviewId: string;
+      newRowVersion: number;
+    }
+  | ReviewCommandFailure;
 
 interface ReviewTarget {
   job: TailoringJobRow;
@@ -199,10 +211,13 @@ interface ReviewTarget {
 type TargetResult = { ok: true; target: ReviewTarget } | { ok: false; failure: ReviewCommandFailure };
 
 /**
- * Load the job and version and verify they belong together with the
- * version as the job's active pointer. A version from another job, or a
- * superseded version, is `stale-version`: reviewing anything but the
- * current active version would approve or revise the wrong output.
+ * Load the job and version and verify they belong together. G
+ * (R-ADR-019): any owned version is addressable — eligible older
+ * AWAITING_REVIEW versions stay decidable even when they are not
+ * the active draft. Position checks live in the commands (the
+ * active draft owns tailoring-state moves); `stale-version` now
+ * means the version's frozen inputs went stale, never "not
+ * active". A version from another job is `unknown-version`.
  */
 function loadReviewTarget(
   handle: DatabaseHandle,
@@ -224,17 +239,132 @@ function loadReviewTarget(
       failure: failure("unknown-version", `resume version ${resumeVersionId} does not exist`),
     };
   }
-  if (job.activeResumeVersionId !== resumeVersionId) {
-    return {
-      ok: false,
-      failure: failure(
-        "stale-version",
-        `resume v${version.version} is not the job's active version`,
-        job.rowVersion,
-      ),
-    };
-  }
   return { ok: true, target: { job, version } };
+}
+
+/** True when the target version is the job's active (latest) draft. */
+function isActiveTarget(target: ReviewTarget): boolean {
+  return target.job.activeResumeVersionId === target.version.id;
+}
+
+/**
+ * Live-run exclusion: no decision lands while a TAILOR request or
+ * work item is QUEUED/RUNNING for the job. Runs pre-transaction
+ * and again inside the decision transaction (the job CAS serializes
+ * against a concurrent submit either way).
+ */
+function checkNoLiveRun(
+  handle: DatabaseHandle,
+  target: ReviewTarget,
+): ReviewCommandFailure | null {
+  const liveRequest = getLiveGenerationRequest(handle, target.job.id);
+  if (liveRequest !== null) {
+    return failure(
+      "conflict",
+      `a tailoring run is live for this job (request ${liveRequest.id}); wait for it to finish before deciding resume v${target.version.version}`,
+      target.job.rowVersion,
+    );
+  }
+  const liveWork = handle.db
+    .select({ id: workItems.id })
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.jobId, target.job.id),
+        eq(workItems.kind, "TAILOR"),
+        inArray(workItems.state, ["QUEUED", "RUNNING"]),
+      ),
+    )
+    .get();
+  if (liveWork !== undefined) {
+    return failure(
+      "conflict",
+      `a tailoring run is live for this job (work ${liveWork.id}); wait for it to finish before deciding resume v${target.version.version}`,
+      target.job.rowVersion,
+    );
+  }
+  return null;
+}
+
+/**
+ * Frozen-input freshness for exact-version decisions. Legacy rows
+ * (no generation request or no frozen inputs) predate freezing and
+ * decide on bytes + artifacts alone. v1.3 rows refuse with
+ * `stale-version` (409) when the job description moved under the
+ * frozen extraction, when a v1-format bound profile version is no
+ * longer active, or when v2/v3 captured payload/evidence no longer
+ * verifies. The recovery is always a new version, never a forced
+ * decision on stale-frozen content.
+ */
+function checkFrozenFreshness(
+  handle: DatabaseHandle,
+  target: ReviewTarget,
+): ReviewCommandFailure | null {
+  const { job, version } = target;
+  if (version.generationRequestId === null) {
+    return null;
+  }
+  const request = getGenerationRequest(handle, version.generationRequestId);
+  const inputs = readRequestInputs(handle, version.generationRequestId);
+  if (request === null || inputs === null) {
+    return null;
+  }
+  if (request.jobId !== job.id) {
+    return failure(
+      "stale-version",
+      `resume v${version.version} has request lineage outside this job; generate a new version`,
+      job.rowVersion,
+    );
+  }
+  if (request.extractionId !== job.activeExtractionId) {
+    return failure(
+      "stale-version",
+      `the job description changed since resume v${version.version} was generated; generate a new version`,
+      job.rowVersion,
+    );
+  }
+  const step2 = readStep2GenerationInputs(handle, request.id);
+  if (step2 === null) {
+    const active = getActiveProfileVersion(handle, request.profileId);
+    if (active === null || active.id !== request.profileVersionId) {
+      return failure(
+        "stale-version",
+        `the captured profile version for resume v${version.version} is no longer active; generate a new version`,
+        job.rowVersion,
+      );
+    }
+    return null;
+  }
+  const plan = readPlan(handle, step2.planId);
+  if (plan === null) {
+    return failure(
+      "stale-version",
+      `the frozen plan for resume v${version.version} is gone; generate a new version`,
+      job.rowVersion,
+    );
+  }
+  const preparation = readPreparationById(handle, plan.preparationId);
+  if (preparation === null) {
+    return failure(
+      "stale-version",
+      `the frozen preparation for resume v${version.version} is gone; generate a new version`,
+      job.rowVersion,
+    );
+  }
+  const verified = verifyCapturedEvidence(handle, {
+    profileId: request.profileId,
+    profileVersionId: request.profileVersionId,
+    profilePayloadHash: preparation.profilePayloadHash,
+    evidenceHash: preparation.evidenceHash,
+  });
+  if (!verified.ok) {
+    return failure(
+      "stale-version",
+      `the captured profile evidence for resume v${version.version} no longer verifies; generate a new version`,
+      job.rowVersion,
+    );
+  }
+  return null;
 }
 
 function checkVersionFreshness(
@@ -250,12 +380,6 @@ function checkVersionFreshness(
     );
   }
   return null;
-}
-
-export interface ArtifactDigests {
-  markdown: string;
-  docx: string;
-  pdf: string;
 }
 
 type ArtifactVerifyResult =
@@ -340,29 +464,7 @@ export function verifyVersionArtifacts(
   return { ok: true, digests };
 }
 
-/**
- * Stored digests for revision reviews. A revision must be requestable even
- * when artifact bytes are damaged — damage is a reason to revise, not a
- * blocker — so this binds the recorded digests without touching disk.
- */
-function storedArtifactDigests(
-  handle: DatabaseHandle,
-  resumeVersionId: string,
-): ArtifactDigests | null {
-  const rows = handle.db
-    .select()
-    .from(resumeArtifacts)
-    .where(eq(resumeArtifacts.resumeVersionId, resumeVersionId))
-    .all();
-  const byKind = new Map(rows.map((row) => [row.kind, row]));
-  const markdown = byKind.get("MARKDOWN");
-  const docx = byKind.get("DOCX");
-  const pdf = byKind.get("PDF");
-  if (markdown === undefined || docx === undefined || pdf === undefined) {
-    return null;
-  }
-  return { markdown: markdown.sha256, docx: docx.sha256, pdf: pdf.sha256 };
-}
+
 
 /** Thrown to roll back when the Tailored gate rejects after review writes. */
 class GateRejected extends Error {
@@ -376,11 +478,23 @@ class GateRejected extends Error {
 }
 
 /**
- * Exact-version human approval. Verifies bindings and artifact bytes, then
- * in one transaction marks the version APPROVED, appends the review, and
- * runs the Tailored gate (board → TAILORED, tailoring → APPROVED, event).
- * A gate rejection throws `GateRejected` so the review writes roll back
- * with it — an approval either lands completely or writes nothing.
+ * Exact-version human approval (G). Pre-transaction: ownership,
+ * CAS, eligibility, live-run exclusion, frozen-input freshness,
+ * and disk artifact re-hash. In one transaction every database
+ * predicate is re-verified, then the version flips APPROVED with
+ * its review, and exactly one of:
+ * - NEW + active version: the Tailored gate (board → TAILORED,
+ *   tailoring → APPROVED, event, selected pointer);
+ * - NEW + older version: the same board move + event + selected
+ *   pointer, but tailoring follows the active (newer) version and
+ *   is preserved;
+ * - TAILORED/APPLIED/INTERVIEWED + active: bind-only select
+ *   (tailoring → APPROVED, selected pointer, no move/event);
+ * - TAILORED/APPLIED/INTERVIEWED + older: bind-only select with
+ *   tailoring preserved.
+ * The application row is never touched. A gate/CAS rejection
+ * throws `GateRejected` so the review writes roll back with it —
+ * an approval either lands completely or writes nothing.
  */
 export function approveResume(
   handle: DatabaseHandle,
@@ -404,6 +518,14 @@ export function approveResume(
   if (preApprovable !== null) {
     return preApprovable;
   }
+  const preLive = checkNoLiveRun(handle, pre.target);
+  if (preLive !== null) {
+    return preLive;
+  }
+  const preFrozen = checkFrozenFreshness(handle, pre.target);
+  if (preFrozen !== null) {
+    return preFrozen;
+  }
   const verified = verifyVersionArtifacts(handle, input.resumeVersionId, deps.artifactsDir);
   if (!verified.ok) {
     return verified.failure;
@@ -425,6 +547,14 @@ export function approveResume(
       if (approvable !== null) {
         return approvable;
       }
+      const live = checkNoLiveRun(handle, loaded.target);
+      if (live !== null) {
+        return live;
+      }
+      const frozen = checkFrozenFreshness(handle, loaded.target);
+      if (frozen !== null) {
+        return frozen;
+      }
       handle.db
         .update(resumeVersions)
         .set({ reviewState: "APPROVED", updatedAt: now })
@@ -445,15 +575,65 @@ export function approveResume(
           createdAt: now,
         })
         .run();
-      const gated = approveTailored(handle, {
+      const active = isActiveTarget(loaded.target);
+      if (loaded.target.job.status === "NEW") {
+        if (active) {
+          const gated = approveTailored(handle, {
+            jobId: input.jobId,
+            resumeVersionId: input.resumeVersionId,
+            observedRowVersion: input.observedRowVersion,
+            actor: "human",
+            now,
+          });
+          if (!gated.ok) {
+            throw new GateRejected(gated);
+          }
+          return {
+            ok: true as const,
+            jobId: input.jobId,
+            resumeVersionId: input.resumeVersionId,
+            version: loaded.target.version.version,
+            reviewId,
+            eventId: gated.eventId,
+            approvalCase: "move" as const,
+            newRowVersion: gated.newRowVersion,
+            resumeHash,
+            contentHash,
+            artifactHashes: verified.digests,
+          };
+        }
+        return approveOlderMove(handle, loaded.target, {
+          resumeVersionId: input.resumeVersionId,
+          observedRowVersion: input.observedRowVersion,
+          reviewId,
+          resumeHash,
+          contentHash,
+          digests: verified.digests,
+          now,
+        });
+      }
+      // Bind-only approval: the card already moved, so the version is
+      // selected in place and no board move or event is recorded. The
+      // active draft flips tailoring to APPROVED; an older decision
+      // preserves the tailoring state that follows the active draft.
+      const bound = casJobTailoringState(handle, {
         jobId: input.jobId,
-        resumeVersionId: input.resumeVersionId,
-        observedRowVersion: input.observedRowVersion,
-        actor: "human",
+        rowVersion: input.observedRowVersion,
+        tailoringState: active ? "APPROVED" : loaded.target.job.tailoringState,
+        reasonCode: active ? null : loaded.target.job.tailoringReasonCode,
+        selectedResumeVersionId: input.resumeVersionId,
         now,
       });
-      if (!gated.ok) {
-        throw new GateRejected(gated);
+      if (!bound) {
+        // Throw so the staged version/review writes roll back with the
+        // lost fence — a conflict must write nothing.
+        const current = getTailoringJob(handle, input.jobId);
+        throw new GateRejected({
+          ok: false,
+          error: "conflict",
+          detail: `stale client: observed row_version ${input.observedRowVersion}`,
+          currentRowVersion: current?.rowVersion ?? input.observedRowVersion,
+        });
       }
       return {
         ok: true as const,
@@ -461,8 +641,9 @@ export function approveResume(
         resumeVersionId: input.resumeVersionId,
         version: loaded.target.version.version,
         reviewId,
-        eventId: gated.eventId,
-        newRowVersion: gated.newRowVersion,
+        eventId: null,
+        approvalCase: "select" as const,
+        newRowVersion: input.observedRowVersion + 1,
         resumeHash,
         contentHash,
         artifactHashes: verified.digests,
@@ -485,21 +666,111 @@ export function approveResume(
   }
 }
 
+/**
+ * Older-version NEW→TAILORED move: the same planned board move,
+ * rank preservation, event, and selected pointer as the Tailored
+ * gate, minus the active-pointer requirement, minus the tailoring
+ * flip (tailoring follows the active newer draft). Runs inside the
+ * approval transaction; CAS loss throws `GateRejected` so the
+ * staged review rolls back with it.
+ */
+function approveOlderMove(
+  handle: DatabaseHandle,
+  target: ReviewTarget,
+  input: {
+    resumeVersionId: string;
+    observedRowVersion: number;
+    reviewId: string;
+    resumeHash: string;
+    contentHash: string;
+    digests: ArtifactDigests;
+    now: string;
+  },
+): Extract<ApproveResumeResult, { ok: true }> {
+  const board = getJobBoardRow(handle, target.job.id);
+  if (board === null) {
+    throw new GateRejected({
+      ok: false,
+      error: "unknown-job",
+      detail: `job ${target.job.id} does not exist`,
+      currentRowVersion: target.job.rowVersion,
+    });
+  }
+  const planned = planBoardMove(
+    { status: board.status, rowVersion: board.rowVersion },
+    { kind: "approval", to: "TAILORED", observedRowVersion: input.observedRowVersion },
+  );
+  if (!planned.ok) {
+    throw new GateRejected({
+      ok: false,
+      error: planned.error === "conflict" ? "conflict" : "forbidden",
+      detail: planned.detail,
+      currentRowVersion: board.rowVersion,
+    });
+  }
+  const updated = casUpdateJobBoard(handle, {
+    jobId: target.job.id,
+    expectedVersion: input.observedRowVersion,
+    status: "TAILORED",
+    rank: board.rank,
+    selectedResumeVersionId: input.resumeVersionId,
+    now: input.now,
+  });
+  if (updated === null) {
+    const current = getTailoringJob(handle, target.job.id);
+    throw new GateRejected({
+      ok: false,
+      error: "conflict",
+      detail: `stale client: observed row_version ${input.observedRowVersion}`,
+      currentRowVersion: current?.rowVersion ?? input.observedRowVersion,
+    });
+  }
+  const eventId = appendWorkflowEvent(handle, {
+    jobId: target.job.id,
+    actor: "human",
+    from: planned.from,
+    to: planned.to,
+    rank: board.rank,
+    rowVersion: planned.newRowVersion,
+    reason: "approval",
+    metadata: {
+      resumeVersionId: input.resumeVersionId,
+      reviewId: input.reviewId,
+      approvalCase: "move",
+    },
+    now: input.now,
+  });
+  return {
+    ok: true as const,
+    jobId: target.job.id,
+    resumeVersionId: input.resumeVersionId,
+    version: target.version.version,
+    reviewId: input.reviewId,
+    eventId,
+    approvalCase: "move" as const,
+    newRowVersion: planned.newRowVersion,
+    resumeHash: input.resumeHash,
+    contentHash: input.contentHash,
+    artifactHashes: input.digests,
+  };
+}
+
 function checkApprovable(target: ReviewTarget): ReviewCommandFailure | null {
-  if (target.job.status !== "NEW") {
+  if (
+    target.job.status !== "NEW" &&
+    target.job.status !== "TAILORED" &&
+    target.job.status !== "APPLIED" &&
+    target.job.status !== "INTERVIEWED"
+  ) {
     return failure(
       "forbidden",
-      `approval moves only NEW jobs to TAILORED (job is ${target.job.status})`,
+      `approval is not available on ${target.job.status} jobs`,
       target.job.rowVersion,
     );
   }
-  if (target.job.tailoringState !== "AWAITING_REVIEW") {
-    return failure(
-      "forbidden",
-      `job tailoring is ${target.job.tailoringState}, not AWAITING_REVIEW`,
-      target.job.rowVersion,
-    );
-  }
+  // No tailoring-state gate: eligible older versions stay decidable
+  // whatever the active draft is doing; the explicit live-run check
+  // owns liveness instead.
   const planned = planReviewTransition(target.version.reviewState as ReviewState, {
     to: "APPROVED",
   });
@@ -514,16 +785,42 @@ function checkApprovable(target: ReviewTarget): ReviewCommandFailure | null {
 }
 
 /**
- * Human revision request. In one transaction: fence the job, mark the
- * version REVISION_REQUESTED, append the review with the human note bound
- * to the stored digests, move tailoring to REVISION_REQUESTED, and enqueue
- * the follow-up TAILOR run — so the request atomically leads to a new
- * child version. The compare-and-swap runs before any write: a lost race
- * returns `conflict` with nothing written.
+ * Map a generation preflight failure into the review failure vocabulary.
+ * Preflight detail stays actionable (detail + action); conflicts keep the
+ * current version so the client can refresh.
+ */
+function mapGenerationFailure(
+  generated: Extract<RequestGenerationResult, { ok: false }>,
+  currentRowVersion: number,
+): ReviewCommandFailure {
+  const detail = `${generated.detail} ${generated.action}`;
+  switch (generated.error) {
+    case "unknown-job":
+      return failure("unknown-job", detail);
+    case "conflict":
+    case "idempotency-mismatch":
+    case "generation-busy":
+      return failure("conflict", detail, currentRowVersion);
+    case "parent-mismatch":
+      return failure("stale-version", detail, currentRowVersion);
+    default:
+      return failure("forbidden", detail, currentRowVersion);
+  }
+}
+
+/**
+ * Human revision request. In one transaction: verify the review target,
+ * run the full generation preflight and record the follow-up REVISION
+ * run (fenced inside `requestGeneration`, so a lost race returns
+ * `conflict` with nothing written), then mark the version
+ * REVISION_REQUESTED and append the review with the human note bound to
+ * the stored digests. The command either lands completely — review plus
+ * follow-up run — or writes nothing.
  */
 export function requestRevision(
   handle: DatabaseHandle,
   rawInput: unknown,
+  deps?: { providerAvailable?: () => boolean },
 ): RequestRevisionResult {
   const input = RequestRevisionInput.parse(rawInput);
   const now = input.now ?? utcNow();
@@ -564,13 +861,6 @@ export function requestRevision(
         job.rowVersion,
       );
     }
-    if (job.activeExtractionId === null) {
-      return failure(
-        "stale-version",
-        "job has no active extraction for the follow-up revision run",
-        job.rowVersion,
-      );
-    }
     const digests = storedArtifactDigests(handle, version.id);
     if (digests === null) {
       return failure(
@@ -579,23 +869,28 @@ export function requestRevision(
         job.rowVersion,
       );
     }
-    // Fence first: claim the row_version bump before writing anything, so
-    // a concurrent writer turns this into a clean conflict instead of a
-    // half-recorded revision with no follow-up run.
-    const fenced = casJobTailoringState(handle, {
-      jobId: job.id,
-      rowVersion: job.rowVersion,
-      tailoringState: "REVISION_REQUESTED",
-      reasonCode: null,
-      now,
-    });
-    if (!fenced) {
-      const current = getTailoringJob(handle, job.id);
-      return failure(
-        "conflict",
-        `stale client: observed row_version ${input.observedRowVersion}`,
-        current?.rowVersion ?? job.rowVersion,
-      );
+    // Delegate the fence, preflight, request row, and queue insert to the
+    // explicit generation command (nest-safe): profile readiness,
+    // evidence, JD content, and provider availability are all verified
+    // before anything is written.
+    const generated = requestGeneration(
+      handle,
+      {
+        jobId: job.id,
+        observedRowVersion: input.observedRowVersion,
+        actor: "human",
+        ...(input.profileId === undefined ? {} : { profileId: input.profileId }),
+        ...(input.selectedKeywords === undefined ? {} : { selectedKeywords: input.selectedKeywords }),
+        ...(input.directives === undefined ? {} : { directives: input.directives }),
+        revisionNote: input.note,
+        parentVersionId: version.id,
+        requestId: newId(),
+        ...(input.now === undefined ? {} : { now: input.now }),
+      },
+      ...(deps === undefined ? [] : [{ providerAvailable: deps.providerAvailable }] as const),
+    );
+    if (!generated.ok) {
+      return mapGenerationFailure(generated, job.rowVersion);
     }
     handle.db
       .update(resumeVersions)
@@ -617,19 +912,165 @@ export function requestRevision(
         createdAt: now,
       })
       .run();
-    const enqueued = requestRevisionRun(handle, {
-      jobId: job.id,
-      extractionId: job.activeExtractionId,
-      parentVersionId: version.id,
-    });
     return {
       ok: true,
       jobId: job.id,
       resumeVersionId: version.id,
       version: version.version,
       reviewId,
-      workItemId: enqueued.workItemId,
-      deduped: enqueued.deduped,
+      requestId: generated.requestId,
+      workItemId: generated.workItemId,
+      newRowVersion: generated.newRowVersion,
+    };
+  });
+}
+
+function checkDeclinable(target: ReviewTarget): ReviewCommandFailure | null {
+  if (target.job.status === "REJECTED") {
+    return failure(
+      "forbidden",
+      "rejected jobs cannot decline versions; correct the job back first",
+      target.job.rowVersion,
+    );
+  }
+  const planned = planReviewTransition(target.version.reviewState as ReviewState, {
+    to: "DECLINED",
+  });
+  if (!planned.ok) {
+    return failure(
+      "forbidden",
+      `resume v${target.version.version} is ${target.version.reviewState}: ${planned.detail}`,
+      target.job.rowVersion,
+    );
+  }
+  return null;
+}
+
+/**
+ * Human decline (G). Pre-transaction: ownership, CAS, eligibility,
+ * live-run exclusion, and frozen-input freshness. In one
+ * transaction the predicates re-verify, the version freezes as
+ * DECLINED with its terminal review, and the job CAS-bumps: the
+ * active draft moves tailoring to DECLINED with
+ * `VERSION_DECLINED`, while an older decision preserves the
+ * tailoring state that follows the active draft. Stored (not
+ * re-hashed) digests bind the review — damaged bytes are a reason
+ * to decline, never a blocker. Queues no work, moves no board,
+ * touches no pointer.
+ */
+export function declineVersion(
+  handle: DatabaseHandle,
+  rawInput: unknown,
+): DeclineVersionResult {
+  const input = DeclineVersionInput.parse(rawInput);
+  const now = input.now ?? utcNow();
+  const pre = loadReviewTarget(handle, input.jobId, input.resumeVersionId);
+  if (!pre.ok) {
+    return pre.failure;
+  }
+  const preFresh = checkVersionFreshness(pre.target, input.observedRowVersion);
+  if (preFresh !== null) {
+    return preFresh;
+  }
+  const preDeclinable = checkDeclinable(pre.target);
+  if (preDeclinable !== null) {
+    return preDeclinable;
+  }
+  const preLive = checkNoLiveRun(handle, pre.target);
+  if (preLive !== null) {
+    return preLive;
+  }
+  const preFrozen = checkFrozenFreshness(handle, pre.target);
+  if (preFrozen !== null) {
+    return preFrozen;
+  }
+  return withTransaction(handle.sqlite, () => {
+    const loaded = loadReviewTarget(handle, input.jobId, input.resumeVersionId);
+    if (!loaded.ok) {
+      return loaded.failure;
+    }
+    const { job, version } = loaded.target;
+    const fresh = checkVersionFreshness(loaded.target, input.observedRowVersion);
+    if (fresh !== null) {
+      return fresh;
+    }
+    const declinable = checkDeclinable(loaded.target);
+    if (declinable !== null) {
+      return declinable;
+    }
+    const live = checkNoLiveRun(handle, loaded.target);
+    if (live !== null) {
+      return live;
+    }
+    const frozen = checkFrozenFreshness(handle, loaded.target);
+    if (frozen !== null) {
+      return frozen;
+    }
+    // Stored digests, like revision: damaged bytes are a reason to
+    // decline, never a blocker.
+    const digests = storedArtifactDigests(handle, version.id);
+    if (digests === null) {
+      return failure(
+        "artifact-incomplete",
+        "resume artifacts are incomplete; the review cannot bind its digests",
+        job.rowVersion,
+      );
+    }
+    const active = isActiveTarget(loaded.target);
+    if (active) {
+      const tailorPlanned = planTailoringTransition(job.tailoringState as TailoringState, {
+        to: "DECLINED",
+        reasonCode: "VERSION_DECLINED",
+      });
+      if (!tailorPlanned.ok) {
+        return failure(
+          "forbidden",
+          `job tailoring is ${job.tailoringState}: ${tailorPlanned.detail}`,
+          job.rowVersion,
+        );
+      }
+    }
+    const fenced = casJobTailoringState(handle, {
+      jobId: job.id,
+      rowVersion: job.rowVersion,
+      tailoringState: active ? "DECLINED" : job.tailoringState,
+      reasonCode: active ? "VERSION_DECLINED" : job.tailoringReasonCode,
+      now,
+    });
+    if (!fenced) {
+      const current = getTailoringJob(handle, job.id);
+      return failure(
+        "conflict",
+        `stale client: observed row_version ${input.observedRowVersion}`,
+        current?.rowVersion ?? job.rowVersion,
+      );
+    }
+    handle.db
+      .update(resumeVersions)
+      .set({ reviewState: "DECLINED", updatedAt: now })
+      .where(eq(resumeVersions.id, version.id))
+      .run();
+    const reviewId = newId();
+    handle.db
+      .insert(resumeReviews)
+      .values({
+        id: reviewId,
+        resumeVersionId: version.id,
+        action: "DECLINED",
+        actor: "human",
+        note: input.note,
+        resumeHash: resumeIdentityHash(version),
+        contentHash: version.contentHash,
+        artifactHashesJson: canonicalJson(digests),
+        createdAt: now,
+      })
+      .run();
+    return {
+      ok: true,
+      jobId: job.id,
+      resumeVersionId: version.id,
+      version: version.version,
+      reviewId,
       newRowVersion: job.rowVersion + 1,
     };
   });
@@ -655,6 +1096,58 @@ export interface ReviewGapView {
   category: string;
   importance: string;
   matchStatus: string;
+  /** Directive-gap explanation; null for requirement gaps and legacy rows. */
+  explanation: string | null;
+}
+
+export interface TermCoachingView {
+  term: string;
+  outcome: "used" | "omitted-by-budget" | "unsupported" | "not-applicable" | "not-assessed";
+  requirementIds: string[];
+  evidenceFactIds: string[];
+  detail: string;
+}
+
+export interface DirectiveCoachingView {
+  index: number;
+  directive: string;
+  outcome: "used" | "unsupported" | "not-assessed";
+  explanation: string | null;
+}
+
+export interface CoachingView {
+  policyVersion: string;
+  /**
+   * False when the bound run data is incomplete or unreadable: term
+   * outcomes degrade to not-assessed rather than inventing verdicts.
+   */
+  assessed: boolean;
+  terms: TermCoachingView[];
+  directivesRecorded: boolean;
+  directives: DirectiveCoachingView[];
+}
+
+/**
+ * Exact recorded guidance for one version (WO-1.2-F, F7): the frozen
+ * bindings from the bound `generation_requests` row — profile identity
+ * (live id plus the generation-time display name from the immutable
+ * steering snapshot), the recorded keyword set in its stored canonical
+ * order, directive text, and the applicable revision note. Submission
+ * chip order is not recorded by design (R-ADR-017 canonical set
+ * semantics), so the view surfaces the recorded set, never a
+ * reconstructed order. Null when the version has no bound request
+ * (legacy rows predate recorded guidance — the not-recorded rule).
+ */
+export interface RecordedGuidanceView {
+  profileId: string;
+  profileVersionId: string;
+  /** Bound master version number; null when the version row is unresolvable. */
+  profileVersionNumber: number | null;
+  /** Generation-time display name; null only when the steering record is unreadable. */
+  profileDisplayName: string | null;
+  selectedKeywords: string[];
+  directives: string | null;
+  revisionNote: string | null;
 }
 
 export interface TopKeywordAuditView {
@@ -749,6 +1242,17 @@ export interface ResumeReviewView {
   claims: ReviewClaimView[];
   /** Top-5 ATS keyword audit; empty when the analysis is unparseable. */
   topKeywords: TopKeywordAuditView[];
+  /**
+   * Requested-emphasis coaching (WO-1.2-E): per-term and per-directive
+   * outcomes derived from the bound run. Null when the version has no
+   * bound generation request (legacy rows predate requested emphasis).
+   */
+  coaching: CoachingView | null;
+  /**
+   * Exact recorded guidance (WO-1.2-F, F7). Null for legacy versions
+   * without request linkage — never fabricated.
+   */
+  guidance: RecordedGuidanceView | null;
   /** Null when the stored content envelope is unparseable. */
   content: ReviewContentView | null;
   artifacts: ResumeReviewArtifactView[];
@@ -756,8 +1260,16 @@ export interface ResumeReviewView {
   actions: {
     canApprove: boolean;
     canRequestRevision: boolean;
+    canDecline: boolean;
     reason: string | null;
   };
+  /**
+   * Exact-version extension (WO-1.3-G): frozen identities, master,
+   * operations, segments with provenance, assessment, insights,
+   * exact allowed actions, and markers. Null when the extension
+   * cannot be built (the v1 view above still serves).
+   */
+  workflowReview: WorkflowReviewV2 | null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -808,6 +1320,7 @@ function parseGap(entry: unknown): ReviewGapView | null {
     category: asString(record?.["category"]) ?? "unknown",
     importance: asString(record?.["importance"]) ?? "unknown",
     matchStatus: asString(record?.["match_status"]) ?? "unknown",
+    explanation: asString(record?.["explanation"]),
   };
 }
 
@@ -850,6 +1363,153 @@ function parseDraftClaims(value: unknown): Array<{ section: string; text: string
     }
   }
   return parsed;
+}
+
+/**
+ * Requested-emphasis coaching for one version (WO-1.2-E): per-term and
+ * per-directive outcomes derived from the bound generation request,
+ * the pinned JD text, and the stored requirements/gaps/claims.
+ * Fail-soft like the rest of the view — no bound request yields null
+ * (legacy), and unreadable run data degrades every outcome to
+ * not-assessed rather than inventing verdicts.
+ */
+function buildCoachingView(
+  handle: DatabaseHandle,
+  analysis: { generationRequestId: string | null; jdSnapshotId: string } | undefined,
+  analysisView: ResumeReviewView["analysis"],
+  claims: ReviewClaimView[],
+): CoachingView | null {
+  if (analysis === undefined || analysis.generationRequestId === null) {
+    return null;
+  }
+  const request = handle.db
+    .select({
+      selectedKeywordsJson: generationRequests.selectedKeywordsJson,
+      directivesText: generationRequests.directivesText,
+    })
+    .from(generationRequests)
+    .where(eq(generationRequests.id, analysis.generationRequestId))
+    .get();
+  if (request === undefined) {
+    return null;
+  }
+  let selectedKeywords: string[] = [];
+  try {
+    const parsed: unknown = JSON.parse(request.selectedKeywordsJson);
+    if (Array.isArray(parsed)) {
+      selectedKeywords = parsed.filter(
+        (entry): entry is string => typeof entry === "string" && entry !== "",
+      );
+    }
+  } catch {
+    selectedKeywords = [];
+  }
+  if (analysisView === null) {
+    return {
+      policyVersion: COACHING_OUTCOMES_VERSION,
+      assessed: false,
+      terms: selectedKeywords.map((term) => ({
+        term,
+        outcome: "not-assessed",
+        requirementIds: [],
+        evidenceFactIds: [],
+        detail: "Run data is incomplete or unreadable — no verdict is claimed.",
+      })),
+      directivesRecorded: request.directivesText !== null,
+      directives: [],
+    };
+  }
+  const snapshot = handle.db
+    .select({ jdText: jdSnapshots.jdText })
+    .from(jdSnapshots)
+    .where(eq(jdSnapshots.id, analysis.jdSnapshotId))
+    .get();
+  const jdText = snapshot?.jdText ?? "";
+  const directiveGaps = analysisView.gaps.filter((gap) => gap.category === "directive");
+  const requirementGaps = analysisView.gaps.filter((gap) => gap.category !== "directive");
+  const directives = evaluateDirectiveOutcomes({
+    directivesText: request.directivesText,
+    directiveGaps: directiveGaps.map((gap) => ({
+      requirementId: gap.requirementId,
+      explanation: gap.explanation,
+    })),
+  });
+  return {
+    policyVersion: COACHING_OUTCOMES_VERSION,
+    assessed: true,
+    terms: evaluateTermOutcomes({
+      selectedKeywords,
+      requirements: analysisView.requirements,
+      gaps: requirementGaps,
+      claims,
+      jdText,
+    }),
+    directivesRecorded: directives.recorded,
+    directives: directives.outcomes,
+  };
+}
+
+/**
+ * Exact recorded guidance for one version (WO-1.2-F, F7): the frozen
+ * bindings from the bound generation request. Fail-soft like the rest
+ * of the view — no bound request yields null (legacy not-recorded
+ * rule), and unreadable steering/keyword JSON degrades the affected
+ * field (null/[]) rather than inventing guidance or failing the view.
+ */
+function buildGuidanceView(
+  handle: DatabaseHandle,
+  analysis: { generationRequestId: string | null } | undefined,
+): RecordedGuidanceView | null {
+  if (analysis === undefined || analysis.generationRequestId === null) {
+    return null;
+  }
+  const request = handle.db
+    .select({
+      profileId: generationRequests.profileId,
+      profileVersionId: generationRequests.profileVersionId,
+      steeringSnapshotJson: generationRequests.steeringSnapshotJson,
+      selectedKeywordsJson: generationRequests.selectedKeywordsJson,
+      directivesText: generationRequests.directivesText,
+      revisionNote: generationRequests.revisionNote,
+    })
+    .from(generationRequests)
+    .where(eq(generationRequests.id, analysis.generationRequestId))
+    .get();
+  if (request === undefined) {
+    return null;
+  }
+  let selectedKeywords: string[] = [];
+  try {
+    const parsed: unknown = JSON.parse(request.selectedKeywordsJson);
+    if (Array.isArray(parsed)) {
+      selectedKeywords = parsed.filter(
+        (entry): entry is string => typeof entry === "string" && entry !== "",
+      );
+    }
+  } catch {
+    selectedKeywords = [];
+  }
+  let profileDisplayName: string | null = null;
+  try {
+    const steering = SteeringSnapshotV1.parse(JSON.parse(request.steeringSnapshotJson));
+    profileDisplayName = steering.profileDisplayName;
+  } catch {
+    profileDisplayName = null;
+  }
+  const profileVersion = handle.db
+    .select({ version: candidateProfileVersions.version })
+    .from(candidateProfileVersions)
+    .where(eq(candidateProfileVersions.id, request.profileVersionId))
+    .get();
+  return {
+    profileId: request.profileId,
+    profileVersionId: request.profileVersionId,
+    profileVersionNumber: profileVersion?.version ?? null,
+    profileDisplayName,
+    selectedKeywords,
+    directives: request.directivesText,
+    revisionNote: request.revisionNote,
+  };
 }
 
 /**
@@ -960,6 +1620,7 @@ function parseAudit(value: unknown): ReviewContentView["audit"] {
 export function getResumeReviewView(
   handle: DatabaseHandle,
   resumeVersionId: string,
+  options: { artifactsDir?: string } = {},
 ): ResumeReviewView | null {
   const version = handle.db
     .select()
@@ -1115,9 +1776,10 @@ export function getResumeReviewView(
   const isActive = job.activeResumeVersionId === version.id;
   const liveReview = version.reviewState === "AWAITING_REVIEW";
   const liveTailoring = job.tailoringState === "AWAITING_REVIEW";
-  const canRequestRevision =
-    isActive && liveReview && liveTailoring && job.status !== "REJECTED";
-  const canApprove = canRequestRevision && job.status === "NEW";
+  const decidable = isActive && liveReview && liveTailoring && job.status !== "REJECTED";
+  const canRequestRevision = decidable;
+  const canDecline = decidable;
+  const canApprove = decidable;
   let reason: string | null = null;
   if (!isActive) {
     reason = "A newer resume version is active; this version is read-only.";
@@ -1126,9 +1788,25 @@ export function getResumeReviewView(
   } else if (!liveTailoring) {
     reason = `A follow-up run is already in progress (${job.tailoringState}).`;
   } else if (job.status === "REJECTED") {
-    reason = "Rejected jobs cannot be approved or revised.";
+    reason = "Rejected jobs cannot be approved, revised, or declined.";
   } else if (job.status !== "NEW") {
-    reason = `This job already moved to ${job.status}; approval only moves NEW jobs to Tailored.`;
+    reason =
+      `This job already moved to ${job.status}; approval binds this version as the ` +
+      "selected resume without moving the card.";
+  }
+
+  // G extension (one batched statement): strict exact-version model
+  // or null. A failure here never breaks the v1 view above.
+  let workflowReview: WorkflowReviewV2 | null = null;
+  try {
+    workflowReview = buildWorkflowReview(handle, {
+      version,
+      job,
+      gapKeys: (analysisView?.gaps ?? []).map((gap) => gap.requirementId),
+      artifactsDir: options.artifactsDir,
+    });
+  } catch {
+    workflowReview = null;
   }
 
   return {
@@ -1163,10 +1841,13 @@ export function getResumeReviewView(
       keywordEntries,
       keywordGaps,
     ),
+    coaching: buildCoachingView(handle, analysis, analysisView, claims),
+    guidance: buildGuidanceView(handle, analysis),
     content: contentView,
     artifacts,
     reviews,
-    actions: { canApprove, canRequestRevision, reason },
+    actions: { canApprove, canRequestRevision, canDecline, reason },
+    workflowReview,
   };
 }
 

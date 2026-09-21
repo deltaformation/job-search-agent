@@ -141,6 +141,8 @@ describe("tailoring purity", () => {
     "ranking.ts",
     "schemas.ts",
     "staleness.ts",
+    "step2CorrectionPolicy.ts",
+    "step2policy.ts",
     "summary.ts",
     "testProvider.ts",
     "text.ts",

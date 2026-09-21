@@ -1,0 +1,116 @@
+{
+  "schemaVersion": "candidate-import/v1",
+  "identity": {
+    "fullName": "Jordan Lee",
+    "headline": "Senior Product Manager | Platform Strategy, B2B SaaS Scale & Org Leadership",
+    "email": "jordan.lee@example.com",
+    "phone": "+1-416-555-0100",
+    "location": "Toronto, ON, Canada"
+  },
+  "targetTitles": ["Senior Product Manager", "Lead Product Manager", "Group Product Manager"],
+  "targetLocations": ["Toronto, ON", "Remote Canada", "New York, NY"],
+  "summary": "Senior Product Manager with 9 years setting platform strategy, scaling B2B SaaS onboarding, and growing product managers.",
+  "employment": [
+    {
+      "id": "emp-harbor",
+      "company": "Harbor Analytics",
+      "role": "Senior Product Manager",
+      "location": "Toronto, ON",
+      "startDate": "2021-04-01",
+      "isCurrent": true,
+      "description": "Set platform strategy and scaled onboarding for a B2B SaaS analytics suite."
+    },
+    {
+      "id": "emp-beacon",
+      "company": "Beacon Tools",
+      "role": "Product Manager",
+      "location": "Toronto, ON",
+      "startDate": "2017-07-01",
+      "endDate": "2021-03-31",
+      "isCurrent": false,
+      "description": "Led onboarding and integrations for a team collaboration product."
+    }
+  ],
+  "achievements": [
+    {
+      "factId": "spm-fact-discovery",
+      "employmentId": "emp-harbor",
+      "category": "discovery",
+      "text": "Led customer discovery with 40+ B2B SaaS buyers that reshaped the roadmap and lifted trial-to-paid conversion by 18%.",
+      "technologies": ["Jira", "Figma"],
+      "metrics": ["40+ discovery interviews", "trial-to-paid conversion +18%"],
+      "source": "launch report 2024",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "spm-fact-pricing",
+      "employmentId": "emp-harbor",
+      "category": "growth",
+      "text": "Shipped a usage-based pricing and packaging revamp with billing, sales, and support that added $1.2M in expansion ARR.",
+      "technologies": ["Salesforce"],
+      "metrics": ["$1.2M expansion ARR"],
+      "source": "pricing review 2024",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "spm-fact-cadence",
+      "employmentId": "emp-harbor",
+      "category": "delivery",
+      "text": "Ran weekly stakeholder reviews across engineering, design, and data that cut roadmap thrash and shipped 95% of committed quarters.",
+      "technologies": ["Jira"],
+      "metrics": ["95% quarterly commitment delivery"],
+      "source": "performance review 2025",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "spm-fact-platform",
+      "employmentId": "emp-harbor",
+      "category": "strategy",
+      "text": "Set multi-year platform strategy spanning three product lines and a 60-engineer organization.",
+      "technologies": ["AWS", "Kubernetes"],
+      "metrics": ["3 product lines", "60-engineer organization"],
+      "source": "strategy review 2025",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "spm-fact-devex",
+      "employmentId": "emp-harbor",
+      "category": "platform",
+      "text": "Sponsored the developer-platform bet that reduced service onboarding from six weeks to four days.",
+      "technologies": ["Kubernetes", "Terraform"],
+      "metrics": ["onboarding 6 weeks to 4 days"],
+      "source": "platform review 2024",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "spm-fact-mentor",
+      "employmentId": "emp-beacon",
+      "category": "leadership",
+      "text": "Mentored four product managers; two were promoted to Senior within eighteen months.",
+      "technologies": [],
+      "metrics": ["4 mentees", "2 Senior promotions"],
+      "source": "performance review 2021",
+      "verification": "APPROVED"
+    }
+  ],
+  "skills": [
+    {"name": "Platform strategy", "category": "Product", "proficiency": "expert", "verified": true},
+    {"name": "Stakeholder management", "category": "Leadership", "proficiency": "expert", "verified": true},
+    {"name": "Customer discovery", "category": "Product", "proficiency": "expert", "verified": true},
+    {"name": "Developer experience", "category": "Technical", "proficiency": "proficient", "verified": false},
+    {"name": "Jira", "category": "Tools", "proficiency": "expert", "verified": true},
+    {"name": "Kubernetes", "category": "Technical", "proficiency": "beginner", "verified": false}
+  ],
+  "education": [
+    {
+      "degree": "B.Comm.",
+      "fieldOfStudy": "Marketing",
+      "institution": "Toronto Metropolitan University",
+      "startDate": "2013-09-01",
+      "endDate": "2017-06-30"
+    }
+  ],
+  "credentials": [
+    {"name": "Certified Scrum Product Owner", "issuer": "Scrum Alliance", "issuedDate": "2020-05-01"}
+  ]
+}

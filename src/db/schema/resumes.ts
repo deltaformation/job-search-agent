@@ -8,11 +8,14 @@ import {
   sqliteTable,
   text,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import { jobAnalyses } from "./analysis";
 import { candidateFacts } from "./candidates";
 import { createdAt, updatedAt } from "./columns";
+import { generationRequests } from "./generation";
 import { jobs } from "./jobs";
+import { workAttempts } from "./queue";
 
 /**
  * Immutable resume versions with claim-level provenance and artifacts.
@@ -37,6 +40,13 @@ export const resumeVersions = sqliteTable(
     analysisId: text("analysis_id")
       .notNull()
       .references(() => jobAnalyses.id),
+    // D9 durable linkage: the exact request + attempt that produced
+    // this version. Nullable only for pre-upgrade rows; a BEFORE
+    // INSERT trigger rejects new rows without both links.
+    generationRequestId: text("generation_request_id").references(
+      () => generationRequests.id,
+    ),
+    workAttemptId: text("work_attempt_id").references(() => workAttempts.id),
     templateId: text("template_id").notNull(),
     templateVersion: text("template_version").notNull(),
     templateHash: text("template_hash").notNull(),
@@ -52,12 +62,16 @@ export const resumeVersions = sqliteTable(
   },
   (t) => [
     unique("resume_versions_job_version").on(t.jobId, t.version),
+    uniqueIndex("v13_resume_owner").on(t.id, t.jobId),
+    uniqueIndex("v13_one_version_per_request")
+      .on(t.generationRequestId)
+      .where(sql.raw("generation_request_id IS NOT NULL")),
     index("resume_versions_job_id").on(t.jobId),
     index("resume_versions_analysis_id").on(t.analysisId),
     check("resume_versions_version", sql`${t.version} >= 1`),
     check(
       "resume_versions_review_state",
-      sql`${t.reviewState} IN ('DRAFT','AWAITING_REVIEW','APPROVED','REVISION_REQUESTED','FAILED')`,
+      sql`${t.reviewState} IN ('DRAFT','AWAITING_REVIEW','APPROVED','REVISION_REQUESTED','DECLINED','FAILED')`,
     ),
   ],
 );
@@ -136,7 +150,7 @@ export const resumeReviews = sqliteTable(
     index("resume_reviews_version_id").on(t.resumeVersionId),
     check(
       "resume_reviews_action",
-      sql`${t.action} IN ('APPROVED','REVISION_REQUESTED')`,
+      sql`${t.action} IN ('APPROVED','REVISION_REQUESTED','DECLINED')`,
     ),
   ],
 );

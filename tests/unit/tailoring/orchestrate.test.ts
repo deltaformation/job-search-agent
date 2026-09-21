@@ -76,7 +76,7 @@ describe("tailoring orchestration", () => {
     if (result.ok) {
       throw new Error("expected rejection");
     }
-    expect(result.reason).toBe("PROVIDER_UNAVAILABLE");
+    expect(result.reason).toBe("INVALID_RESPONSE");
     expect(result.detail).toContain("must quote exact JD text");
     expect(result.proposal).toBeNull();
   });
@@ -94,7 +94,7 @@ describe("tailoring orchestration", () => {
     if (result.ok) {
       throw new Error("expected rejection");
     }
-    expect(result.reason).toBe("PROVIDER_UNAVAILABLE");
+    expect(result.reason).toBe("INVALID_RESPONSE");
     expect(result.detail).toContain("different snapshots");
     expect(result.proposal).toBeNull();
   });

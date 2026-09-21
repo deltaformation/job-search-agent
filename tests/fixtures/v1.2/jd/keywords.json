@@ -1,0 +1,54 @@
+{
+  "version": "v1.2-jd-fixtures/v1",
+  "matching": "Case-insensitive comparison against suggestion keywords. mustInclude entries are eligible relevant phrases the extractor should surface when the source supports them; mustExclude entries must never appear as suggestions for that source.",
+  "cases": {
+    "pm-rich": {
+      "file": "pm-rich.txt",
+      "minSuggestions": 5,
+      "maxSuggestions": 10,
+      "mustInclude": ["product strategy", "roadmap prioritization", "customer discovery", "B2B SaaS", "stakeholder management", "go-to-market"],
+      "mustExclude": ["Go"],
+      "note": "Reproduces the F5 audit input verbatim; Go must not match the go-to-market prefix."
+    },
+    "senior-pm": {
+      "file": "senior-pm.txt",
+      "minSuggestions": 5,
+      "maxSuggestions": 10,
+      "mustInclude": ["platform strategy", "roadmap prioritization", "customer discovery", "B2B SaaS", "stakeholder management", "go-to-market"],
+      "mustExclude": ["Go"],
+      "note": "Senior scope with platform vocabulary; AWS/Kubernetes are genuinely present and eligible."
+    },
+    "sales-business": {
+      "file": "sales-business.txt",
+      "minSuggestions": 5,
+      "maxSuggestions": 10,
+      "mustInclude": ["pipeline generation", "enterprise accounts", "discovery calls", "go-to-market", "forecast accuracy"],
+      "mustExclude": ["Go"],
+      "note": "Non-PM business role; phrases must stay intact (no substring fragments)."
+    },
+    "engineering": {
+      "file": "engineering.txt",
+      "minSuggestions": 5,
+      "maxSuggestions": 10,
+      "mustInclude": ["Go", "Rust", "Kubernetes", "REST APIs", "CI/CD"],
+      "mustExclude": [],
+      "note": "Positive control: Go IS a genuine language requirement here and must be suggestible."
+    },
+    "sparse": {
+      "file": "sparse.txt",
+      "minSuggestions": 0,
+      "maxSuggestions": 3,
+      "mustInclude": [],
+      "mustExclude": ["team", "friendly", "needed"],
+      "note": "Honest small set: never pad with boilerplate to reach a count."
+    },
+    "empty": {
+      "file": "empty.txt",
+      "minSuggestions": 0,
+      "maxSuggestions": 0,
+      "mustInclude": [],
+      "mustExclude": [],
+      "note": "Empty source yields zero suggestions."
+    }
+  }
+}

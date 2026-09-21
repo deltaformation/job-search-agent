@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import {
   createTestDatabase,
+  generationRequests,
   jobs,
   newId,
   resumeReviews,
@@ -13,14 +14,10 @@ import {
   workItems,
   type TestDatabase,
 } from "../../../src/db";
-import { resolveCurrentSnapshots } from "../../../src/server/candidates";
+import { claimNextWorkItem, completeWorkItem } from "../../../src/queue/leases";
+import { getOrCreateCandidateSnapshot } from "../../../src/server/candidates";
 import { approveResume, requestRevision } from "../../../src/server/review";
-import {
-  requestRevisionRun,
-  requestTailoring,
-  tailorIdempotencyKey,
-  tailorRevisionIdempotencyKey,
-} from "../../../src/tailoring/enqueue";
+import { requestGeneration } from "../../../src/server/tailoring";
 import { createTailorHandler } from "../../../src/tailoring/handler";
 import { TestProvider } from "../../../src/tailoring/testProvider";
 import {
@@ -33,15 +30,16 @@ import {
 } from "./support";
 
 /**
- * R4-F revision loop: a real TAILOR run attaches v1, the human requests
- * revision (new review + follow-up run atomically), the worker attaches a
- * v2 child even when the provider returns identical content, and the
- * human approves v2 into TAILORED. Uses the scripted provider and the
- * stub PDF renderer; only the review boundary is new here.
+ * D revision loop: an explicit INITIAL run attaches v1, the human
+ * requests revision (REVISION_REQUESTED review + follow-up REVISION run
+ * atomically), the worker attaches a v2 child even when the provider
+ * returns identical content, and the human approves v2 into TAILORED.
+ * Uses the scripted provider and the stub PDF renderer.
  */
 
 const tempDirs: string[] = [];
 const testDbs: TestDatabase[] = [];
+const PROVIDER = { providerAvailable: () => true };
 
 afterEach(() => {
   while (testDbs.length > 0) {
@@ -60,21 +58,64 @@ function setup(): { t: TestDatabase; artifactsDir: string } {
   return { t, artifactsDir };
 }
 
-async function runTailor(t: TestDatabase, artifactsDir: string, jobId: string, workItemId: string) {
-  const snapshots = resolveCurrentSnapshots(t.handle, jobId);
-  if (!snapshots.ok) {
-    throw new Error("snapshot resolution failed in setup");
+function startRun(
+  t: TestDatabase,
+  input: { jobId: string; observedRowVersion: number; parentVersionId?: string; revisionNote?: string },
+): { requestId: string; workItemId: string; newRowVersion: number } {
+  const result = requestGeneration(
+    t.handle,
+    { ...input, actor: "human" },
+    PROVIDER,
+  );
+  expect(result).toMatchObject({ ok: true });
+  if (!result.ok) {
+    throw new Error(`run start failed: ${result.error} ${result.detail}`);
+  }
+  return { requestId: result.requestId, workItemId: result.workItemId, newRowVersion: result.newRowVersion };
+}
+
+async function runTailor(t: TestDatabase, artifactsDir: string, workItemId: string) {
+  const claimed = claimNextWorkItem(t.handle, {
+    workerId: "test-worker",
+    kinds: ["TAILOR"],
+    leaseDurationMs: 60_000,
+    now: new Date().toISOString(),
+  });
+  expect(claimed?.id).toBe(workItemId);
+  const payload = JSON.parse(String(claimed?.payloadJson)) as {
+    generationRequestId: string;
+    jdSnapshotId: string;
+    profileVersionId: string;
+  };
+  const candidate = getOrCreateCandidateSnapshot(t.handle, {
+    profileVersionId: payload.profileVersionId,
+  });
+  if (!candidate.ok) {
+    throw new Error("candidate snapshot resolution failed in setup");
   }
   const handler = createTailorHandler({
     artifactsDir,
     provider: new TestProvider({
       proposals: {
-        [snapshots.jdSnapshotId]: e2eProposal(snapshots.jdSnapshotId, snapshots.candidateSnapshotId),
+        [payload.jdSnapshotId]: e2eProposal(payload.jdSnapshotId, candidate.snapshotId),
       },
     }),
     renderPdf: async (html) => stubRenderPdf(html),
   });
-  return handler(handlerContext(t, workItemId));
+  const outcome = await handler(handlerContext(t, workItemId));
+  // Mirror the worker loop: a published run completes its item, so
+  // the one-live-TAILOR index sees no dangling lease.
+  if (outcome.result === "SUCCEEDED" && claimed !== null) {
+    const completed = completeWorkItem(t.handle, {
+      workItemId,
+      leaseToken: claimed.leaseToken,
+      result: "SUCCEEDED",
+    });
+    if (!completed.ok) {
+      throw new Error(`completion failed in setup: ${completed.error}`);
+    }
+  }
+  return outcome;
 }
 
 function readJob(t: TestDatabase, jobId: string) {
@@ -85,10 +126,9 @@ describe("revision loop", () => {
   it("requests revision, attaches a child version, and approves it", async () => {
     const { t, artifactsDir } = setup();
     importTestProfile(t);
-    const { jobId, extractionId } = seedJob(t, E2E_JD_TEXT);
-    const first = requestTailoring(t.handle, { jobId, extractionId });
-    expect(first.deduped).toBe(false);
-    const attached = await runTailor(t, artifactsDir, jobId, first.workItemId);
+    const { jobId } = seedJob(t, E2E_JD_TEXT);
+    const first = startRun(t, { jobId, observedRowVersion: 1 });
+    const attached = await runTailor(t, artifactsDir, first.workItemId);
     expect(attached.result).toBe("SUCCEEDED");
 
     const v1 = t.handle.db.select().from(resumeVersions).where(eq(resumeVersions.jobId, jobId)).all();
@@ -99,16 +139,32 @@ describe("revision loop", () => {
     expect(beforeRevision?.tailoringState).toBe("AWAITING_REVIEW");
     expect(beforeRevision?.activeResumeVersionId).toBe(v1Id);
 
-    const revised = requestRevision(t.handle, {
-      jobId,
-      resumeVersionId: v1Id,
-      observedRowVersion: beforeRevision?.rowVersion as number,
-      actor: "human",
-      note: "Second bullet overstates the caching work.",
-    });
+    const revised = requestRevision(
+      t.handle,
+      {
+        jobId,
+        resumeVersionId: v1Id,
+        observedRowVersion: beforeRevision?.rowVersion as number,
+        actor: "human",
+        note: "Second bullet overstates the caching work.",
+      },
+      PROVIDER,
+    );
     expect(revised.ok).toBe(true);
     if (!revised.ok) return;
-    expect(revised.deduped).toBe(false);
+    // The follow-up is a REVISION request bound to v1 + the note.
+    const request = t.handle.db
+      .select()
+      .from(generationRequests)
+      .where(eq(generationRequests.id, revised.requestId))
+      .get();
+    expect(request).toMatchObject({
+      requestKind: "REVISION",
+      parentVersionId: v1Id,
+      revisionNote: "Second bullet overstates the caching work.",
+      status: "QUEUED",
+      workItemId: revised.workItemId,
+    });
     const followUp = t.handle.db
       .select()
       .from(workItems)
@@ -116,8 +172,12 @@ describe("revision loop", () => {
       .get();
     expect(followUp?.kind).toBe("TAILOR");
     expect(followUp?.state).toBe("QUEUED");
-    expect(followUp?.idempotencyKey).toBe(tailorRevisionIdempotencyKey(jobId, v1Id));
-    expect(followUp?.idempotencyKey).not.toBe(tailorIdempotencyKey(jobId, extractionId));
+    const payload = JSON.parse(String(followUp?.payloadJson)) as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      schemaVersion: "tailor-queue/v2",
+      generationRequestId: revised.requestId,
+      parentVersionId: v1Id,
+    });
     const frozen = t.handle.db
       .select()
       .from(resumeVersions)
@@ -139,7 +199,7 @@ describe("revision loop", () => {
     // The scripted provider returns the identical proposal, so the
     // follow-up run produces identical bytes — which must still mint a
     // new child version, never converge onto the terminal v1.
-    const rerun = await runTailor(t, artifactsDir, jobId, revised.workItemId);
+    const rerun = await runTailor(t, artifactsDir, revised.workItemId);
     expect(rerun.result).toBe("SUCCEEDED");
     const versions = t.handle.db
       .select()
@@ -153,6 +213,7 @@ describe("revision loop", () => {
       parentVersionId: v1Id,
       reviewState: "AWAITING_REVIEW",
       contentHash: v1ContentHash,
+      generationRequestId: revised.requestId,
     });
     const awaitingChild = readJob(t, jobId);
     expect(awaitingChild?.tailoringState).toBe("AWAITING_REVIEW");
@@ -171,10 +232,13 @@ describe("revision loop", () => {
     );
     expect(approved.ok).toBe(true);
     if (!approved.ok) return;
+    expect(approved).toMatchObject({ approvalCase: "move" });
+    expect(typeof approved.eventId).toBe("string");
     expect(approved.newRowVersion).toBe((awaitingChild?.rowVersion as number) + 1);
     const tailored = readJob(t, jobId);
     expect(tailored?.status).toBe("TAILORED");
     expect(tailored?.tailoringState).toBe("APPROVED");
+    expect(tailored?.selectedResumeVersionId).toBe(v2?.id);
     const v2Row = t.handle.db
       .select()
       .from(resumeVersions)
@@ -183,45 +247,100 @@ describe("revision loop", () => {
     expect(v2Row?.reviewState).toBe("APPROVED");
   });
 
-  it("dedupes revision enqueue by job and parent version", () => {
-    const { t } = setup();
+  it("rejects revision for unknown, non-active, and unnoted versions", async () => {
+    const { t, artifactsDir } = setup();
     importTestProfile(t);
-    const { jobId, extractionId } = seedJob(t, E2E_JD_TEXT);
-    const parentVersionId = newId();
-    const first = requestRevisionRun(t.handle, { jobId, extractionId, parentVersionId });
-    const second = requestRevisionRun(t.handle, { jobId, extractionId, parentVersionId });
-    expect(first.deduped).toBe(false);
-    expect(second.deduped).toBe(true);
-    expect(second.workItemId).toBe(first.workItemId);
-    // A different parent is a different revision round: no dedupe.
-    const third = requestRevisionRun(t.handle, { jobId, extractionId, parentVersionId: newId() });
-    expect(third.deduped).toBe(false);
+    const { jobId } = seedJob(t, E2E_JD_TEXT);
+    const first = startRun(t, { jobId, observedRowVersion: 1 });
+    expect((await runTailor(t, artifactsDir, first.workItemId)).result).toBe("SUCCEEDED");
+    const v1 = t.handle.db.select().from(resumeVersions).where(eq(resumeVersions.jobId, jobId)).get();
+    const job = readJob(t, jobId);
+    const rowVersion = job?.rowVersion as number;
+
+    const unknown = requestRevision(
+      t.handle,
+      {
+        jobId,
+        resumeVersionId: newId(),
+        observedRowVersion: rowVersion,
+        actor: "human",
+        note: "Note.",
+      },
+      PROVIDER,
+    );
+    expect(unknown).toMatchObject({ ok: false, error: "unknown-version" });
+
+    // A version that exists but is not active cannot be revised.
+    t.handle.db
+      .update(jobs)
+      .set({ activeResumeVersionId: null })
+      .where(eq(jobs.id, jobId))
+      .run();
+    const stale = requestRevision(
+      t.handle,
+      {
+        jobId,
+        resumeVersionId: v1?.id as string,
+        observedRowVersion: rowVersion,
+        actor: "human",
+        note: "Note.",
+      },
+      PROVIDER,
+    );
+    expect(stale).toMatchObject({ ok: false, error: "stale-version" });
+    t.handle.db
+      .update(jobs)
+      .set({ activeResumeVersionId: v1?.id as string })
+      .where(eq(jobs.id, jobId))
+      .run();
+
+    expect(() =>
+      requestRevision(
+        t.handle,
+        {
+          jobId,
+          resumeVersionId: v1?.id as string,
+          observedRowVersion: rowVersion,
+          actor: "human",
+          note: "",
+        },
+        PROVIDER,
+      ),
+    ).toThrow();
   });
 
   it("rejects a second revision of the same version without re-enqueueing", async () => {
     const { t, artifactsDir } = setup();
     importTestProfile(t);
-    const { jobId, extractionId } = seedJob(t, E2E_JD_TEXT);
-    const first = requestTailoring(t.handle, { jobId, extractionId });
-    expect((await runTailor(t, artifactsDir, jobId, first.workItemId)).result).toBe("SUCCEEDED");
+    const { jobId } = seedJob(t, E2E_JD_TEXT);
+    const first = startRun(t, { jobId, observedRowVersion: 1 });
+    expect((await runTailor(t, artifactsDir, first.workItemId)).result).toBe("SUCCEEDED");
     const v1 = t.handle.db.select().from(resumeVersions).where(eq(resumeVersions.jobId, jobId)).get();
     const job = readJob(t, jobId);
-    const revised = requestRevision(t.handle, {
-      jobId,
-      resumeVersionId: v1?.id as string,
-      observedRowVersion: job?.rowVersion as number,
-      actor: "human",
-      note: "First note.",
-    });
+    const revised = requestRevision(
+      t.handle,
+      {
+        jobId,
+        resumeVersionId: v1?.id as string,
+        observedRowVersion: job?.rowVersion as number,
+        actor: "human",
+        note: "First note.",
+      },
+      PROVIDER,
+    );
     expect(revised.ok).toBe(true);
     if (!revised.ok) return;
-    const again = requestRevision(t.handle, {
-      jobId,
-      resumeVersionId: v1?.id as string,
-      observedRowVersion: revised.newRowVersion,
-      actor: "human",
-      note: "Second note.",
-    });
+    const again = requestRevision(
+      t.handle,
+      {
+        jobId,
+        resumeVersionId: v1?.id as string,
+        observedRowVersion: revised.newRowVersion,
+        actor: "human",
+        note: "Second note.",
+      },
+      PROVIDER,
+    );
     expect(again).toMatchObject({ ok: false, error: "forbidden" });
     const followUps = t.handle.db.select().from(workItems).all();
     // The original run plus exactly one revision run.

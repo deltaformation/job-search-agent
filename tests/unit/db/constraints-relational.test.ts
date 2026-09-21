@@ -18,7 +18,7 @@ import {
   scrapeAttempts,
   utcNow,
 } from "../../../src/db";
-import { runWithTestDb, seedResumeChain } from "./helpers";
+import { runWithTestDb, seedExtraRequest, seedResumeChain } from "./helpers";
 
 describe("foreign keys and ownership guards", () => {
   it("rejects rows pointing at missing parents", () => {
@@ -121,6 +121,7 @@ describe("foreign keys and ownership guards", () => {
     runWithTestDb((t) => {
       const chain = seedResumeChain(t);
       const { db } = t.handle;
+      const crossRequest = seedExtraRequest(t, chain);
 
       expect(() =>
         db
@@ -147,6 +148,8 @@ describe("foreign keys and ownership guards", () => {
             gapsJson: "[]",
             promptVersion: "prompt-v1",
             proposalSchemaVersion: "proposal-v1",
+            generationRequestId: crossRequest.requestId,
+            workAttemptId: chain.workAttemptId,
           })
           .run(),
       ).toThrow(/same job/);
@@ -168,6 +171,8 @@ describe("foreign keys and ownership guards", () => {
             renderSchemaVersion: "render-v1",
             contentJson: "{}",
             contentHash: "cross",
+            generationRequestId: crossRequest.requestId,
+            workAttemptId: chain.workAttemptId,
           })
           .run(),
       ).toThrow(/same job/);
@@ -208,6 +213,7 @@ describe("foreign keys and ownership guards", () => {
           canonicalSha256: "other-jd",
         })
         .run();
+      const foreignRequest = seedExtraRequest(t, chain);
       db.insert(jobAnalyses)
         .values({
           id: foreignAnalysisId,
@@ -218,6 +224,8 @@ describe("foreign keys and ownership guards", () => {
           gapsJson: "[]",
           promptVersion: "prompt-v1",
           proposalSchemaVersion: "proposal-v1",
+          generationRequestId: foreignRequest.requestId,
+          workAttemptId: chain.workAttemptId,
         })
         .run();
       const foreignVersionId = newId();
@@ -236,6 +244,8 @@ describe("foreign keys and ownership guards", () => {
           renderSchemaVersion: "render-v1",
           contentJson: "{}",
           contentHash: "foreign",
+          generationRequestId: foreignRequest.requestId,
+          workAttemptId: chain.workAttemptId,
         })
         .run();
       expect(() =>
@@ -256,6 +266,8 @@ describe("foreign keys and ownership guards", () => {
             renderSchemaVersion: "render-v1",
             contentJson: "{}",
             contentHash: "child",
+            generationRequestId: chain.requestId,
+            workAttemptId: chain.workAttemptId,
           })
           .run(),
       ).toThrow(/same job/);

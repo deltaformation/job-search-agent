@@ -12,12 +12,25 @@ export const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export async function runSetup(env = process.env, root = REPO_ROOT) {
   const security = await import("../src/security/index.ts");
   const db = await import("../src/db/index.ts");
+  const settings = await import("../src/server/settings.ts");
+  const sources = await import("../src/server/sources.ts");
   const config = security.resolveRuntimeConfig(env, root);
   security.ensureDataRoot(config);
   const handle = db.ensureDatabase({
     path: config.databasePath,
     migrationsDir: join(root, "drizzle"),
   });
-  handle.close();
+  try {
+    // Ordered upgrade step (WO-1.2-B): reconstruct profile source bytes
+    // for pre-upgrade active versions, then quarantine crashed-publish
+    // debris. Both are idempotent no-ops once converged.
+    sources.backfillProfileSources(handle, {
+      sourcesDir: config.sourcesDir,
+      candidateDir: settings.resolveCandidateDir(env),
+    });
+    sources.reconcileSources(handle, config.sourcesDir);
+  } finally {
+    handle.close();
+  }
   return config;
 }

@@ -6,6 +6,7 @@ import { Activity, ArrowRight, ExternalLink, RotateCcw, Sparkles } from "lucide-
 import { Button } from "@/components/ui/button";
 import type { BatchView } from "@/src/server/queries";
 import { apiGet, errorMessage } from "./api";
+import BatchPreparationCell from "./BatchPreparationCell";
 import { OutcomeLabel, WorkStateLabel } from "./outcome-label";
 
 /**
@@ -158,6 +159,7 @@ export default function BatchProgress({ batchId }: { batchId: string }) {
               <th scope="col" className="p-3">URL</th>
               <th scope="col" className="p-3 w-28">Intake</th>
               <th scope="col" className="p-3 w-40">Queue</th>
+              <th scope="col" className="p-3 w-44">Preparation</th>
               <th scope="col" className="p-3">Detail</th>
             </tr>
           </thead>
@@ -198,6 +200,9 @@ export default function BatchProgress({ batchId }: { batchId: string }) {
                       </Link>
                     </div>
                   )}
+                </td>
+                <td className="p-3 text-xs">
+                  <BatchPreparationCell item={item} onChanged={() => void refresh()} />
                 </td>
                 <td className="p-3 text-xs text-muted-foreground break-all">
                   {item.canonicalUrl ? (

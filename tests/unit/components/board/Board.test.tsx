@@ -20,6 +20,8 @@ function card(overrides: Partial<BoardCardView> & { id: string; status: BoardCar
     tailoringState: "PENDING",
     tailoringReasonCode: null,
     resume: null,
+    selectedApprovedPdfArtifactId: null,
+    selectedApprovedPdfSha256: null,
     notesCount: 0,
     sourceUrl: "https://example.com/jobs/1",
     appliedAt: null,
@@ -62,6 +64,9 @@ describe("Board", () => {
     expect(screen.getByText("Designer")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /new \(1 of 1\)/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /applied \(0 of 0\)/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /drag staff engineer to move it/i }),
+    ).toHaveAttribute("aria-describedby", "board-dnd-context");
   });
 
   it("announces load failures", async () => {
@@ -144,7 +149,7 @@ describe("Board", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<Board />);
-    fireEvent.click(await screen.findByRole("button", { name: /open details for staff engineer/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /open properties for staff engineer/i }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(await screen.findByText("Facts")).toBeInTheDocument();
   });

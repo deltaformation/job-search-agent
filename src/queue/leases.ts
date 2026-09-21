@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 // File imports (not directory barrels): the worker runs under the
 // extensionless-file TS loader, which cannot resolve directory imports.
@@ -52,6 +52,15 @@ export interface ClaimedWorkItem extends WorkItem {
   leasedAt: string;
   leaseExpiresAt: string;
   workerId: string;
+  /**
+   * Attempt id minted at claim (WO-1.2-D §12): the handler references
+   * it before the append-only attempt row exists, so durable linkage
+   * (e.g. analysis -> attempt) is complete at publication time without
+   * ever rewriting a completed attempt. Completion and stale recovery
+   * both write exactly this id, then clear it; the next claim mints a
+   * fresh one.
+   */
+  currentAttemptId: string;
 }
 
 export const ClaimWorkItemInput = z.object({
@@ -66,6 +75,8 @@ export type ClaimWorkItemInput = z.infer<typeof ClaimWorkItemInput>;
 export const RenewLeaseInput = z.object({
   workItemId: z.string().min(1),
   leaseToken: z.string().min(1),
+  /** Exact attempt the caller holds; enforced when provided. */
+  attemptId: z.string().min(1).optional(),
   leaseDurationMs: PositiveInt.max(3_600_000),
   now: IsoDateTime.optional(),
 });
@@ -74,6 +85,8 @@ export type RenewLeaseInput = z.infer<typeof RenewLeaseInput>;
 export const CompleteWorkItemInput = z.object({
   workItemId: z.string().min(1),
   leaseToken: z.string().min(1),
+  /** Exact attempt the caller holds; enforced when provided. */
+  attemptId: z.string().min(1).optional(),
   result: AttemptResult,
   errorCode: z.string().trim().min(1).max(64).nullish(),
   errorDetail: z.string().max(4000).nullish(),
@@ -85,6 +98,14 @@ export type CompleteWorkItemInput = z.infer<typeof CompleteWorkItemInput>;
 export interface CompleteWorkItemOptions {
   now?: string;
   backoff?: BackoffOptions;
+  /**
+   * Force terminal failure for FAILED/ERROR even with budget left.
+   * The TAILOR handler sets this for explicit-only v1.3 failures
+   * (configuration/auth/launch/input faults): they must never
+   * auto-retry, only recover through explicit transaction-R retry
+   * (or not at all for the nonretryable input codes).
+   */
+  terminal?: boolean;
 }
 
 export type CompleteWorkItemResult =
@@ -92,6 +113,7 @@ export type CompleteWorkItemResult =
       ok: true;
       state: WorkStateValue;
       attemptNumber: number;
+      attemptId: string;
       nextRunAt: string | null;
     }
   | { ok: false; error: "unknown-item" | "lease-lost" };
@@ -106,6 +128,11 @@ export interface RecoverStaleLeasesResult {
   recovered: number;
   requeued: number;
   failed: number;
+  /**
+   * Items recovery finished FAILED (attempts exhausted). The dispatcher
+   * terminalizes their domain state — recovery itself stays queue-local.
+   */
+  exhausted: Array<{ workItemId: string; kind: string; jobId: string | null; attempts: number }>;
 }
 
 export type RequeueWorkItemResult =
@@ -136,6 +163,7 @@ export function claimNextWorkItem(
   }
   const nowIso = resolveNow(input.now);
   const leaseToken = newId();
+  const currentAttemptId = newId();
   const leaseExpiresAt = addMilliseconds(nowIso, input.leaseDurationMs);
   const candidate = handle.db
     .select({ id: workItems.id })
@@ -157,11 +185,11 @@ export function claimNextWorkItem(
     leasedAt: nowIso,
     leaseExpiresAt,
     workerId: input.workerId,
+    currentAttemptId,
     updatedAt: nowIso,
   };
-  const claimed = withTransaction(
-    handle.sqlite,
-    () =>
+  const claimed = withTransaction(handle.sqlite, () => {
+    const row =
       handle.db
         .update(workItems)
         .set({
@@ -172,8 +200,26 @@ export function claimNextWorkItem(
         })
         .where(eq(workItems.id, candidate))
         .returning()
-        .get() ?? null,
-  );
+        .get() ?? null;
+    if (row === null) {
+      return null;
+    }
+    // The attempt row is born RUNNING at claim time so mid-run output
+    // (linked analyses, versions) can reference it; completion or
+    // recovery finishes it exactly once.
+    handle.db
+      .insert(workAttempts)
+      .values({
+        id: currentAttemptId,
+        workItemId: row.id,
+        attemptNumber: row.attemptCount,
+        workerId: input.workerId,
+        startedAt: nowIso,
+        result: "RUNNING",
+      })
+      .run();
+    return row;
+  });
   if (claimed === null) {
     return null;
   }
@@ -187,9 +233,12 @@ export function claimNextWorkItem(
 }
 
 /**
- * Extend a live lease. Succeeds only when the item is still RUNNING under
- * the caller's token; anything else is a benign `lease-lost` the caller
- * must treat as "stop working, someone else owns this item now".
+ * Extend a live lease. Succeeds only when the item is still RUNNING
+ * under the caller's token, the lease has not expired, and — when the
+ * caller passes it — the current attempt is still the caller's exact
+ * attempt. Anything else is a benign `lease-lost` the caller must
+ * treat as "stop working": an expired lease can never revive, even
+ * before stale recovery reclaims it.
  */
 export function renewLease(
   handle: DatabaseHandle,
@@ -209,6 +258,10 @@ export function renewLease(
             eq(workItems.id, input.workItemId),
             eq(workItems.state, "RUNNING"),
             eq(workItems.leaseToken, input.leaseToken),
+            gt(workItems.leaseExpiresAt, nowIso),
+            input.attemptId === undefined
+              ? undefined
+              : eq(workItems.currentAttemptId, input.attemptId),
           ),
         )
         .run().changes,
@@ -221,15 +274,19 @@ export function renewLease(
 
 /**
  * Complete one attempt. The state change and its `work_attempts` row are
- * written in a single transaction guarded by the lease token, which makes
- * duplicate completion safe: the second call finds no live lease and
- * returns `lease-lost` without writing anything.
+ * written in a single transaction guarded by the lease token, expiry,
+ * and (when provided) the exact attempt id, which makes duplicate
+ * completion safe: the second call finds no live lease and returns
+ * `lease-lost` without writing anything. An expired lease can never
+ * complete — even before another claimant exists — so a stale worker
+ * can neither finish nor requeue work it no longer owns.
  *
  * Result mapping: SUCCEEDED finishes the item; FAILED requeues with
- * backoff while attempts remain and finishes it once exhausted; BLOCKED
- * (login/CAPTCHA/access) finishes the item as FAILED because queue rows
- * have no BLOCKED state — the attempt row keeps the BLOCKED result and
- * reason so the block stays explicit until a human requeues.
+ * backoff while attempts remain and finishes it once exhausted (or
+ * immediately when `terminal` is set); BLOCKED (login/CAPTCHA/access)
+ * finishes the item as FAILED because queue rows have no BLOCKED
+ * state — the attempt row keeps the BLOCKED result and reason so the
+ * block stays explicit until a human requeues.
  */
 export function completeWorkItem(
   handle: DatabaseHandle,
@@ -243,6 +300,8 @@ export function completeWorkItem(
       .select({
         state: workItems.state,
         leaseToken: workItems.leaseToken,
+        leaseExpiresAt: workItems.leaseExpiresAt,
+        currentAttemptId: workItems.currentAttemptId,
       })
       .from(workItems)
       .where(eq(workItems.id, input.workItemId))
@@ -250,7 +309,13 @@ export function completeWorkItem(
     if (current === undefined) {
       return { ok: false, error: "unknown-item" } as const;
     }
-    if (current.state !== "RUNNING" || current.leaseToken !== input.leaseToken) {
+    if (
+      current.state !== "RUNNING" ||
+      current.leaseToken !== input.leaseToken ||
+      current.leaseExpiresAt === null ||
+      current.leaseExpiresAt <= nowIso ||
+      (input.attemptId !== undefined && current.currentAttemptId !== input.attemptId)
+    ) {
       return { ok: false, error: "lease-lost" } as const;
     }
     const live = handle.db
@@ -259,14 +324,16 @@ export function completeWorkItem(
         maxAttempts: workItems.maxAttempts,
         leasedAt: workItems.leasedAt,
         workerId: workItems.workerId,
+        currentAttemptId: workItems.currentAttemptId,
       })
       .from(workItems)
       .where(eq(workItems.id, input.workItemId))
       .get();
-    if (live === undefined || live.leasedAt === null) {
+    if (live === undefined || live.leasedAt === null || live.currentAttemptId === null) {
       // Unreachable: the row was RUNNING with our token a statement ago
-      // in the same transaction, and RUNNING implies leased_at is set.
-      // Fail loudly rather than writing a corrupt attempt row.
+      // in the same transaction, and RUNNING implies leased_at plus a
+      // claim-minted attempt id are set. Fail loudly rather than writing
+      // a corrupt attempt row.
       throw new Error(
         `work item ${input.workItemId} lost its lease record mid-completion`,
       );
@@ -277,7 +344,7 @@ export function completeWorkItem(
     if (input.result === "SUCCEEDED") {
       state = "SUCCEEDED";
       nextRunAt = null;
-    } else if (input.result === "BLOCKED" || attemptsExhausted) {
+    } else if (input.result === "BLOCKED" || rawOptions.terminal === true || attemptsExhausted) {
       state = "FAILED";
       nextRunAt = null;
     } else {
@@ -293,6 +360,7 @@ export function completeWorkItem(
         state,
         leaseToken: null,
         workerId: null,
+        currentAttemptId: null,
         nextRunAt,
         updatedAt: nowIso,
       })
@@ -301,20 +369,22 @@ export function completeWorkItem(
           eq(workItems.id, input.workItemId),
           eq(workItems.state, "RUNNING"),
           eq(workItems.leaseToken, input.leaseToken),
+          gt(workItems.leaseExpiresAt, nowIso),
+          input.attemptId === undefined
+            ? undefined
+            : eq(workItems.currentAttemptId, input.attemptId),
         ),
       )
       .run().changes;
     if (changed !== 1) {
       return { ok: false, error: "lease-lost" } as const;
     }
-    handle.db
-      .insert(workAttempts)
-      .values({
-        id: newId(),
-        workItemId: input.workItemId,
-        attemptNumber: live.attemptCount,
-        workerId: live.workerId,
-        startedAt: live.leasedAt,
+    // Finish the claim-time row; a missing row means a pre-upgrade
+    // claim (no row was written then), which backfills here instead of
+    // failing the completion.
+    const finished = handle.db
+      .update(workAttempts)
+      .set({
         finishedAt: nowIso,
         inputHash: input.inputHash ?? null,
         outputHash: input.outputHash ?? null,
@@ -322,15 +392,40 @@ export function completeWorkItem(
         errorCode: input.errorCode ?? null,
         errorDetail: input.errorDetail ?? null,
       })
-      .run();
-    return { ok: true, state, attemptNumber: live.attemptCount, nextRunAt };
+      .where(eq(workAttempts.id, live.currentAttemptId))
+      .run().changes;
+    if (finished !== 1) {
+      handle.db
+        .insert(workAttempts)
+        .values({
+          id: live.currentAttemptId,
+          workItemId: input.workItemId,
+          attemptNumber: live.attemptCount,
+          workerId: live.workerId,
+          startedAt: live.leasedAt,
+          finishedAt: nowIso,
+          inputHash: input.inputHash ?? null,
+          outputHash: input.outputHash ?? null,
+          result: input.result,
+          errorCode: input.errorCode ?? null,
+          errorDetail: input.errorDetail ?? null,
+        })
+        .run();
+    }
+    return {
+      ok: true,
+      state,
+      attemptNumber: live.attemptCount,
+      attemptId: live.currentAttemptId,
+      nextRunAt,
+    };
   });
 }
 
 /**
- * Reclaim leases whose expiry has passed. Each reclaimed lease gets the
- * FAILED attempt row its dead worker never wrote (error `LEASE_EXPIRED`),
- * then requeues immediately when attempts remain or finishes FAILED when
+ * Reclaim leases whose expiry has passed. Each reclaimed lease finishes
+ * its claim-time attempt row as FAILED (error `LEASE_EXPIRED`), then
+ * requeues immediately when attempts remain or finishes FAILED when
  * exhausted. Bounded by `limit` so one call stays a short transaction;
  * the dispatcher calls this on every tick plus once at startup.
  */
@@ -345,10 +440,13 @@ export function recoverStaleLeases(
     const stale = handle.db
       .select({
         id: workItems.id,
+        kind: workItems.kind,
+        jobId: workItems.jobId,
         leaseToken: workItems.leaseToken,
         leasedAt: workItems.leasedAt,
         leaseExpiresAt: workItems.leaseExpiresAt,
         workerId: workItems.workerId,
+        currentAttemptId: workItems.currentAttemptId,
         attemptCount: workItems.attemptCount,
         maxAttempts: workItems.maxAttempts,
       })
@@ -366,11 +464,15 @@ export function recoverStaleLeases(
       recovered: 0,
       requeued: 0,
       failed: 0,
+      exhausted: [],
     };
     for (const row of stale) {
       if (row.leaseToken === null || row.leasedAt === null) {
         continue;
       }
+      // Pre-upgrade RUNNING rows carry no claim-minted attempt id; mint
+      // one for the death record so they resolve instead of stranding.
+      const attemptId = row.currentAttemptId ?? newId();
       const exhausted = row.attemptCount >= row.maxAttempts;
       const state: WorkStateValue = exhausted ? "FAILED" : "QUEUED";
       const changed = handle.db
@@ -379,6 +481,7 @@ export function recoverStaleLeases(
           state,
           leaseToken: null,
           workerId: null,
+          currentAttemptId: null,
           nextRunAt: exhausted ? null : nowIso,
           updatedAt: nowIso,
         })
@@ -395,23 +498,45 @@ export function recoverStaleLeases(
         // Renewed concurrently after our SELECT; the live worker owns it.
         continue;
       }
-      handle.db
-        .insert(workAttempts)
-        .values({
-          id: newId(),
-          workItemId: row.id,
-          attemptNumber: row.attemptCount,
-          workerId: row.workerId,
-          startedAt: row.leasedAt,
+      // Finish the claim-time row; a missing row means a pre-upgrade
+      // claim (or a minted id), which backfills here instead.
+      const finished = handle.db
+        .update(workAttempts)
+        .set({
           finishedAt: nowIso,
           result: "FAILED",
           errorCode: LEASE_EXPIRED,
           errorDetail: `lease held by ${row.workerId ?? "unknown worker"} expired at ${row.leaseExpiresAt ?? "unknown time"}`,
         })
-        .run();
+        .where(eq(workAttempts.id, attemptId))
+        .run().changes;
+      if (finished !== 1) {
+        handle.db
+          .insert(workAttempts)
+          .values({
+            id: attemptId,
+            workItemId: row.id,
+            attemptNumber: row.attemptCount,
+            workerId: row.workerId,
+            startedAt: row.leasedAt,
+            finishedAt: nowIso,
+            result: "FAILED",
+            errorCode: LEASE_EXPIRED,
+            errorDetail: `lease held by ${row.workerId ?? "unknown worker"} expired at ${row.leaseExpiresAt ?? "unknown time"}`,
+          })
+          .run();
+      }
       result.recovered += 1;
       result.requeued += exhausted ? 0 : 1;
       result.failed += exhausted ? 1 : 0;
+      if (exhausted) {
+        result.exhausted.push({
+          workItemId: row.id,
+          kind: row.kind,
+          jobId: row.jobId,
+          attempts: row.attemptCount,
+        });
+      }
     }
     return result;
   });

@@ -17,6 +17,7 @@ import {
   candidateProfiles,
   candidateSnapshotFacts,
   candidateSnapshots,
+  candidateSources,
   jdSnapshots,
   jobExtractions,
   jobs,
@@ -51,6 +52,19 @@ export interface ProfileVersionRow {
   createdAt: string;
 }
 
+export interface SourceRow {
+  id: string;
+  profileId: string;
+  profileVersionId: string;
+  relativePath: string;
+  mediaType: string;
+  byteSize: number;
+  sha256: string;
+  origin: string;
+  originDetailJson: string | null;
+  createdAt: string;
+}
+
 export interface FactRow {
   factId: string;
   profileVersionId: string;
@@ -59,6 +73,7 @@ export interface FactRow {
   evidenceJson: string | null;
   verification: string;
   source: string | null;
+  provenanceJson: string | null;
   createdAt: string;
 }
 
@@ -222,6 +237,7 @@ function resolveProfileId(handle: DatabaseHandle, profileId?: string): string {
 export function createProfile(
   handle: DatabaseHandle,
   rawInput: CreateProfileInput,
+  options: { id?: string } = {},
 ): z.infer<typeof CareerProfileV1> {
   const input = CreateCareerProfileInputV1.parse(rawInput);
   const makeDefault = input.isDefault ?? getDefaultProfile(handle) === null;
@@ -232,7 +248,7 @@ export function createProfile(
       .where(eq(candidateProfiles.isDefault, true))
       .run();
   }
-  const id = newId();
+  const id = options.id ?? newId();
   handle.db
     .insert(candidateProfiles)
     .values({
@@ -325,6 +341,7 @@ export function nextProfileVersionNumber(handle: DatabaseHandle, profileId?: str
 export function insertProfileVersion(
   handle: DatabaseHandle,
   input: {
+    id?: string;
     version: number;
     payloadJson: string;
     payloadHash: string;
@@ -332,7 +349,7 @@ export function insertProfileVersion(
     profileId?: string;
   },
 ): ProfileVersionRow {
-  const id = newId();
+  const id = input.id ?? newId();
   handle.db
     .insert(candidateProfileVersions)
     .values({
@@ -473,9 +490,13 @@ export function insertFact(
     evidenceJson: string | null;
     verification: "PENDING" | "APPROVED" | "REJECTED";
     source: string | null;
+    provenanceJson?: string | null;
   },
 ): void {
-  handle.db.insert(candidateFacts).values(input).run();
+  handle.db
+    .insert(candidateFacts)
+    .values({ provenanceJson: null, ...input })
+    .run();
 }
 
 /**
@@ -497,6 +518,75 @@ export function setFactVerification(
     .where(eq(candidateFacts.factId, factId))
     .run();
   return true;
+}
+
+/**
+ * Profile source documents (R-ADR-016). One row per profile version, set
+ * at import/copy/backfill time; rows are insert-only by trigger.
+ */
+export function insertSource(
+  handle: DatabaseHandle,
+  input: {
+    profileId: string;
+    profileVersionId: string;
+    relativePath: string;
+    mediaType: string;
+    byteSize: number;
+    sha256: string;
+    origin: string;
+    originDetailJson?: string | null;
+  },
+): SourceRow {
+  const id = newId();
+  handle.db
+    .insert(candidateSources)
+    .values({ id, originDetailJson: null, ...input })
+    .run();
+  const row = handle.db
+    .select()
+    .from(candidateSources)
+    .where(eq(candidateSources.id, id))
+    .get();
+  if (row === undefined) {
+    throw new Error("inserted source is not readable");
+  }
+  return row as SourceRow;
+}
+
+/** The source row for one profile version, or null when never recorded. */
+export function getSourceByVersion(
+  handle: DatabaseHandle,
+  profileVersionId: string,
+): SourceRow | null {
+  const row = handle.db
+    .select()
+    .from(candidateSources)
+    .where(eq(candidateSources.profileVersionId, profileVersionId))
+    .get();
+  return (row ?? null) as SourceRow | null;
+}
+
+/** The source row recorded at one relative path, if any. */
+export function getSourceByRelativePath(
+  handle: DatabaseHandle,
+  relativePath: string,
+): SourceRow | null {
+  const row = handle.db
+    .select()
+    .from(candidateSources)
+    .where(eq(candidateSources.relativePath, relativePath))
+    .get();
+  return (row ?? null) as SourceRow | null;
+}
+
+/** Every recorded source of one profile, oldest first. */
+export function listSourcesByProfile(handle: DatabaseHandle, profileId: string): SourceRow[] {
+  return handle.db
+    .select()
+    .from(candidateSources)
+    .where(eq(candidateSources.profileId, profileId))
+    .orderBy(asc(candidateSources.createdAt), asc(candidateSources.id))
+    .all() as SourceRow[];
 }
 
 export function insertCandidateSnapshot(

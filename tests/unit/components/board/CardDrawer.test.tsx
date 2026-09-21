@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JobDetailView } from "../../../../src/server/board";
 import CardDrawer from "../../../../components/board/CardDrawer";
@@ -26,6 +26,7 @@ function detailView(): JobDetailView {
       tailoringReasonCode: null,
       activeExtractionId: "ext-1",
       activeResumeVersionId: null,
+      selectedResumeVersionId: null,
       createdAt: "2026-09-11T10:00:00.000Z",
       updatedAt: "2026-09-11T11:00:00.000Z",
     },
@@ -64,6 +65,7 @@ function detailView(): JobDetailView {
       contentHash: "b",
       fields: { title: "Staff Engineer" },
       provenance: { title: "generic:h1" },
+      retainedDescriptionText: null,
     },
     resumes: [],
     notes: [{ id: "note-1", body: "<b>call back</b>", createdAt: "2026-09-11T11:00:00.000Z", updatedAt: "2026-09-11T11:00:00.000Z" }],
@@ -215,7 +217,7 @@ describe("CardDrawer", () => {
   });
 });
 
-describe("CardDrawer tailoring status", () => {
+describe("CardDrawer tailor entry (WO-1.3-H)", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -257,37 +259,21 @@ describe("CardDrawer tailoring status", () => {
     };
   }
 
-  function reviewPayload() {
+  function readyView(): JobDetailView {
+    const base = detailView();
     return {
-      job: {
-        id: "job-1",
-        status: "NEW",
-        rowVersion: 3,
-        tailoringState: "AWAITING_REVIEW",
-        activeResumeVersionId: "ver-1",
-      },
-      version: {
-        id: "ver-1",
-        jobId: "job-1",
-        version: 1,
-        parentVersionId: null,
-        reviewState: "AWAITING_REVIEW",
-        contentHash: "c".repeat(64),
-        templateId: "standard",
-        templateVersion: "v1",
-        rankerVersion: "ranker-v1",
-        policyVersion: "policy-v1",
-        configVersion: "config-v1",
-        renderSchemaVersion: "render-v1",
-        createdAt: "2026-09-11T12:00:00.000Z",
-      },
-      analysis: null,
-      claims: [],
-      topKeywords: [],
-      content: null,
-      artifacts: [],
-      reviews: [],
-      actions: { canApprove: false, canRequestRevision: false, reason: "test fixture" },
+      ...base,
+      job: { ...base.job, tailoringState: "READY", tailoringReasonCode: null },
+      tailoringAttempt: null,
+    };
+  }
+
+  function blockedView(): JobDetailView {
+    const base = detailView();
+    return {
+      ...base,
+      job: { ...base.job, tailoringState: "BLOCKED", tailoringReasonCode: "NO_PROVIDER" },
+      tailoringAttempt: null,
     };
   }
 
@@ -311,6 +297,9 @@ describe("CardDrawer tailoring status", () => {
           createdAt: "2026-09-11T12:00:00.000Z",
           profileName: "staff-engineer",
           profileDisplayName: "Staff Engineer",
+          profileId: "profile-1",
+          profileVersionId: "pv-1",
+          profileVersionNumber: 2,
           artifacts: [],
           reviews: [],
         },
@@ -325,109 +314,169 @@ describe("CardDrawer tailoring status", () => {
     });
   }
 
-  it("shows the failure alert with detail and retries the run", async () => {
-    const fetchMock = vi.fn(async (_url: string, init?: { method?: string }) => {
-      if (init?.method === "POST") {
-        return okJson({ workItemId: "work-1", action: "requeued" });
+  function stubApi(detail: JobDetailView, prep: unknown, workspace: unknown) {
+    const fetchMock = vi.fn(async (url: unknown, _init?: { method?: string }) => {
+      const target = String(url);
+      if (target.endsWith("/tailoring/preparation")) {
+        return okJson(prep);
       }
-      return okJson(fetchMock.mock.calls.filter(([u, i]) => u === "/api/jobs/job-1" && i?.method !== "POST").length <= 1 ? failedView() : runningView());
+      if (target.endsWith("/tailoring/workspace")) {
+        return okJson(workspace);
+      }
+      return okJson(detail);
     });
     vi.stubGlobal("fetch", fetchMock);
-    const props = drawerProps();
-    render(<CardDrawer {...props} />);
+    return fetchMock;
+  }
+
+  function failJson() {
+    return { ok: false, status: 500, json: async () => ({ error: "boom" }) };
+  }
+
+  it("shows the failed state with reason and a Step 3 deep link", async () => {
+    stubApi(failedView(), { state: "ABSENT", acceptedPlanId: null, failure: null }, null);
+    render(<CardDrawer {...drawerProps()} />);
     expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
     openResumesTab();
-    expect(await screen.findByText(/tailoring failed/i)).toBeInTheDocument();
-    expect(screen.getByText(/rate limit reached \(HTTP 429\)/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /retry tailoring/i }));
-    await waitFor(() => expect(props.onChanged).toHaveBeenCalled());
-    const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
-    expect(post?.[0]).toBe("/api/jobs/job-1/tailor/retry");
-    expect(await screen.findByText(/tailoring restarted/i)).toBeInTheDocument();
+    expect(await screen.findByText("Generation failed")).toBeInTheDocument();
+    expect(screen.getByText("PROVIDER_UNAVAILABLE")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /open failure details in step 3/i });
+    expect(link.getAttribute("href")).toBe("/jobs/job-1/tailor?step=3");
   });
 
-  it("surfaces retry failures instead of hanging", async () => {
-    const fetchMock = vi.fn(async (_url: string, init?: { method?: string }) => {
-      if (init?.method === "POST") {
-        return { ok: false, status: 400, json: async () => ({ error: "extraction incomplete" }) };
+  it("shows generating while a run is live with a Step 3 progress link", async () => {
+    stubApi(runningView(), { state: "ABSENT", acceptedPlanId: null, failure: null }, null);
+    render(<CardDrawer {...drawerProps()} />);
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    openResumesTab();
+    expect(await screen.findByText("Generating")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /watch progress in step 3/i });
+    expect(link.getAttribute("href")).toBe("/jobs/job-1/tailor?step=3");
+  });
+
+  it("shows blocked with the preparation failure reason and a Step 2 link", async () => {
+    stubApi(
+      blockedView(),
+      { state: "FAILED", acceptedPlanId: null, failure: { code: "NO_PROVIDER" } },
+      null,
+    );
+    render(<CardDrawer {...drawerProps()} />);
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    openResumesTab();
+    expect(await screen.findByText("Blocked")).toBeInTheDocument();
+    expect(screen.getByText("NO_PROVIDER")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /resolve the block in step 2/i });
+    expect(link.getAttribute("href")).toBe("/jobs/job-1/tailor?step=2");
+  });
+
+  it("shows editing while a draft revision is unsubmitted", async () => {
+    stubApi(
+      readyView(),
+      { state: "SUCCEEDED", acceptedPlanId: null, failure: null },
+      {
+        workspace: {
+          revision: 3,
+          lastSubmittedRevision: 2,
+          draft: { schemaVersion: "step2-draft/v2", draft: { focus: {} } },
+        },
+      },
+    );
+    render(<CardDrawer {...drawerProps()} />);
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    openResumesTab();
+    expect(await screen.findByText("Editing draft")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /continue editing in step 2/i });
+    expect(link.getAttribute("href")).toBe("/jobs/job-1/tailor?step=2");
+  });
+
+  it("shows prepared once a plan is accepted with no pending draft", async () => {
+    stubApi(
+      readyView(),
+      { state: "SUCCEEDED", acceptedPlanId: "plan-1", failure: null },
+      null,
+    );
+    render(<CardDrawer {...drawerProps()} />);
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    openResumesTab();
+    expect(await screen.findByText("Prepared plan")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /review the prepared plan in step 2/i });
+    expect(link.getAttribute("href")).toBe("/jobs/job-1/tailor?step=2");
+  });
+
+  it("shows not-started with a Step 1 link on a fresh job", async () => {
+    stubApi(readyView(), { state: "ABSENT", acceptedPlanId: null, failure: null }, null);
+    render(<CardDrawer {...drawerProps()} />);
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    openResumesTab();
+    expect(await screen.findByText("Not started")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /start tailoring in step 1/i });
+    expect(link.getAttribute("href")).toBe("/jobs/job-1/tailor?step=1");
+  });
+
+  it("links each resume version to its exact review context", async () => {
+    stubApi(landedView(), { state: "ABSENT", acceptedPlanId: null, failure: null }, null);
+    render(<CardDrawer {...drawerProps()} />);
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    openResumesTab();
+    expect(await screen.findByText("Version 1")).toBeInTheDocument();
+    const versionsSection = screen.getByText("Resume versions (1)").closest("section");
+    expect(versionsSection).not.toBeNull();
+    expect(
+      within(versionsSection as HTMLElement).getByText("Awaiting review"),
+    ).toBeInTheDocument();
+    const link = within(versionsSection as HTMLElement).getByRole("link", {
+      name: "Review version 1 in the tailor flow",
+    });
+    expect(link.getAttribute("href")).toBe("/jobs/job-1/tailor?step=4&version=ver-1");
+  });
+
+  it("guides empty versions toward Step 1", async () => {
+    stubApi(readyView(), { state: "ABSENT", acceptedPlanId: null, failure: null }, null);
+    render(<CardDrawer {...drawerProps()} />);
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    openResumesTab();
+    expect(await screen.findByText(/no tailored resumes yet/i)).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "Start tailoring" });
+    expect(link.getAttribute("href")).toBe("/jobs/job-1/tailor?step=1");
+  });
+
+  it("offers no drawer mutations: entry panels render links, never buttons, and issue only GETs", async () => {
+    const fetchMock = stubApi(
+      failedView(),
+      { state: "ABSENT", acceptedPlanId: null, failure: null },
+      null,
+    );
+    render(<CardDrawer {...drawerProps()} />);
+    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
+    openResumesTab();
+    expect(await screen.findByText("Generation failed")).toBeInTheDocument();
+    for (const heading of ["Tailoring status", "Resume versions (0)"]) {
+      const section = screen.getByText(heading).closest("section");
+      expect(section).not.toBeNull();
+      expect(within(section as HTMLElement).queryAllByRole("button")).toEqual([]);
+    }
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(0);
+    for (const call of fetchMock.mock.calls) {
+      const init = call[1] as { method?: string } | undefined;
+      expect(init?.method ?? "GET").toBe("GET");
+    }
+  });
+
+  it("degrades honestly when Step 2 snapshots fail but keeps the entry link", async () => {
+    const fetchMock = vi.fn(async (url: unknown) => {
+      const target = String(url);
+      if (target.endsWith("/tailoring/preparation") || target.endsWith("/tailoring/workspace")) {
+        return failJson();
       }
-      return okJson(failedView());
+      return okJson(readyView());
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<CardDrawer {...drawerProps()} />);
     expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
     openResumesTab();
-    expect(await screen.findByText(/tailoring failed/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /retry tailoring/i }));
-    expect(await screen.findByText(/extraction incomplete/i)).toBeInTheDocument();
-  });
-
-  it("polls while the run is live and lands the review on its own", async () => {
-    vi.useFakeTimers();
-    try {
-      const fetchMock = vi.fn(async (url: string) => {
-        if (url.startsWith("/api/resumes/")) {
-          return okJson(reviewPayload());
-        }
-        return okJson(fetchMock.mock.calls.filter(([u]) => u === "/api/jobs/job-1").length <= 1 ? runningView() : landedView());
-      });
-      vi.stubGlobal("fetch", fetchMock);
-      render(<CardDrawer {...drawerProps()} />);
-      await vi.waitFor(() => {
-        expect(fetchMock).toHaveBeenCalledTimes(1);
-      });
-      await vi.waitFor(() => {
-        expect(screen.getByText("Staff Engineer")).toBeInTheDocument();
-      });
-      openResumesTab();
-      expect(screen.getByText(/tailoring in progress/i)).toBeInTheDocument();
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(2100);
-      });
-      // The poll landed a version: the review renders without a refresh.
-      expect(screen.getByText(/1 version generated/)).toBeInTheDocument();
-      expect(screen.queryByText(/tailoring in progress/i)).not.toBeInTheDocument();
-      const settledCalls = fetchMock.mock.calls.filter(([u]) => u === "/api/jobs/job-1").length;
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(10000);
-      });
-      // Settled: polling stopped.
-      expect(fetchMock.mock.calls.filter(([u]) => u === "/api/jobs/job-1").length).toBe(settledCalls);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("ticks the elapsed clock while RUNNING", async () => {
-    vi.useFakeTimers();
-    try {
-      const fetchMock = vi.fn(async () => okJson(runningView()));
-      vi.stubGlobal("fetch", fetchMock);
-      render(<CardDrawer {...drawerProps()} />);
-      await vi.waitFor(() => {
-        expect(fetchMock).toHaveBeenCalledTimes(1);
-      });
-      await vi.waitFor(() => {
-        expect(screen.getByText("Staff Engineer")).toBeInTheDocument();
-      });
-      openResumesTab();
-      expect(screen.getByText(/0s elapsed/)).toBeInTheDocument();
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(3000);
-      });
-      expect(screen.getByText(/3s elapsed/)).toBeInTheDocument();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("shows the queued banner while PENDING", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(okJson(detailView()));
-    vi.stubGlobal("fetch", fetchMock);
-    render(<CardDrawer {...drawerProps()} />);
-    expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
-    openResumesTab();
-    expect(await screen.findByText(/queued for tailoring/i)).toBeInTheDocument();
+    expect(await screen.findByText(/step 2 status unavailable/i)).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /start tailoring in step 1/i });
+    expect(link.getAttribute("href")).toBe("/jobs/job-1/tailor?step=1");
   });
 
   it("shows formatted salary, highlights, and keyword chips", async () => {
@@ -466,271 +515,5 @@ describe("CardDrawer tailoring status", () => {
     expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
     expect(screen.queryByText("Compensation highlights")).toBeNull();
     expect(screen.queryByText("Top 5 ATS keywords")).toBeNull();
-  });
-
-  describe("tailoring guidance", () => {
-    const guideProfiles = [
-      { id: "profile-1", name: "staff-engineer", displayName: "Staff Engineer", isDefault: true },
-      { id: "profile-2", name: "manager", displayName: "Manager", isDefault: false },
-    ];
-
-    function guidedView(): JobDetailView {
-      const base = failedView();
-      return {
-        ...base,
-        job: {
-          ...base.job,
-          descriptionText:
-            "Senior platform role. Kubernetes and PostgreSQL required. " +
-            "Kubernetes experience required. PostgreSQL required. AWS preferred. " +
-            "Lead the team to production excellence.",
-        },
-      };
-    }
-
-    function setupGuidance(options: {
-      view?: JobDetailView;
-      onPost?: (url: string) => unknown;
-    } = {}) {
-      const view = options.view ?? guidedView();
-      const fetchMock = vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
-        if (url === "/api/settings/profiles") {
-          return okJson({ profiles: guideProfiles });
-        }
-        if (url.startsWith("/api/resumes/")) {
-          return okJson(reviewPayload());
-        }
-        if (init?.method === "POST") {
-          return okJson(options.onPost?.(url) ?? { workItemId: "work-9", action: "enqueued" });
-        }
-        return okJson(view);
-      });
-      vi.stubGlobal("fetch", fetchMock);
-      const props = drawerProps();
-      render(<CardDrawer {...props} />);
-      return { fetchMock, props };
-    }
-
-    it("renders profiles, keyword chips, and directive starters", async () => {
-      setupGuidance();
-      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
-      openResumesTab();
-      expect(await screen.findByText("Tailoring Guidance")).toBeInTheDocument();
-      const profileSelect = screen.getByLabelText("Career profile") as HTMLSelectElement;
-      expect(profileSelect.options[0]?.text).toBe("Default profile");
-      expect(profileSelect.options[1]?.text).toBe("Staff Engineer (default)");
-      expect(profileSelect.options[2]?.text).toBe("Manager");
-      const kubernetes = screen.getByRole("button", { name: "Kubernetes" });
-      expect(kubernetes).toHaveAttribute("aria-pressed", "false");
-      fireEvent.click(kubernetes);
-      expect(screen.getByRole("button", { name: "✓ Kubernetes" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
-      fireEvent.click(screen.getByRole("button", { name: /Emphasize profile skills/ }));
-      fireEvent.click(screen.getByRole("button", { name: /Prioritize B2B SaaS experience/ }));
-      expect(screen.getByLabelText("Directive notes")).toHaveValue(
-        "Emphasize profile skills\nPrioritize B2B SaaS experience",
-      );
-      expect(screen.getByRole("button", { name: /Tailor Resume/ })).toBeEnabled();
-    });
-
-    it("dispatches a guided run with profile, keywords, and directives", async () => {
-      const { fetchMock, props } = setupGuidance();
-      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
-      openResumesTab();
-      expect(await screen.findByText("Tailoring Guidance")).toBeInTheDocument();
-      fireEvent.change(screen.getByLabelText("Career profile"), {
-        target: { value: "profile-2" },
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Kubernetes" }));
-      fireEvent.click(screen.getByRole("button", { name: "PostgreSQL" }));
-      fireEvent.change(screen.getByLabelText("Directive notes"), {
-        target: { value: "Emphasize scale." },
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Tailor Resume" }));
-      await waitFor(() => expect(props.onChanged).toHaveBeenCalled());
-      const post = fetchMock.mock.calls.find(
-        ([url, init]) =>
-          url === "/api/jobs/job-1/tailor/retry" &&
-          (init as { method?: string } | undefined)?.method === "POST",
-      ) as [string, { body: string } | undefined] | undefined;
-      expect(post).toBeDefined();
-      expect(JSON.parse(post?.[1]?.body ?? "{}")).toEqual({
-        profileId: "profile-2",
-        selectedKeywords: ["Kubernetes", "PostgreSQL"],
-        directives: "Emphasize scale.",
-      });
-      expect(await screen.findByText(/tailoring with your guidance/i)).toBeInTheDocument();
-    });
-
-    it("disables guided tailoring while a run is live", async () => {
-      setupGuidance({ view: runningView() });
-      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
-      openResumesTab();
-      expect(await screen.findByText("Tailoring Guidance")).toBeInTheDocument();
-      const button = screen.getByRole("button", { name: "Tailor Resume" });
-      expect(button).toBeDisabled();
-      expect(button).toHaveAttribute("title", "A tailoring run is already in flight");
-    });
-
-    it("offers re-tailoring once resumes exist", async () => {
-      setupGuidance({ view: landedView() });
-      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
-      openResumesTab();
-      expect(await screen.findByText("Tailoring Guidance")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Re-tailor Resume" })).toBeEnabled();
-    });
-  });
-
-  describe("resumes hierarchy", () => {
-    const hierarchyProfiles = [
-      {
-        id: "profile-1",
-        name: "staff-engineer",
-        displayName: "Staff Engineer",
-        isDefault: true,
-        activeVersion: 2,
-        latestVersion: 2,
-      },
-    ];
-
-    function versionArtifacts(prefix: string) {
-      return (["DOCX", "MARKDOWN", "PDF"] as const).map((kind) => ({
-        id: `${prefix}-${kind.toLowerCase()}`,
-        kind,
-        mediaType: "application/octet-stream",
-        byteSize: 100,
-        sha256: "a".repeat(64),
-      }));
-    }
-
-    function hierarchyView(): JobDetailView {
-      const base = landedView();
-      return {
-        ...base,
-        resumes: [
-          {
-            id: "ver-1",
-            version: 1,
-            parentVersionId: null,
-            reviewState: "APPROVED",
-            contentHash: "c".repeat(64),
-            createdAt: "2026-09-11T12:00:00.000Z",
-            profileName: "staff-engineer",
-            profileDisplayName: "Staff Engineer",
-            artifacts: versionArtifacts("ver-1"),
-            reviews: [],
-          },
-          {
-            id: "ver-2",
-            version: 2,
-            parentVersionId: "ver-1",
-            reviewState: "AWAITING_REVIEW",
-            contentHash: "d".repeat(64),
-            createdAt: "2026-09-12T12:00:00.000Z",
-            profileName: "manager",
-            profileDisplayName: "Manager",
-            artifacts: versionArtifacts("ver-2"),
-            reviews: [],
-          },
-        ],
-      };
-    }
-
-    function setupHierarchy(view: JobDetailView = hierarchyView()) {
-      const fetchMock = vi.fn(async (url: string) => {
-        if (url === "/api/settings/profiles") {
-          return okJson({ profiles: hierarchyProfiles });
-        }
-        if (url.startsWith("/api/resumes/")) {
-          const segments = url.split("/");
-          const drilledId = segments[segments.length - 2] ?? "ver-1";
-          const payload = reviewPayload();
-          return okJson({ ...payload, version: { ...payload.version, id: drilledId } });
-        }
-        return okJson(view);
-      });
-      vi.stubGlobal("fetch", fetchMock);
-      render(<CardDrawer {...drawerProps()} />);
-      return { fetchMock };
-    }
-
-    it("renders the master resume card with a new-tab preview link", async () => {
-      setupHierarchy();
-      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
-      openResumesTab();
-      expect(await screen.findByText("Master Resume")).toBeInTheDocument();
-      expect(screen.getByText(/Staff Engineer · version 2/)).toBeInTheDocument();
-      const preview = screen.getByRole("link", { name: "Preview" });
-      expect(preview).toHaveAttribute("href", "/master-resume");
-      expect(preview).toHaveAttribute("target", "_blank");
-    });
-
-    it("guides empty states toward the tailoring panel below", async () => {
-      setupHierarchy({ ...hierarchyView(), resumes: [] });
-      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
-      openResumesTab();
-      expect(
-        await screen.findByText(/no tailored resumes generated yet/i),
-      ).toBeInTheDocument();
-      expect(screen.getByText(/choose your profile and keywords below/i)).toBeInTheDocument();
-      expect(screen.getByText("Tailoring Guidance")).toBeInTheDocument();
-    });
-
-    it("renders version cards with status, profile, and preview links", async () => {
-      setupHierarchy();
-      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
-      openResumesTab();
-      const list = await screen.findByRole("list", { name: "Resume versions" });
-      expect(within(list).getByRole("button", { name: /version 1.*approved.*staff engineer/i })).toBeInTheDocument();
-      expect(
-        within(list).getByRole("button", { name: /version 2.*awaiting review.*manager/i }),
-      ).toBeInTheDocument();
-      const docxLinks = within(list).getAllByRole("link", { name: "[DOCX]" });
-      expect(docxLinks.map((link) => link.getAttribute("href"))).toEqual([
-        "/api/resumes/artifacts/ver-1-docx",
-        "/api/resumes/artifacts/ver-2-docx",
-      ]);
-      for (const link of docxLinks) {
-        expect(link).toHaveAttribute("target", "_blank");
-      }
-      expect(
-        within(list)
-          .getAllByRole("link", { name: "[MARKDOWN]" })
-          .map((link) => link.getAttribute("href")),
-      ).toEqual([
-        "/api/resumes/artifacts/ver-1-markdown",
-        "/api/resumes/artifacts/ver-2-markdown",
-      ]);
-      expect(
-        within(list)
-          .getAllByRole("link", { name: "[PDF]" })
-          .map((link) => link.getAttribute("href")),
-      ).toEqual(["/api/resumes/artifacts/ver-1-pdf", "/api/resumes/artifacts/ver-2-pdf"]);
-      expect(screen.queryByRole("link", { name: /download/i })).toBeNull();
-    });
-
-    it("selecting a version card swaps the drill-down audit", async () => {
-      const { fetchMock } = setupHierarchy();
-      expect(await screen.findByText("Staff Engineer")).toBeInTheDocument();
-      openResumesTab();
-      const list = await screen.findByRole("list", { name: "Resume versions" });
-      // Active version (ver-1) drills down first.
-      await waitFor(() =>
-        expect(
-          fetchMock.mock.calls.some(([url]) => url === "/api/resumes/ver-1/review"),
-        ).toBe(true),
-      );
-      fireEvent.click(within(list).getByRole("button", { name: /version 2/i }));
-      await waitFor(() =>
-        expect(
-          fetchMock.mock.calls.some(([url]) => url === "/api/resumes/ver-2/review"),
-        ).toBe(true),
-      );
-      expect(
-        within(list).getByRole("button", { name: /version 2/i }),
-      ).toHaveAttribute("aria-current", "true");
-    });
   });
 });

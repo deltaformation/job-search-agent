@@ -19,6 +19,7 @@ describe("data-root configuration", () => {
       databasePath: join("/repo", "data", "rebuild", "job-tracker.sqlite"),
       evidenceDir: join("/repo", "data", "rebuild", "evidence"),
       artifactsDir: join("/repo", "data", "rebuild", "artifacts"),
+      sourcesDir: join("/repo", "data", "rebuild", "sources"),
     });
   });
 

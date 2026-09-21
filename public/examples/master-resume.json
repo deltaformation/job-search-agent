@@ -1,0 +1,114 @@
+{
+  "schemaVersion": "candidate-import/v2",
+  "identity": {
+    "fullName": "Alex Rivera",
+    "headline": "Senior Product Manager · B2B SaaS",
+    "email": "alex.rivera@example.com",
+    "phone": "+1-555-0100",
+    "location": "Toronto, ON",
+    "links": {
+      "linkedin": "https://www.linkedin.com/in/alex-rivera-example",
+      "github": "https://github.com/alex-rivera-example",
+      "portfolio": "https://alex-rivera.example.com",
+      "website": "https://alex-rivera.example.com/blog"
+    }
+  },
+  "targetTitles": ["Senior Product Manager", "Staff Product Manager"],
+  "targetLocations": ["Toronto, ON", "Remote (Canada)"],
+  "summary": "Product manager with 8 years across developer platforms and analytics. Led example migrations; this is a synthetic example document.",
+  "employment": [
+    {
+      "id": "example-acme-2021",
+      "company": "Acme Widgets",
+      "role": "Senior Product Manager",
+      "location": "Toronto, ON",
+      "startDate": "2021-03-01",
+      "isCurrent": true,
+      "description": "Own the example integrations roadmap for a fictional B2B SaaS product."
+    },
+    {
+      "id": "example-initech-2018",
+      "company": "Initech",
+      "role": "Product Manager",
+      "location": "Remote",
+      "startDate": "2018-06-01",
+      "endDate": "2021-02-28",
+      "isCurrent": false,
+      "description": "Shipped example reporting features for fictional customers."
+    }
+  ],
+  "achievements": [
+    {
+      "factId": "example-launch-001",
+      "employmentId": "example-acme-2021",
+      "category": "launch",
+      "text": "Launched example integration hub used by 40 fictional teams.",
+      "technologies": ["TypeScript", "PostgreSQL"],
+      "metrics": ["40 teams onboarded", "99.9% example uptime"],
+      "source": "Example review notes",
+      "verification": "PENDING"
+    },
+    {
+      "factId": "example-growth-002",
+      "employmentId": "example-acme-2021",
+      "category": "growth",
+      "text": "Grew example weekly active workspaces from 100 to 260 in two quarters.",
+      "technologies": [],
+      "metrics": ["100 → 260 weekly workspaces"],
+      "verification": "PENDING"
+    },
+    {
+      "factId": "example-report-003",
+      "employmentId": "example-initech-2018",
+      "category": "delivery",
+      "text": "Delivered example usage reports that cut fictional support tickets by 15%.",
+      "technologies": ["SQL"],
+      "metrics": ["15% fewer tickets"],
+      "source": "Example planning doc",
+      "verification": "PENDING"
+    }
+  ],
+  "skills": [
+    {
+      "name": "Product strategy",
+      "category": "business",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": false
+    },
+    {
+      "name": "TypeScript",
+      "category": "technical",
+      "proficiency": "proficient",
+      "verified": false
+    },
+    {
+      "name": "SQL",
+      "category": "technical",
+      "proficiency": "proficient",
+      "yearsExperience": 5,
+      "verified": false
+    }
+  ],
+  "languages": [
+    { "name": "English", "proficiency": "expert", "verified": false },
+    { "name": "French", "proficiency": "beginner", "verified": false }
+  ],
+  "education": [
+    {
+      "degree": "B.Sc. Computer Science",
+      "fieldOfStudy": "Computer Science",
+      "institution": "Example University",
+      "startDate": "2010-09-01",
+      "endDate": "2014-05-31"
+    }
+  ],
+  "credentials": [
+    {
+      "name": "Example Product Certificate",
+      "issuer": "Example Institute",
+      "issuedDate": "2020-11-15",
+      "credentialId": "EXAMPLE-0001"
+    }
+  ]
+}

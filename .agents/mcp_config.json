@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "codegraph": {
+      "command": "codegraph-mcp",
+      "args": [
+        "--profile",
+        "graph",
+        "--graph-only",
+        "--exclude",
+        "data",
+        "--exclude",
+        ".e2e-data",
+        "--exclude",
+        ".next-e2e",
+        "--exclude",
+        "docs/archive"
+      ],
+      "env": {
+        "CODEGRAPH_TELEMETRY": "off"
+      }
+    }
+  }
+}

@@ -6,6 +6,7 @@ import {
 } from "drizzle-orm/sqlite-core";
 import { candidateSnapshots } from "./candidates";
 import { createdAt } from "./columns";
+import { generationRequests } from "./generation";
 import { jobExtractions, jobs } from "./jobs";
 import { workAttempts } from "./queue";
 
@@ -52,6 +53,9 @@ export const jobAnalyses = sqliteTable(
       .notNull()
       .references(() => candidateSnapshots.id),
     workAttemptId: text("work_attempt_id").references(() => workAttempts.id),
+    generationRequestId: text("generation_request_id").references(
+      () => generationRequests.id,
+    ),
     requirementsJson: text("requirements_json").notNull(),
     gapsJson: text("gaps_json").notNull(),
     provider: text("provider"),
@@ -64,7 +68,10 @@ export const jobAnalyses = sqliteTable(
     attemptJson: text("attempt_json"),
     createdAt: createdAt(),
   },
-  (t) => [index("job_analyses_job_id").on(t.jobId)],
+  (t) => [
+    index("job_analyses_job_id").on(t.jobId),
+    unique("job_analyses_generation_request_id").on(t.generationRequestId),
+  ],
 );
 
 export type JdSnapshot = typeof jdSnapshots.$inferSelect;

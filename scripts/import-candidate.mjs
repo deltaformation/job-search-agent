@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
- * `npm run candidate:import -- <file> [--activate] [--json]` — import a
- * reviewed `candidate-import/v1` master-resume JSON file as a new immutable
- * profile version. The human authors the file at an ignored local path
- * (conventionally `data/candidate/master-resume.json`); this command only
- * validates and stores exactly what the file declares, never inventing or
- * rewording facts. `--activate` also selects the new version as active.
- * Exit 0 on success, 1 on failure, 2 on usage errors.
+ * `npm run candidate:import -- <file> [--profile <id|name>] [--activate] [--json]`
+ * — import a reviewed `candidate-import/v1|v2` master-resume JSON file as a
+ * new immutable profile version. The human authors the file at an ignored
+ * local path (conventionally `data/candidate/master-resume.json`); this
+ * command only validates and stores exactly what the file declares, never
+ * inventing or rewording facts. `--profile` targets a profile by id or
+ * name (default profile otherwise); `--activate` also selects the new
+ * version as active. Exit 0 on success, 1 on failure, 2 on usage errors.
  */
 import { readFileSync } from "node:fs";
 import { flushStdio } from "./flush.mjs";
@@ -16,9 +17,10 @@ const MAX_FILE_BYTES = 1_000_000;
 
 function usage() {
   return [
-    "usage: npm run candidate:import -- <file> [--activate] [--json]",
+    "usage: npm run candidate:import -- <file> [--profile <id|name>] [--activate] [--json]",
     "",
-    "  <file>       reviewed candidate-import/v1 JSON (e.g. data/candidate/master-resume.json)",
+    "  <file>       reviewed candidate-import/v1|v2 JSON (e.g. data/candidate/master-resume.json)",
+    "  --profile    target profile id or name (default profile otherwise)",
     "  --activate   select the imported version as the active profile version",
     "  --json       print the machine-readable result instead of human lines",
   ].join("\n");
@@ -31,16 +33,43 @@ function fail(message, exitCode = 1) {
 
 try {
   const argv = process.argv.slice(2);
-  const file = argv.find((arg) => !arg.startsWith("--"));
-  const activate = argv.includes("--activate");
-  const asJson = argv.includes("--json");
-  const unknown = argv.find(
-    (arg) => arg.startsWith("--") && arg !== "--activate" && arg !== "--json",
-  );
+  const positional = [];
+  let profileIdOrName;
+  let activate = false;
+  let asJson = false;
+  let unknown;
+  let missingProfileValue = false;
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--profile") {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        missingProfileValue = true;
+      } else {
+        profileIdOrName = value;
+      }
+      index += 1;
+      continue;
+    }
+    if (arg === "--activate") {
+      activate = true;
+      continue;
+    }
+    if (arg === "--json") {
+      asJson = true;
+      continue;
+    }
+    if (arg.startsWith("--")) {
+      unknown = arg;
+      continue;
+    }
+    positional.push(arg);
+  }
+  const file = positional[0];
   if (unknown !== undefined) {
     process.stderr.write(`${usage()}\nunknown flag: ${unknown}\n`);
     process.exitCode = 2;
-  } else if (file === undefined) {
+  } else if (missingProfileValue || file === undefined || positional.length > 1) {
     process.stderr.write(`${usage()}\n`);
     process.exitCode = 2;
   } else {
@@ -65,45 +94,38 @@ try {
         if (document !== undefined) {
           const config = await runSetup(process.env);
           const db = await import("../src/db/index.ts");
-          const service = await import("../src/server/candidates.ts");
+          const settings = await import("../src/server/settings.ts");
           const handle = db.openDatabase({ path: config.databasePath });
           try {
-            const imported = service.importCandidate(handle, {
+            const result = settings.importMasterDocument(handle, {
               document,
-              actor: "human",
+              sourceBytes: Buffer.from(raw, "utf8"),
+              profileId: profileIdOrName,
+              origin: "cli",
+              sourcesDir: config.sourcesDir,
+              activate,
             });
-            if (!imported.ok) {
-              const detail =
-                imported.error === "fact-id-conflict"
-                  ? ` (${imported.factId}: ${imported.detail})`
-                  : ` (${imported.detail})`;
-              fail(`import rejected: ${imported.error}${detail}`);
-            } else {
-              let activation = null;
-              if (activate) {
-                activation = service.activateProfileVersion(handle, {
-                  versionId: imported.versionId,
-                  actor: "human",
-                });
-                if (!activation.ok) {
-                  fail("imported but activation failed: version-not-found");
-                }
+            if (!result.ok) {
+              if (result.error === "master-resume-invalid") {
+                fail(`import file failed schema validation:\n${result.detail ?? "no detail"}`);
+              } else {
+                fail(`import rejected: ${result.error} (${result.detail ?? "no detail"})`);
               }
-              if (process.exitCode === undefined || process.exitCode === 0) {
-                if (asJson) {
-                  process.stdout.write(
-                    `${JSON.stringify({ imported, activation })}\n`,
-                  );
-                } else {
-                  process.stdout.write(
-                    `imported profile version ${imported.version} (${imported.versionId})\n` +
-                      `facts: ${imported.insertedFacts.length} inserted, ${imported.reusedFacts.length} reused\n`,
-                  );
-                  if (activation !== null) {
-                    process.stdout.write(
-                      `activated version ${activation.version}\n`,
-                    );
-                  }
+            } else if (process.exitCode === undefined || process.exitCode === 0) {
+              if (asJson) {
+                process.stdout.write(`${JSON.stringify(result)}\n`);
+              } else {
+                process.stdout.write(
+                  `imported profile version ${result.version} (${result.versionId})${
+                    result.alreadyCurrent ? " (already current)" : ""
+                  }\n` +
+                    `facts: ${result.insertedFacts.length} inserted, ${result.reusedFacts.length} reused\n` +
+                    (result.remappedFacts.length === 0
+                      ? ""
+                      : `remapped ${result.remappedFacts.length} fact(s) to cross-profile copies\n`),
+                );
+                if (result.activated) {
+                  process.stdout.write(`activated version ${result.version}\n`);
                 }
               }
             }

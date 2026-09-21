@@ -16,9 +16,10 @@ export const REVIEW_TRANSITIONS: Readonly<
   Record<ReviewState, readonly ReviewState[]>
 > = {
   DRAFT: ["AWAITING_REVIEW", "FAILED"],
-  AWAITING_REVIEW: ["APPROVED", "REVISION_REQUESTED", "FAILED"],
+  AWAITING_REVIEW: ["APPROVED", "REVISION_REQUESTED", "DECLINED", "FAILED"],
   APPROVED: [],
   REVISION_REQUESTED: [],
+  DECLINED: [],
   FAILED: [],
 };
 
@@ -70,6 +71,14 @@ export const ReviewCommand = z.discriminatedUnion("action", [
   z
     .object({
       action: z.literal("REVISION_REQUESTED"),
+      resumeVersionId: EntityId,
+      actor: z.literal("human"),
+      note: RequiredNote,
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("DECLINED"),
       resumeVersionId: EntityId,
       actor: z.literal("human"),
       note: RequiredNote,

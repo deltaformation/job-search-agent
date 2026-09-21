@@ -19,7 +19,7 @@ import {
  * Safe restore. `POST /api/restore` takes a multipart `archive` file
  * (`.tar.gz` from `GET /api/backup`), verifies it in staging, writes a
  * pre-restore rollback backup, then atomically swaps database +
- * evidence + artifacts + candidate and bumps the worker generation so
+ * evidence + artifacts + sources + candidate and bumps the worker generation so
  * the worker reopens without a restart. Serialized against backup/reset.
  */
 export const dynamic = "force-dynamic";

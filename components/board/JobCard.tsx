@@ -7,20 +7,27 @@ import {
   AlertTriangle,
   Banknote,
   CheckCircle2,
+  Download,
   ExternalLink,
   GripVertical,
   History,
   MapPin,
   MessageSquare,
+  SlidersHorizontal,
   Sparkles,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { artifactDownloadHref } from "@/src/domain/tailorEntry";
 import type { BoardCardView } from "@/src/server/board";
 import { formatSalaryBadge } from "./salaryFormat";
 
 /**
- * One Kanban card: a dedicated accessible drag handle plus an interactive
- * details activation button. States render as clear text and badges.
+ * Compact status-first Kanban card:
+ * - Status top-right across all 5 columns (C7)
+ * - Accessible drag handle with drag/activation isolation (C1)
+ * - Sibling button isolation (no nested <button> in <button>)
+ * - Dedicated Properties button opens drawer without navigating (C1)
+ * - Activation/keyboard opens exact job route (C1)
  */
 
 const PRETTY_STATUS: Record<string, string> = {
@@ -41,12 +48,6 @@ function pretty(value: string | null): string {
 
 const DAY_MS = 86_400_000;
 
-/**
- * Derived follow-up nudge for applied cards, computed purely on the
- * client from the recorded application timestamp — no database writes,
- * no background jobs. Null for recent applications, missing or
- * unparseable timestamps, future dates, and non-applied columns.
- */
 function followUpLabel(status: string, appliedAt: string | null, now: number): string | null {
   if (status !== "APPLIED" || appliedAt === null) {
     return null;
@@ -71,34 +72,51 @@ function followUpLabel(status: string, appliedAt: string | null, now: number): s
 interface JobCardProps {
   card: BoardCardView;
   onOpen: (jobId: string) => void;
+  onOpenProperties?: (jobId: string) => void;
 }
 
-function JobCard({ card, onOpen }: JobCardProps) {
+function JobCard({ card, onOpen, onOpenProperties }: JobCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: card.id });
 
   const headline = card.title ?? "Untitled posting";
   const salaryBadge = formatSalaryBadge(card);
   const hasMeta = card.location || card.arrangement || salaryBadge !== null;
-  // Clock read once per mount (render must stay pure): a session held open
-  // across midnight refreshes the nudge on the next remount or reload.
   const [now] = useState(() => Date.now());
   const followUp = followUpLabel(card.status, card.appliedAt, now);
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button, a")) {
+      return;
+    }
+    onOpen(card.id);
+  };
+
+  const handlePropertiesClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onOpenProperties) {
+      onOpenProperties(card.id);
+    } else {
+      onOpen(card.id);
+    }
+  };
 
   return (
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`group relative flex w-full rounded-xl border border-border/80 bg-card text-card-foreground shadow-sm job-card transition-[transform,box-shadow,border-color] duration-150 hover:border-primary/40 hover:shadow-md ${
+      onClick={handleCardClick}
+      className={`group relative flex w-full rounded-xl border border-border/80 bg-card text-card-foreground shadow-sm job-card transition-[transform,box-shadow,border-color] duration-150 hover:border-primary/40 hover:shadow-md cursor-pointer ${
         isDragging ? "job-card-dragging opacity-90 ring-2 ring-primary ring-offset-2 z-50 shadow-xl" : ""
       }`}
       aria-label={`${headline}, ${PRETTY_STATUS[card.status] ?? card.status}`}
     >
-      {/* Accessible Drag Handle */}
+      {/* Accessible Drag Handle (does not navigate, C1) */}
       <button
         type="button"
         {...attributes}
         {...listeners}
+        onClick={(e) => e.stopPropagation()}
         aria-label={`Drag ${headline} to move it`}
         title="Drag to move (keyboard: Space, arrows, Space)"
         className="flex w-7 cursor-grab items-center justify-center rounded-l-xl border-r border-border/40 bg-muted/20 text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground active:cursor-grabbing focus-visible:bg-muted focus-visible:text-foreground focus-visible:outline-none"
@@ -106,27 +124,45 @@ function JobCard({ card, onOpen }: JobCardProps) {
         <GripVertical className="size-4" aria-hidden="true" />
       </button>
 
-      {/* Main Interactive Details Button */}
-      <button
-        type="button"
-        onClick={() => onOpen(card.id)}
-        className="flex min-w-0 flex-1 flex-col gap-2 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-r-xl cursor-pointer"
-        aria-label={`Open details for ${headline}`}
-      >
-        {/* Top Header: Company + External Link */}
-        <div className="flex items-center justify-between gap-1 w-full">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground truncate pr-5">
+      {/* Main Content Area */}
+      <div className="flex min-w-0 flex-1 flex-col gap-2 p-3">
+        {/* Top Header: Company on Left, Status Top-Right (C7) */}
+        <div className="flex items-center justify-between gap-1 w-full pr-6">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground truncate">
             {card.company ?? "Unknown Company"}
           </span>
-
+          <Badge
+            variant={card.status === "TAILORED" ? "default" : "secondary"}
+            className={`text-[10px] px-1.5 py-0 h-4 font-semibold shrink-0 ${
+              card.status === "TAILORED"
+                ? "bg-emerald-600 text-white hover:bg-emerald-600"
+                : "bg-muted text-foreground"
+            }`}
+          >
+            {PRETTY_STATUS[card.status] ?? card.status}
+          </Badge>
         </div>
 
-        {/* Title */}
-        <span className="font-semibold text-sm leading-snug text-foreground group-hover:text-primary transition-colors line-clamp-2">
+        {/* Primary Interactive Details / Route Activation Button (C1, A6) */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(card.id);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.stopPropagation();
+              onOpen(card.id);
+            }
+          }}
+          className="font-semibold text-sm leading-snug text-foreground hover:text-primary transition-colors text-left line-clamp-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded cursor-pointer"
+          aria-label={`Open details for ${headline}`}
+        >
           {headline}
-        </span>
+        </button>
 
-        {/* Metadata Badges */}
+        {/* Secondary Metadata Badges */}
         {hasMeta && (
           <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
             {salaryBadge !== null && (
@@ -146,12 +182,11 @@ function JobCard({ card, onOpen }: JobCardProps) {
                 {card.arrangement}
               </Badge>
             )}
-
           </div>
         )}
 
-        {/* Resume & Tailoring Status */}
-        <div className="mt-3 flex flex-wrap items-center gap-2 pt-2.5 border-t border-border/40">
+        {/* Tailoring & Resume Status Indicators */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
           {card.tailoringState === "RUNNING" && (
             <Badge variant="warning" className="gap-1 text-[11px] py-0.5 font-medium">
               <Sparkles className="size-3.5 animate-spin" aria-hidden="true" />
@@ -186,55 +221,82 @@ function JobCard({ card, onOpen }: JobCardProps) {
               </Badge>
             )
           ) : (
-            <span className="text-[11px] text-muted-foreground">
-              Scrape: {pretty(card.scrapeState)}
-              {card.scrapeReasonCode !== null ? ` (${pretty(card.scrapeReasonCode)})` : ""}
-            </span>
+            card.scrapeState !== "SUCCEEDED" && (
+              <span className="text-[11px] text-muted-foreground">
+                Scrape: {pretty(card.scrapeState)}
+                {card.scrapeReasonCode !== null ? ` (${pretty(card.scrapeReasonCode)})` : ""}
+              </span>
+            )
           )}
+        </div>
 
-          {card.tailoringState !== "PENDING" &&
-            card.tailoringState !== "RUNNING" &&
-            card.tailoringState !== "FAILED" &&
-            card.tailoringState !== "BLOCKED" &&
-            card.resume === null && (
-              <Badge variant="outline" className="text-[11px] py-0">
-                Tailoring: {pretty(card.tailoringState)}
-              </Badge>
+        {/* Footer: Properties Action + Notes Count + Follow-up (nested isolation, C1) */}
+        <div className="mt-1 flex items-center justify-between border-t border-border/40 pt-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2">
+            {/* Properties button opens legacy drawer without navigating (C1, Deliverable 2/5) */}
+            <button
+              type="button"
+              onClick={handlePropertiesClick}
+              aria-label={`Open properties for ${headline}`}
+              className="inline-flex items-center gap-1 rounded border border-border/70 bg-muted/30 px-1.5 py-0.5 text-[10px] font-medium text-foreground hover:bg-muted transition-colors cursor-pointer focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <SlidersHorizontal className="size-3" aria-hidden="true" />
+              <span>Properties</span>
+            </button>
+
+            {card.notesCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-[11px]">
+                <MessageSquare className="size-3" aria-hidden="true" />
+                <span className="font-mono tabular-nums">{card.notesCount}</span>
+              </span>
             )}
+
+            {/* Download Resume (H3/H4): the batched selected-approved
+                PDF only. Awaiting/declined drafts render an explicit
+                unavailable state — never a fallback link. */}
+            {card.selectedApprovedPdfArtifactId !== null ? (
+              <a
+                href={artifactDownloadHref(card.selectedApprovedPdfArtifactId)}
+                onClick={(event) => event.stopPropagation()}
+                aria-label={`Download approved resume for ${headline}`}
+                title="Download approved resume (PDF)"
+                className="inline-flex items-center gap-1 rounded border border-border/70 bg-muted/30 px-1.5 py-0.5 text-[10px] font-medium text-foreground hover:bg-muted transition-colors focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <Download className="size-3" aria-hidden="true" />
+                <span>Resume</span>
+              </a>
+            ) : (
+              card.resume !== null && (
+                <span
+                  title="No approved resume yet — awaiting and declined versions are never offered for download."
+                  className="inline-flex items-center gap-1 px-1 py-0.5 text-[10px] text-muted-foreground/60"
+                >
+                  <Download className="size-3" aria-hidden="true" />
+                  <span>Unavailable</span>
+                </span>
+              )
+            )}
+          </div>
+
           {followUp !== null && (
-            <Badge variant="outline" className="gap-1 text-[11px] py-0.5 font-normal text-muted-foreground">
-              <History className="size-3.5" aria-hidden="true" />
+            <Badge variant="outline" className="gap-1 text-[10px] py-0 font-normal text-muted-foreground">
+              <History className="size-3" aria-hidden="true" />
               <span>{followUp}</span>
             </Badge>
           )}
         </div>
+      </div>
 
-        {/* Footer: Notes Count + Quick Review Prompt */}
-        {(card.notesCount > 0 || card.resume?.reviewState === "AWAITING_REVIEW") && (
-          <div className="flex items-center justify-between pt-1 text-xs text-muted-foreground">
-            {card.notesCount > 0 ? (
-              <span className="inline-flex items-center gap-1 text-[11px]">
-                <MessageSquare className="size-3.5" aria-hidden="true" />
-                <span className="font-mono tabular-nums">
-                  {card.notesCount} {card.notesCount === 1 ? "note" : "notes"}
-                </span>
-              </span>
-            ) : (
-              <span />
-            )}
-
-            {card.resume?.reviewState === "AWAITING_REVIEW" && (
-              <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 group-hover:underline">
-                Review Resume →
-              </span>
-            )}
-          </div>
-        )}
-      </button>
+      {/* External link with stopPropagation (does not navigate, C1) */}
       {card.sourceUrl && (
-        <a href={card.sourceUrl} target="_blank" rel="noreferrer"
+        <a
+          href={card.sourceUrl}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
           aria-label={`Open original job posting for ${headline}`}
-          className="absolute right-2 top-2 rounded p-1 text-muted-foreground hover:bg-muted">
+          className="absolute right-2 top-2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
           <ExternalLink className="size-3.5" aria-hidden="true" />
         </a>
       )}
@@ -242,15 +304,10 @@ function JobCard({ card, onOpen }: JobCardProps) {
   );
 }
 
-/**
- * Reference-equality memo: Board re-renders on every search keystroke,
- * drawer open/close, and notice change without replacing card objects, so
- * memo skips all 50+ cards on those paths. Fresh fetches (polling,
- * mutations, sort/search commits) replace card objects and re-render as
- * normal; drag state flows through useSortable's own context subscription
- * and is unaffected by memo.
- */
 export default memo(
   JobCard,
-  (prev, next) => prev.card === next.card && prev.onOpen === next.onOpen,
+  (prev, next) =>
+    prev.card === next.card &&
+    prev.onOpen === next.onOpen &&
+    prev.onOpenProperties === next.onOpenProperties,
 );

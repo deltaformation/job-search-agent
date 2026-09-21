@@ -156,7 +156,7 @@ AI output is mandatory.
 | `work_attempts` | Every execution of any queued item | Append-only timing, worker, input/output hashes, result, and error |
 | `workflow_events` | Append-only board/status history | Actor, from/to, rank, row version, timestamp, reason, metadata |
 | `job_notes` | Optional user notes | User-authored and separate from extracted evidence |
-| `candidate_profiles` | Candidate identity root | One local profile; missing profile is a setup state, not a boot failure |
+| `candidate_profiles` | Named career tracks | Multiple profiles with one default (R-ADR-012); each profile owns its active master version and source history (R-ADR-016, implemented by WO-1.2-B); missing profile is a setup state, not a boot failure |
 | `candidate_profile_versions` | Reviewed structured profile versions | Immutable typed source payload; one explicitly activated version |
 | `candidate_facts` | Verified achievement/claim facts | Immutable `fact_id`, typed source, verification and version membership |
 | `candidate_snapshots` | Immutable generation inputs | Canonical JSON plus schema/version/SHA-256 |
@@ -166,7 +166,7 @@ AI output is mandatory.
 | `resume_claims` | Claim-level fact provenance | Every claim cites approved facts or a reconstructable derivation |
 | `resume_artifacts` | Markdown/DOCX/PDF metadata | All three created before review; unique kind and digest per version |
 | `resume_reviews` | Append-only human review actions | Request revision/approve with actor, time, note, and exact hashes |
-| `applications` | Human-recorded application metadata | Manual source, applied time, optional confirmation number |
+| `applications` | Human-recorded application metadata | Manual source, applied time, optional confirmation number, bound approved-version id (`NULL` = not recorded; R-ADR-018, implemented by WO-1.2-D) |
 
 Use database constraints and triggers for invariants that must survive a bug in
 application code: immutable extraction/snapshot/resume payloads, immutable
@@ -207,18 +207,26 @@ NEW → TAILORED → APPLIED → INTERVIEWED
 
 ### Tailoring state
 
-`PENDING | BLOCKED → RUNNING → AWAITING_REVIEW → APPROVED | REVISION_REQUESTED | FAILED`
+`READY → PENDING | BLOCKED → RUNNING → AWAITING_REVIEW → APPROVED | REVISION_REQUESTED | DECLINED | FAILED`
 
 A failed worker state remains visible on a card in its current board column.
 Retries create new attempts/events rather than mutating history.
 
-Every successful new extraction idempotently requests tailoring. When no active
-reviewed profile or provider configuration exists, the job remains `NEW` and
-tailoring becomes `BLOCKED` with a reason code and manual retry action. Rejecting
+Release 1.2 target (R-ADR-015, R-ADR-019; implemented by WO-1.2-D — until
+then the code still auto-enqueues): a successful extraction stores the JD
+and moves the job to the `READY` preparation state without enqueueing any
+generation. Resume work starts only through an explicit user command with
+complete guidance. A declined version is terminal (`DECLINED`) and queues
+nothing; a revision request opens guidance for editing and runs only after
+the user submits. When no eligible profile or provider configuration exists
+at execution time, the job keeps its board column and tailoring becomes
+`BLOCKED` with a reason code and manual retry action. Rejecting
 or superseding a job cancels/fences its queued work: completion must compare the
 lease token, input hashes, job `row_version`, and active snapshot pointers before
 attaching output. Stale work may be retained as an unattached attempt but can
-never resurrect or mutate the job.
+never resurrect or mutate the job. Latest draft, selected approved version,
+and recorded application version are separate pointers (R-ADR-018); see
+[`lifecycle-contracts-v1.2.md`](lifecycle-contracts-v1.2.md).
 
 ## 6. URL and scraper safety
 
@@ -270,6 +278,12 @@ interface TailoringProvider {
 snapshots. `ResumeProposalV1` contains structured requirement mappings,
 proposed claim selections/wording, keyword placements, gaps, and a concise
 rationale summary. Do not request or persist hidden chain-of-thought.
+Release 1.2 target (R-ADR-017; implemented by WO-1.2-D): every explicit
+request also binds an immutable server-built guidance record — concrete
+profile version, JD snapshot, frozen steering (executive narrative plus
+relevant work-preference metadata), keyword selections, directives,
+revision note, parent version, and request identity — that travels
+unchanged through queue, worker, provider prompt, and version history.
 
 Every provider attempt records provider/model identity, executable/config
 version, prompt and schema versions, canonical input/output hashes, start/end

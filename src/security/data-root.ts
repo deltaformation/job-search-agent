@@ -12,12 +12,14 @@ import { join } from "node:path";
 export const DATABASE_FILENAME = "job-tracker.sqlite";
 export const EVIDENCE_DIR_NAME = "evidence";
 export const ARTIFACTS_DIR_NAME = "artifacts";
+export const SOURCES_DIR_NAME = "sources";
 
 export interface DataRootPaths {
   root: string;
   databasePath: string;
   evidenceDir: string;
   artifactsDir: string;
+  sourcesDir: string;
 }
 
 export function defaultDataRoot(cwd: string = process.cwd()): string {
@@ -38,6 +40,7 @@ export function resolveDataRoot(
         : override,
     evidenceDir: join(root, EVIDENCE_DIR_NAME),
     artifactsDir: join(root, ARTIFACTS_DIR_NAME),
+    sourcesDir: join(root, SOURCES_DIR_NAME),
   };
 }
 
@@ -46,6 +49,7 @@ export function ensureDataRoot(paths: DataRootPaths): void {
   try {
     mkdirSync(paths.evidenceDir, { recursive: true });
     mkdirSync(paths.artifactsDir, { recursive: true });
+    mkdirSync(paths.sourcesDir, { recursive: true });
   } catch (error) {
     throw new Error(`cannot create data directories under ${paths.root}`, {
       cause: error,
@@ -58,6 +62,7 @@ export interface DataRootStatus extends DataRootPaths {
   databaseExists: boolean;
   evidenceExists: boolean;
   artifactsExists: boolean;
+  sourcesExists: boolean;
 }
 
 /** Non-throwing inventory for health checks and startup diagnostics. */
@@ -68,5 +73,6 @@ export function dataRootStatus(paths: DataRootPaths): DataRootStatus {
     databaseExists: existsSync(paths.databasePath),
     evidenceExists: existsSync(paths.evidenceDir),
     artifactsExists: existsSync(paths.artifactsDir),
+    sourcesExists: existsSync(paths.sourcesDir),
   };
 }

@@ -47,6 +47,7 @@ function reviewView(): ResumeReviewView {
           category: "skill",
           importance: "required",
           matchStatus: "gap",
+          explanation: null,
         },
       ],
       rationale: "One supported, one gap.",
@@ -83,6 +84,39 @@ function reviewView(): ResumeReviewView {
         placements: [],
       },
     ],
+    guidance: {
+      profileId: "profile-1",
+      profileVersionId: "pv-1",
+      profileVersionNumber: 2,
+      profileDisplayName: "Staff Engineer",
+      selectedKeywords: ["B2B SaaS", "TypeScript"],
+      directives: "Emphasize scale.",
+      revisionNote: null,
+    },
+    coaching: {
+      policyVersion: "keyword-coaching/v1",
+      assessed: true,
+      terms: [
+        {
+          term: "TypeScript",
+          outcome: "used",
+          requirementIds: ["req_api"],
+          evidenceFactIds: ["f1"],
+          detail: "The run rendered evidence for this term.",
+        },
+        {
+          term: "Kubernetes",
+          outcome: "unsupported",
+          requirementIds: ["req_k8s"],
+          evidenceFactIds: [],
+          detail: "No profile facts back this term — honestly kept off the resume.",
+        },
+      ],
+      directivesRecorded: true,
+      directives: [
+        { index: 0, directive: "Emphasize scale.", outcome: "used", explanation: null },
+      ],
+    },
     content: {
       summaryStrategy: "fact-grounded",
       omittedUnsupported: ["Kubernetes"],
@@ -109,7 +143,8 @@ function reviewView(): ResumeReviewView {
       { id: "art-pdf", kind: "PDF", mediaType: "application/pdf", byteSize: 1500, sha256: "p".repeat(64) },
     ],
     reviews: [],
-    actions: { canApprove: true, canRequestRevision: true, reason: null },
+    actions: { canApprove: true, canRequestRevision: true, canDecline: true, reason: null },
+    workflowReview: null,
   };
 }
 
@@ -122,17 +157,33 @@ describe("ResumeReview", () => {
     vi.unstubAllGlobals();
   });
 
-  function renderReview(view: ResumeReviewView = reviewView()) {
+  function renderReview(
+    view: ResumeReviewView = reviewView(),
+    extraProps: {
+      onGuidance?: (versionId: string, guidance: ResumeReviewView["guidance"]) => void;
+      focusHeadingOnMount?: boolean;
+    } = {},
+  ) {
     const posts: Array<{ url: string; body: unknown }> = [];
     const fetchMock = vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
       if (init?.method === "POST") {
         posts.push({ url, body: init.body === undefined ? null : (JSON.parse(init.body) as unknown) });
+        if (url.endsWith("/resume/approve")) {
+          return okJson({ ok: true, newRowVersion: 4, approvalCase: "move" });
+        }
         return okJson({ ok: true, newRowVersion: 4 });
       }
       return okJson(view);
     });
     vi.stubGlobal("fetch", fetchMock);
-    const props = { versionId: "ver-1", refreshToken: 0, onChanged: vi.fn(), onReviewed: vi.fn() };
+    const props = {
+      versionId: "ver-1",
+      refreshToken: 0,
+      onChanged: vi.fn(),
+      onReviewed: vi.fn(),
+      onGuidance: extraProps.onGuidance,
+      focusHeadingOnMount: extraProps.focusHeadingOnMount,
+    };
     const rendered = render(<ResumeReview {...props} />);
     return { fetchMock, posts, props, container: rendered.container };
   }
@@ -148,16 +199,27 @@ describe("ResumeReview", () => {
     expect(screen.getByText(/requirements \(1\)/i)).toBeInTheDocument();
     // Each quote appears twice: once in requirements/gaps, once in the Top-5 audit.
     expect(screen.getAllByText(/typescript api experience/i)).toHaveLength(2);
-    expect(screen.getByText(/evidence: f1/i)).toBeInTheDocument();
+    // Both the requirement and its coaching outcome cite f1.
+    expect(screen.getAllByText(/evidence: f1/i)).toHaveLength(2);
     expect(screen.getByText(/gaps — not on the resume \(1\)/i)).toBeInTheDocument();
     expect(screen.getAllByText(/kubernetes deployment/i)).toHaveLength(2);
     expect(screen.getByText(/omitted unsupported terms: kubernetes/i)).toBeInTheDocument();
-    // Files with preview and download links.
+    // Single compact preview group: Markdown/PDF preview + download;
+    // DOCX gets a labeled content preview plus the original file.
+    expect(screen.getByText(/files & previews \(3\)/i)).toBeInTheDocument();
     const previews = screen.getAllByRole("link", { name: "Preview" });
-    expect(previews).toHaveLength(3);
+    expect(previews).toHaveLength(2);
     expect(previews[0]).toHaveAttribute("href", "/api/resumes/artifacts/art-md");
+    expect(previews[0]).toHaveAttribute("target", "_blank");
     const downloads = screen.getAllByRole("link", { name: "Download" });
-    expect(downloads[2]).toHaveAttribute("href", "/api/resumes/artifacts/art-pdf?download=1");
+    expect(downloads).toHaveLength(2);
+    expect(downloads[1]).toHaveAttribute("href", "/api/resumes/artifacts/art-pdf?download=1");
+    const contentPreview = screen.getByRole("link", { name: "Content preview" });
+    expect(contentPreview).toHaveAttribute("href", "/api/resumes/artifacts/art-docx/content");
+    expect(contentPreview).toHaveAttribute("target", "_blank");
+    expect(
+      screen.getByRole("link", { name: "Open original DOCX" }),
+    ).toHaveAttribute("href", "/api/resumes/artifacts/art-docx?download=1");
     expect(container.querySelector("img")).toBeNull();
   });
 
@@ -244,6 +306,7 @@ describe("ResumeReview", () => {
     decided.actions = {
       canApprove: false,
       canRequestRevision: false,
+      canDecline: false,
       reason: "This version is APPROVED; only versions awaiting review can be decided.",
     };
     renderReview(decided);
@@ -267,5 +330,88 @@ describe("ResumeReview", () => {
     renderReview(view);
     expect(await screen.findByText(/version 1 · awaiting review/i)).toBeInTheDocument();
     expect(screen.queryByText(/top 5 ats keywords & match audit/i)).toBeNull();
+  });
+
+  it("shows requested-emphasis coaching with per-term outcomes (E)", async () => {
+    renderReview();
+    const coaching = await screen.findByRole("region", { name: /requested emphasis/i });
+    const scoped = within(coaching);
+    expect(scoped.getByText("Used")).toBeInTheDocument();
+    expect(scoped.getByText("Unsupported")).toBeInTheDocument();
+    expect(scoped.getByText(/honestly kept off the resume/i)).toBeInTheDocument();
+    expect(scoped.getByText(/evidence: f1/i)).toBeInTheDocument();
+    expect(scoped.getByText("Applied")).toBeInTheDocument();
+  });
+
+  it("reports unrecorded emphasis honestly for legacy versions (E)", async () => {
+    const view = reviewView();
+    view.coaching = null;
+    renderReview(view);
+    expect(
+      await screen.findByText(/requested emphasis was not recorded/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the recorded guidance inputs for the version (F1/F7)", async () => {
+    const view = reviewView();
+    view.guidance = {
+      ...view.guidance!,
+      revisionNote: "Summary buries the lead.",
+    };
+    renderReview(view);
+    const guidance = await screen.findByRole("region", { name: /recorded guidance/i });
+    const scoped = within(guidance);
+    expect(scoped.getByText(/staff engineer/i)).toBeInTheDocument();
+    expect(scoped.getByText(/master v2/i)).toBeInTheDocument();
+    expect(scoped.getByText("B2B SaaS")).toBeInTheDocument();
+    expect(scoped.getByText("TypeScript")).toBeInTheDocument();
+    expect(scoped.getByText(/emphasize scale\./i)).toBeInTheDocument();
+    expect(scoped.getByText(/summary buries the lead\./i)).toBeInTheDocument();
+  });
+
+  it("reports missing recorded guidance honestly for legacy versions (F5)", async () => {
+    const view = reviewView();
+    view.guidance = null;
+    renderReview(view);
+    expect(
+      await screen.findByText(/predates recorded guidance/i),
+    ).toBeInTheDocument();
+  });
+
+  it("escapes hostile guidance text (F3)", async () => {
+    const view = reviewView();
+    view.guidance = {
+      ...view.guidance!,
+      directives: "<img src=x onerror=alert(3)>",
+      selectedKeywords: ["<b>bold term</b>"],
+    };
+    const { container } = renderReview(view);
+    const guidance = await screen.findByRole("region", { name: /recorded guidance/i });
+    expect(within(guidance).getByText("<img src=x onerror=alert(3)>", { exact: false })).toBeInTheDocument();
+    expect(within(guidance).getByText("<b>bold term</b>")).toBeInTheDocument();
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector("b")).toBeNull();
+  });
+
+  it("lifts the recorded guidance keyed by version id (F5)", async () => {
+    const onGuidance = vi.fn();
+    renderReview(reviewView(), { onGuidance });
+    expect(await screen.findByText(/version 1 · awaiting review/i)).toBeInTheDocument();
+    await waitFor(() => expect(onGuidance).toHaveBeenCalledWith("ver-1", expect.objectContaining({
+      profileId: "profile-1",
+      selectedKeywords: ["B2B SaaS", "TypeScript"],
+    })));
+  });
+
+  it("moves focus to the drill-down heading only after explicit selection (F4)", async () => {
+    renderReview(reviewView(), { focusHeadingOnMount: true });
+    const heading = await screen.findByText(/version 1 · awaiting review/i);
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+  });
+
+  it("does not steal focus on the initial drill-down (F4)", async () => {
+    renderReview(reviewView());
+    expect(await screen.findByText(/version 1 · awaiting review/i)).toBeInTheDocument();
+    expect(document.activeElement?.tagName).toBe("BODY");
   });
 });

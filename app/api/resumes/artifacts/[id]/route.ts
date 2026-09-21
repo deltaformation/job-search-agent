@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { getResumeArtifact } from "../../../../../src/server/review";
 import { resolveDataRoot } from "../../../../../src/security/data-root";
@@ -58,6 +59,17 @@ export async function GET(
       bytes = await readFile(absolute);
     } catch {
       return jsonError(500, "artifact bytes missing");
+    }
+    // G7: exact-byte integrity. Size + SHA-256 must match the
+    // database row; corrupt bytes fail loudly instead of serving
+    // the wrong document.
+    if (bytes.byteLength !== artifact.byteSize) {
+      return jsonError(500, "artifact integrity failure");
+    }
+    const digest = createHash("sha256").update(bytes).digest();
+    const expected = Buffer.from(artifact.sha256, "hex");
+    if (digest.byteLength !== expected.byteLength || !timingSafeEqual(digest, expected)) {
+      return jsonError(500, "artifact integrity failure");
     }
     const download =
       new URL(request.url).searchParams.get("download") === "1";

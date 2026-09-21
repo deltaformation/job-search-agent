@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "candidate-profile/v1",
+  "identity": { "fullName": "Sam Rivera" },
+  "summary": "Product manager with 6 years across operations and internal platforms.",
+  "employment": [
+    {
+      "id": "emp-volt",
+      "company": "Volt Mobility",
+      "role": "Operations Lead",
+      "startDate": "2021-03-01",
+      "endDate": "2023-05-31",
+      "isCurrent": false
+    },
+    {
+      "id": "emp-northwind",
+      "company": "Northwind Traders",
+      "role": "Product Manager",
+      "startDate": "2023-06-01",
+      "isCurrent": true
+    }
+  ],
+  "achievements": [
+    {
+      "factId": "fact-volt-1",
+      "employmentId": "emp-volt",
+      "category": "operations",
+      "text": "Led city launch operations across 4 markets",
+      "technologies": [],
+      "metrics": ["4 markets"],
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact-volt-2",
+      "employmentId": "emp-volt",
+      "category": "operations",
+      "text": "Coordinated driver supply scheduling with live dashboards",
+      "technologies": ["SQL"],
+      "metrics": [],
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact-nw-1",
+      "employmentId": "emp-northwind",
+      "category": "delivery",
+      "text": "Shipped internal billing platform used by 200 finance staff",
+      "technologies": ["PostgreSQL"],
+      "metrics": ["200 finance staff"],
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact-nw-2",
+      "employmentId": "emp-northwind",
+      "category": "leadership",
+      "text": "Ran stakeholder reviews across finance, engineering, and support",
+      "technologies": [],
+      "metrics": [],
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact-nw-3",
+      "employmentId": "emp-northwind",
+      "category": "delivery",
+      "text": "Led enterprise resource planning upgrade for finance systems",
+      "technologies": ["SAP"],
+      "metrics": [],
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact-gen-1",
+      "category": "advisory",
+      "text": "Advised a micromobility startup on launch checklists",
+      "technologies": [],
+      "metrics": [],
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact-pending-1",
+      "employmentId": "emp-northwind",
+      "category": "delivery",
+      "text": "Drafted roadmap planning templates for platform teams",
+      "technologies": [],
+      "metrics": [],
+      "verification": "PENDING"
+    }
+  ]
+}

@@ -13,9 +13,10 @@ import {
 } from "../../_lib/request";
 
 /**
- * Model switcher. Upserts `OPENROUTER_MODEL` / `OPENROUTER_FALLBACK_MODEL`
- * in `.env.local` (comments and other keys preserved); the new chain
- * applies on app restart. Never reads or writes the API key.
+ * Model switcher. Upserts the active provider and per-provider model
+ * chains in `.env.local` (comments and other keys preserved); the new
+ * chain applies on app restart. Never reads or writes API keys —
+ * key management lives under `/api/settings/keys`.
  */
 export const dynamic = "force-dynamic";
 

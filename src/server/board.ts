@@ -9,6 +9,7 @@ import {
   candidateSnapshots,
 } from "../db/schema/candidates";
 import { jobAnalyses } from "../db/schema/analysis";
+import { generationRequests } from "../db/schema/generation";
 import { applications, jobNotes, workflowEvents } from "../db/schema/workflow";
 import { intakeItems } from "../db/schema/intake";
 import {
@@ -23,7 +24,9 @@ import {
   resumeReviews,
   resumeVersions,
 } from "../db/schema/resumes";
+import { canonicalText } from "../domain/canonical";
 import type { BoardStatus } from "../domain/enums";
+import { parseStoredExtraction } from "../domain/extraction";
 import {
   parseWorkflowEventMetadata,
   type WorkflowEventMetadataV1,
@@ -103,6 +106,36 @@ function escapeLikePattern(raw: string): string {
   return raw.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
+/**
+ * Generation-time profile names from a frozen steering snapshot
+ * (WO-1.2-F). Null when the snapshot is missing or unreadable — the
+ * caller keeps the live-resolved names instead of inventing history.
+ */
+function parseFrozenProfileNames(
+  steeringSnapshotJson: string,
+): { name: string; displayName: string } | null {
+  const doc = parseJsonObject(steeringSnapshotJson);
+  const name = doc?.["profileName"];
+  const displayName = doc?.["profileDisplayName"];
+  if (typeof name !== "string" || typeof displayName !== "string") {
+    return null;
+  }
+  return { name, displayName };
+}
+
+/** Bound master version number for one profile version id, or null. */
+function resolveProfileVersionNumber(
+  handle: DatabaseHandle,
+  profileVersionId: string,
+): number | null {
+  const row = handle.db
+    .select({ version: candidateProfileVersions.version })
+    .from(candidateProfileVersions)
+    .where(eq(candidateProfileVersions.id, profileVersionId))
+    .get();
+  return row?.version ?? null;
+}
+
 export interface BoardCardView {
   id: string;
   status: BoardStatus;
@@ -126,6 +159,15 @@ export interface BoardCardView {
     version: number;
     reviewState: string;
   } | null;
+  /**
+   * Batched selected-approved PDF (WO-1.3-H, Q7): the PDF artifact id
+   * of the job's selected approved version, or null when no version
+   * is selected or no PDF was published. Resolves the selected
+   * pointer only — never the awaiting/active draft.
+   */
+  selectedApprovedPdfArtifactId: string | null;
+  /** SHA-256 of the selected approved PDF, for exact-version context. */
+  selectedApprovedPdfSha256: string | null;
   notesCount: number;
   /** Validated posting URL for the "open original" action. */
   sourceUrl: string | null;
@@ -283,6 +325,8 @@ export function getBoardView(
         tailoringState: row.tailoringState,
         tailoringReasonCode: row.tailoringReasonCode,
         resume,
+        selectedApprovedPdfArtifactId: null,
+        selectedApprovedPdfSha256: null,
         notesCount: row.notesCount,
         sourceUrl: safeHttpUrl(row.submittedUrl),
         appliedAt: row.appliedAt,
@@ -292,7 +336,53 @@ export function getBoardView(
     });
     return { status, total: totalsByStatus.get(status) ?? 0, cards };
   });
+  attachSelectedApprovedPdfs(handle, columns);
   return { columns };
+}
+
+/**
+ * H's single batch artifact query (Q7): resolves the selected
+ * approved PDF per visible job in one statement. The join follows
+ * ONLY the human-selected pointer to an APPROVED version's PDF row —
+ * an awaiting/active draft can never resolve, and jobs without a
+ * selected PDF keep explicit nulls. Metadata only (id + digest);
+ * bodies stay on disk.
+ */
+function attachSelectedApprovedPdfs(
+  handle: DatabaseHandle,
+  columns: BoardColumnView[],
+): void {
+  const visibleIds = columns.flatMap((column) => column.cards.map((card) => card.id));
+  if (visibleIds.length === 0) {
+    return;
+  }
+  const rows = handle.db
+    .select({
+      jobId: jobs.id,
+      artifactId: resumeArtifacts.id,
+      sha256: resumeArtifacts.sha256,
+    })
+    .from(jobs)
+    .innerJoin(resumeVersions, eq(resumeVersions.id, jobs.selectedResumeVersionId))
+    .innerJoin(
+      resumeArtifacts,
+      and(
+        eq(resumeArtifacts.resumeVersionId, resumeVersions.id),
+        eq(resumeArtifacts.kind, "PDF"),
+      ),
+    )
+    .where(and(inArray(jobs.id, visibleIds), eq(resumeVersions.reviewState, "APPROVED")))
+    .all();
+  const byJob = new Map(rows.map((row) => [row.jobId, row]));
+  for (const column of columns) {
+    for (const card of column.cards) {
+      const match = byJob.get(card.id);
+      if (match !== undefined) {
+        card.selectedApprovedPdfArtifactId = match.artifactId;
+        card.selectedApprovedPdfSha256 = match.sha256;
+      }
+    }
+  }
 }
 
 export interface CardSourceView {
@@ -333,6 +423,14 @@ export interface ExtractionView {
   contentHash: string | null;
   fields: Record<string, unknown> | null;
   provenance: Record<string, unknown> | null;
+  /**
+   * Retained canonical JD: `canonicalText` of the active extraction's
+   * `fields.descriptionText` behind strict envelope validation
+   * (WO-1.3-D). Null when the extraction is missing, carries no
+   * description, or fails validation — the Step 1 read side renders
+   * the same bytes D's adapter cites phrase offsets against.
+   */
+  retainedDescriptionText: string | null;
 }
 
 export interface ResumeArtifactRef {
@@ -358,9 +456,21 @@ export interface ResumeVersionView {
   reviewState: string;
   contentHash: string;
   createdAt: string;
-  /** Career profile the version was tailored from; null when unresolvable. */
+  /**
+   * Career profile the version was tailored from. Names prefer the
+   * generation-time frozen steering record when request linkage
+   * exists; legacy rows without linkage resolve the live owning
+   * profile (current name, honestly not frozen). Null when neither
+   * resolves — never invented.
+   */
   profileName: string | null;
   profileDisplayName: string | null;
+  /** Bound profile id; null for legacy rows without lineage. */
+  profileId: string | null;
+  /** Bound master version id; null for legacy rows without lineage. */
+  profileVersionId: string | null;
+  /** Bound master version number; null when the version row is unresolvable. */
+  profileVersionNumber: number | null;
   artifacts: ResumeArtifactRef[];
   reviews: ResumeReviewView[];
 }
@@ -419,6 +529,8 @@ export interface JobDetailView {
     tailoringReasonCode: string | null;
     activeExtractionId: string | null;
     activeResumeVersionId: string | null;
+    /** Approved version selected for application (R-ADR-018); null until the first approval. */
+    selectedResumeVersionId: string | null;
     createdAt: string;
     updatedAt: string;
   };
@@ -504,11 +616,23 @@ export function getJobDetail(
   // One batched lineage lookup per detail read: version → analysis →
   // candidate snapshot → profile version → career profile. Inner joins
   // drop versions with broken lineage; those map to null below.
-  const profileByVersionId = new Map<string, { name: string; displayName: string }>();
+  const profileByVersionId = new Map<
+    string,
+    {
+      profileId: string;
+      profileVersionId: string;
+      profileVersionNumber: number | null;
+      name: string;
+      displayName: string;
+    }
+  >();
   if (versions.length > 0) {
     const lineage = handle.db
       .select({
         versionId: resumeVersions.id,
+        profileId: candidateProfiles.id,
+        profileVersionId: candidateProfileVersions.id,
+        profileVersionNumber: candidateProfileVersions.version,
         name: candidateProfiles.name,
         displayName: candidateProfiles.displayName,
       })
@@ -523,7 +647,53 @@ export function getJobDetail(
       .where(eq(resumeVersions.jobId, jobId))
       .all();
     for (const row of lineage) {
-      profileByVersionId.set(row.versionId, { name: row.name, displayName: row.displayName });
+      profileByVersionId.set(row.versionId, {
+        profileId: row.profileId,
+        profileVersionId: row.profileVersionId,
+        profileVersionNumber: row.profileVersionNumber,
+        name: row.name,
+        displayName: row.displayName,
+      });
+    }
+    // Frozen-first names (WO-1.2-F): versions with request linkage
+    // report the generation-time display name from the immutable
+    // steering snapshot, so later profile renames cannot rewrite
+    // history. Legacy rows keep the live-resolved names above.
+    const frozen = handle.db
+      .select({
+        versionId: resumeVersions.id,
+        profileId: generationRequests.profileId,
+        profileVersionId: generationRequests.profileVersionId,
+        steeringSnapshotJson: generationRequests.steeringSnapshotJson,
+      })
+      .from(resumeVersions)
+      .innerJoin(
+        generationRequests,
+        eq(generationRequests.id, resumeVersions.generationRequestId),
+      )
+      .where(eq(resumeVersions.jobId, jobId))
+      .all();
+    for (const row of frozen) {
+      const names = parseFrozenProfileNames(row.steeringSnapshotJson);
+      if (names === null) {
+        continue;
+      }
+      const live = profileByVersionId.get(row.versionId);
+      // The request's bound profile version is authoritative; its
+      // number usually rides the live join above (same version id),
+      // otherwise one point lookup. Null when unresolvable — the UI
+      // then omits the master-version link rather than guessing.
+      const profileVersionNumber =
+        live?.profileVersionId === row.profileVersionId
+          ? live.profileVersionNumber
+          : (resolveProfileVersionNumber(handle, row.profileVersionId) ?? null);
+      profileByVersionId.set(row.versionId, {
+        profileId: row.profileId,
+        profileVersionId: row.profileVersionId,
+        profileVersionNumber,
+        name: names.name,
+        displayName: names.displayName,
+      });
     }
   }
   const notes = handle.db
@@ -559,6 +729,20 @@ export function getJobDetail(
 
   const extracted =
     extraction === undefined ? null : parseJsonObject(extraction.extractedJson);
+  const retainedDescriptionText = (() => {
+    if (extraction === undefined) {
+      return null;
+    }
+    try {
+      const description = parseStoredExtraction(
+        JSON.parse(extraction.extractedJson) as unknown,
+      ).fields.descriptionText;
+      const canonical = canonicalText(description ?? "");
+      return canonical === "" ? null : canonical;
+    } catch {
+      return null;
+    }
+  })();
   const tailorAttempt = getLatestTailorAttempt(handle, jobId);
   const analysisDoc = getLatestAnalysisForJob(handle, jobId);
   let drawerKeywords: JobDetailView["topKeywords"] = [];
@@ -599,6 +783,7 @@ export function getJobDetail(
       tailoringReasonCode: job.tailoringReasonCode,
       activeExtractionId: job.activeExtractionId,
       activeResumeVersionId: job.activeResumeVersionId,
+      selectedResumeVersionId: job.selectedResumeVersionId,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
     },
@@ -659,6 +844,7 @@ export function getJobDetail(
             !Array.isArray(extracted.provenance)
               ? (extracted.provenance as Record<string, unknown>)
               : null,
+          retainedDescriptionText,
         },
     compensationHighlights: parseStringArray(job.compensationHighlightsJson),
     topKeywords: drawerKeywords,
@@ -697,6 +883,9 @@ export function getJobDetail(
         createdAt: version.createdAt,
         profileName: lineage?.name ?? null,
         profileDisplayName: lineage?.displayName ?? null,
+        profileId: lineage?.profileId ?? null,
+        profileVersionId: lineage?.profileVersionId ?? null,
+        profileVersionNumber: lineage?.profileVersionNumber ?? null,
         artifacts: versionArtifacts,
         reviews,
       };

@@ -35,6 +35,7 @@ export interface TailoringJobRow {
   tailoringReasonCode: string | null;
   activeExtractionId: string | null;
   activeResumeVersionId: string | null;
+  selectedResumeVersionId: string | null;
 }
 
 export function getTailoringJob(handle: DatabaseHandle, jobId: string): TailoringJobRow | null {
@@ -50,6 +51,7 @@ export function getTailoringJob(handle: DatabaseHandle, jobId: string): Tailorin
       tailoringReasonCode: jobs.tailoringReasonCode,
       activeExtractionId: jobs.activeExtractionId,
       activeResumeVersionId: jobs.activeResumeVersionId,
+      selectedResumeVersionId: jobs.selectedResumeVersionId,
     })
     .from(jobs)
     .where(eq(jobs.id, jobId))
@@ -108,6 +110,19 @@ export function getAnalysisById(handle: DatabaseHandle, analysisId: string): Job
   return row ?? null;
 }
 
+/** The one analysis a generation request produced, if it published already. */
+export function getAnalysisByRequest(
+  handle: DatabaseHandle,
+  requestId: string,
+): JobAnalysis | null {
+  const row = handle.db
+    .select()
+    .from(jobAnalyses)
+    .where(eq(jobAnalyses.generationRequestId, requestId))
+    .get();
+  return row ?? null;
+}
+
 export function insertAnalysis(
   handle: DatabaseHandle,
   input: {
@@ -124,6 +139,8 @@ export function insertAnalysis(
     proposalHash: string | null;
     rationale: string | null;
     attemptJson: string | null;
+    generationRequestId: string;
+    workAttemptId: string;
   },
 ): JobAnalysis {
   const id = newId();
@@ -195,6 +212,8 @@ export function insertResumeVersion(
     contentJson: string;
     contentHash: string;
     reviewState: string;
+    generationRequestId: string;
+    workAttemptId: string;
   },
 ): ResumeVersion {
   const id = newId();
@@ -469,6 +488,24 @@ export function insertTailorWorkItem(
  * write instead of being silently overwritten. Bumps `row_version` like
  * board moves so the two writers fence each other.
  */
+/**
+ * Compare-and-swap the job row version without touching board or
+ * tailoring state (WO-1.3-S2-B): preparation commands bump the
+ * version so concurrent reviewers observe the change while the
+ * card stays exactly where it is.
+ */
+export function casJobRowVersion(
+  handle: DatabaseHandle,
+  input: { jobId: string; rowVersion: number; now: string },
+): boolean {
+  const changed = handle.db
+    .update(jobs)
+    .set({ rowVersion: sql`${jobs.rowVersion} + 1`, updatedAt: input.now })
+    .where(and(eq(jobs.id, input.jobId), eq(jobs.rowVersion, input.rowVersion)))
+    .run().changes;
+  return changed === 1;
+}
+
 export function casJobTailoringState(
   handle: DatabaseHandle,
   input: {
@@ -477,6 +514,7 @@ export function casJobTailoringState(
     tailoringState: string;
     reasonCode: string | null;
     activeResumeVersionId?: string | null;
+    selectedResumeVersionId?: string | null;
     now: string;
   },
 ): boolean {
@@ -488,6 +526,9 @@ export function casJobTailoringState(
       ...(input.activeResumeVersionId === undefined
         ? {}
         : { activeResumeVersionId: input.activeResumeVersionId }),
+      ...(input.selectedResumeVersionId === undefined
+        ? {}
+        : { selectedResumeVersionId: input.selectedResumeVersionId }),
       rowVersion: sql`${jobs.rowVersion} + 1`,
       updatedAt: input.now,
     })

@@ -14,6 +14,21 @@ export function middleware(request: NextRequest): Response {
   if (!verifyHostHeader(request.headers.get("host"), defaultLocalHosts(port))) {
     return new Response("Forbidden", { status: 403 });
   }
+
+  const pathname = request.nextUrl.pathname;
+  const tailorMatch = pathname.match(/^\/jobs\/([^/]+)\/tailor(?:\/|$)/);
+  if (tailorMatch) {
+    let id = tailorMatch[1];
+    try {
+      id = decodeURIComponent(id);
+    } catch {
+      return new Response("Malformed job id", { status: 400 });
+    }
+    if (!/^[0-9a-fA-F-]{36}$/.test(id)) {
+      return new Response("Malformed job id", { status: 400 });
+    }
+  }
+
   const response = NextResponse.next();
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
     response.headers.set(name, value);

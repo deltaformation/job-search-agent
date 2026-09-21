@@ -19,7 +19,7 @@ import {
   candidateProfileVersions,
   candidateSnapshots,
 } from "../../../src/db/schema";
-import { CandidateProfilePayloadV1, CandidateSnapshotV1 } from "../../../src/domain/candidate";
+import { CandidateSnapshotV1, parseStoredProfilePayload } from "../../../src/domain/candidate";
 import { canonicalJson } from "../../../src/domain/canonical";
 import { sha256HexUtf8 } from "../../../src/db/utils";
 import {
@@ -118,8 +118,8 @@ describe("importCandidate", () => {
         .get();
       expect(stored?.version).toBe(1);
       expect(stored?.activatedAt).toBeNull();
-      const payload = CandidateProfilePayloadV1.parse(JSON.parse(stored?.payloadJson ?? ""));
-      expect(payload.schemaVersion).toBe("candidate-profile/v1");
+      const payload = parseStoredProfilePayload(JSON.parse(stored?.payloadJson ?? ""));
+      expect(payload.schemaVersion).toBe("candidate-profile/v2");
       expect(stored?.payloadHash).toBe(sha256HexUtf8(canonicalJson(payload)));
     });
   });
@@ -145,6 +145,30 @@ describe("importCandidate", () => {
       expect(result).toMatchObject({ ok: false, error: "fact-id-conflict", factId: "fact_001" });
       const versions = t.handle.db.select().from(candidateProfileVersions).all();
       expect(versions).toHaveLength(1);
+    });
+  });
+
+  it("imports achievements without employmentId (no undefined into canonical JSON)", () => {
+    withDatabase((t) => {
+      const result = importCandidate(t.handle, {
+        document: {
+          schemaVersion: "candidate-import/v1",
+          identity: { fullName: "Unlinked Achievement" },
+          achievements: [{ factId: "fact_unlinked", category: "launch", text: "Shipped solo." }],
+        },
+        actor: "human",
+        now: NOW,
+      });
+      expect(result.ok).toBe(true);
+      const stored = t.handle.db.select().from(candidateFacts).get();
+      expect(stored?.evidenceJson).toBe(
+        canonicalJson({
+          schemaVersion: "fact-evidence/v1",
+          category: "launch",
+          technologies: [],
+          metrics: [],
+        }),
+      );
     });
   });
 

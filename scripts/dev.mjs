@@ -34,14 +34,26 @@ try {
     process.execPath,
     join(REPO_ROOT, "scripts/tailor-provider.mjs"),
   ]);
+  // Provider configuration (WO-1.2-G): web and worker boot from the
+  // same values so activation applies to both on restart. The
+  // supervisor already inherits the full environment; these explicit
+  // entries document the contract and survive any future narrowing.
   const childEnv = {
     APP_DATA_ROOT: config.root,
     DATABASE_PATH: config.databasePath,
     PORT: String(config.port),
     HOST: config.host,
     TAILOR_PROVIDER_ARGV: process.env.TAILOR_PROVIDER_ARGV || defaultTailorArgv,
+    ...(process.env.ACTIVE_AI_PROVIDER ? { ACTIVE_AI_PROVIDER: process.env.ACTIVE_AI_PROVIDER } : {}),
     ...(process.env.OPENROUTER_API_KEY ? { OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY } : {}),
     ...(process.env.OPENROUTER_MODEL ? { OPENROUTER_MODEL: process.env.OPENROUTER_MODEL } : {}),
+    ...(process.env.OPENROUTER_FALLBACK_MODEL ? { OPENROUTER_FALLBACK_MODEL: process.env.OPENROUTER_FALLBACK_MODEL } : {}),
+    ...(process.env.GEMINI_API_KEY ? { GEMINI_API_KEY: process.env.GEMINI_API_KEY } : {}),
+    ...(process.env.GEMINI_MODEL ? { GEMINI_MODEL: process.env.GEMINI_MODEL } : {}),
+    ...(process.env.GEMINI_FALLBACK_MODEL ? { GEMINI_FALLBACK_MODEL: process.env.GEMINI_FALLBACK_MODEL } : {}),
+    ...(process.env.META_API_KEY ? { META_API_KEY: process.env.META_API_KEY } : {}),
+    ...(process.env.META_MODEL ? { META_MODEL: process.env.META_MODEL } : {}),
+    ...(process.env.META_FALLBACK_MODEL ? { META_FALLBACK_MODEL: process.env.META_FALLBACK_MODEL } : {}),
   };
   const { code } = await supervise([
     {

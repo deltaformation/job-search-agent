@@ -7,6 +7,7 @@ import {
   candidateProfileVersions,
   candidateSnapshotFacts,
   candidateSnapshots,
+  generationRequests,
   intakeBatches,
   intakeItems,
   jdSnapshots,
@@ -73,13 +74,44 @@ describe("immutability and append-only guards", () => {
           result: "SUCCEEDED",
         })
         .run();
+      // Terminal rows are frozen; only the RUNNING → terminal finish is
+      // allowed, exactly once.
       expect(() =>
         db
           .update(workAttempts)
           .set({ result: "FAILED" })
           .where(eq(workAttempts.id, workAttemptId))
           .run(),
-      ).toThrow(/append-only/);
+      ).toThrow(/exactly once/);
+      const runningAttemptId = newId();
+      db.insert(workAttempts)
+        .values({
+          id: runningAttemptId,
+          workItemId: itemId,
+          attemptNumber: 2,
+          startedAt: utcNow(),
+          result: "RUNNING",
+        })
+        .run();
+      // Frozen columns reject even on a live row.
+      expect(() =>
+        db
+          .update(workAttempts)
+          .set({ workerId: "worker-b" })
+          .where(eq(workAttempts.id, runningAttemptId))
+          .run(),
+      ).toThrow(/exactly once/);
+      db.update(workAttempts)
+        .set({ result: "SUCCEEDED", finishedAt: utcNow() })
+        .where(eq(workAttempts.id, runningAttemptId))
+        .run();
+      expect(() =>
+        db
+          .update(workAttempts)
+          .set({ result: "FAILED" })
+          .where(eq(workAttempts.id, runningAttemptId))
+          .run(),
+      ).toThrow(/exactly once/);
 
       expect(() =>
         db
@@ -389,6 +421,112 @@ describe("immutability and append-only guards", () => {
         .where(eq(jobNotes.id, noteId))
         .run();
       db.delete(jobNotes).where(eq(jobNotes.id, noteId)).run();
+    });
+  });
+});
+
+describe("v1.2 generation guards (D9)", () => {
+  it("refuses legacy TAILOR inserts while SCRAPE rows pass through", () => {
+    runWithTestDb((t) => {
+      const { db } = t.handle;
+      // Old-binary exclusion: a pre-D process enqueueing v1 work (or no
+      // payload at all) fails loudly at the database boundary.
+      expect(() =>
+        db
+          .insert(workItems)
+          .values({
+            id: newId(),
+            kind: "TAILOR",
+            idempotencyKey: `legacy-${newId()}`,
+            payloadJson: JSON.stringify({
+              schemaVersion: "tailor-queue/v1",
+              jobId: newId(),
+              extractionId: newId(),
+            }),
+          })
+          .run(),
+      ).toThrow(/UNSUPPORTED_TAILOR_PAYLOAD/);
+      expect(() =>
+        db
+          .insert(workItems)
+          .values({
+            id: newId(),
+            kind: "TAILOR",
+            idempotencyKey: `legacy-${newId()}`,
+            payloadJson: null,
+          })
+          .run(),
+      ).toThrow(/UNSUPPORTED_TAILOR_PAYLOAD/);
+      db
+        .insert(workItems)
+        .values({ id: newId(), kind: "SCRAPE", idempotencyKey: `scrape-${newId()}` })
+        .run();
+    });
+  });
+
+  it("rejects analyses and versions without durable linkage", () => {
+    runWithTestDb((t) => {
+      const chain = seedResumeChain(t);
+      const { db } = t.handle;
+      expect(() =>
+        db
+          .insert(jobAnalyses)
+          .values({
+            id: newId(),
+            jobId: chain.jobId,
+            jdSnapshotId: chain.jdSnapshotId,
+            candidateSnapshotId: chain.snapshotId,
+            requirementsJson: "{}",
+            gapsJson: "{}",
+            promptVersion: "tailor-prompt/v1",
+            proposalSchemaVersion: "resume-proposal/v1",
+          })
+          .run(),
+      ).toThrow(/new analyses require generation_request_id and work_attempt_id/);
+      expect(() =>
+        db
+          .insert(resumeVersions)
+          .values({
+            id: newId(),
+            jobId: chain.jobId,
+            version: 9,
+            analysisId: chain.analysisId,
+            templateId: "standard",
+            templateVersion: "v1",
+            templateHash: "t",
+            rankerVersion: "ranker-v1",
+            policyVersion: "policy-v1",
+            configVersion: "config-v1",
+            renderSchemaVersion: "render-v1",
+            contentJson: "{}",
+            contentHash: "c",
+          })
+          .run(),
+      ).toThrow(/new resume versions require generation_request_id and work_attempt_id/);
+    });
+  });
+
+  it("freezes generation request bindings and forbids request deletion", () => {
+    runWithTestDb((t) => {
+      const chain = seedResumeChain(t);
+      const { db } = t.handle;
+      expect(() =>
+        db
+          .update(generationRequests)
+          .set({ directivesText: "tampered after the fact" })
+          .where(eq(generationRequests.id, chain.requestId))
+          .run(),
+      ).toThrow(/bindings and guidance are immutable/);
+      expect(() =>
+        db.delete(generationRequests).where(eq(generationRequests.id, chain.requestId)).run(),
+      ).toThrow(/cannot be deleted/);
+      // Execution bookkeeping stays writable: status moves are the only
+      // post-insert mutation the worker needs.
+      db
+        .update(generationRequests)
+        .set({ status: "RUNNING", startedAt: utcNow() })
+        .where(eq(generationRequests.id, chain.requestId))
+        .run();
     });
   });
 });

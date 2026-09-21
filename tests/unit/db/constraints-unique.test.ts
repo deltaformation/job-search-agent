@@ -115,6 +115,8 @@ describe("uniqueness constraints", () => {
             renderSchemaVersion: "render-v1",
             contentJson: "{}",
             contentHash: "other",
+            generationRequestId: chain.requestId,
+            workAttemptId: chain.workAttemptId,
           })
           .run(),
       ).toThrow(/UNIQUE constraint/i);

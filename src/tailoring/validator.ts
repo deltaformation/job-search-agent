@@ -334,11 +334,37 @@ export interface ClaimValidation {
   errors: string[];
 }
 
+/**
+ * S2-D allowlisted edited text for one claim: exact accepted bytes
+ * plus the frozen verdict's responsible fact binding. The worker
+ * builds this list from the frozen validation row — never from
+ * live workspace state — so the draft validator independently
+ * re-pins every edited claim to its verdict.
+ */
+export interface EditedPlanClaimText {
+  text: string;
+  factIds: string[];
+}
+
 /** Port of `ClaimValidator.validate_claim`. */
-export function validateClaim(input: { profile: unknown; claim: unknown; variants?: unknown }): ClaimValidation {
+export function validateClaim(input: {
+  profile: unknown;
+  claim: unknown;
+  variants?: unknown;
+  editedPlan?: { texts: EditedPlanClaimText[] };
+}): ClaimValidation {
   const envelope = z
-    .object({ profile: z.unknown(), claim: z.unknown(), variants: z.unknown().optional() })
+    .object({
+      profile: z.unknown(),
+      claim: z.unknown(),
+      variants: z.unknown().optional(),
+      editedPlan: z.unknown().optional(),
+    })
     .parse(input);
+  const editedPlan =
+    isRecord(envelope.editedPlan) && Array.isArray(envelope.editedPlan["texts"])
+      ? (envelope.editedPlan as { texts: EditedPlanClaimText[] })
+      : undefined;
   if (!isRecord(envelope.claim)) {
     return { valid: false, errors: ["Claim must be an object."] };
   }
@@ -359,14 +385,30 @@ export function validateClaim(input: { profile: unknown; claim: unknown; variant
     errors.push("Claim text must be nonempty.");
   }
   const strategy = claim["generation_strategy"] === undefined ? "verbatim" : claim["generation_strategy"];
-  if (strategy !== "verbatim" && strategy !== "derived_template" && strategy !== "approved_variant") {
+  const editedPlanAllowed = strategy === "edited_plan" && editedPlan !== undefined;
+  if (
+    strategy !== "verbatim" &&
+    strategy !== "derived_template" &&
+    strategy !== "approved_variant" &&
+    !editedPlanAllowed
+  ) {
     errors.push("Only verbatim, derived_template, and approved_variant strategies are supported.");
     return { valid: false, errors };
   }
 
   if (section === "experience" || section === "summary") {
     const expIds = claim["fact_ids"] ?? [];
-    if (!Array.isArray(expIds) || expIds.length === 0 || expIds.some((fid) => typeof fid !== "string")) {
+    // Correction master summaries honestly cite no facts; the
+    // edited_plan branch below still demands an exact
+    // text+binding allowlist match, so an empty binding matches
+    // only an allowlisted empty binding. Every other strategy
+    // and section keeps the ≥1 gate bit-identically.
+    const anchorlessSummaryOk = section === "summary" && strategy === "edited_plan";
+    if (
+      !Array.isArray(expIds) ||
+      expIds.some((fid) => typeof fid !== "string") ||
+      (expIds.length === 0 && !anchorlessSummaryOk)
+    ) {
       return { valid: false, errors: [...errors, "Claim must cite at least one approved fact_id."] };
     }
     const ids = expIds as string[];
@@ -408,6 +450,87 @@ export function validateClaim(input: { profile: unknown; claim: unknown; variant
           return { valid: false, errors: [...errors, "Variant cites an unapproved fact_id."] };
         }
         const ok = validateExperienceBinding(claim, firstFact, profile, errors);
+        return { valid: ok, errors };
+      }
+      return { valid: errors.length === 0, errors };
+    }
+    if (strategy === "edited_plan") {
+      // S2-D: the claim must repeat one allowlisted edited text with
+      // exactly its frozen fact binding. Approved-ness, tamper, and
+      // attribution checks below mirror the verbatim rules; the
+      // allowlist itself was pinned to supported verdicts upstream.
+      const texts = editedPlan?.texts ?? [];
+      const sortedIds = [...ids].sort(compareCodePoints);
+      const bound = texts.find(
+        (entry) =>
+          entry.text === text &&
+          entry.factIds.length === sortedIds.length &&
+          [...entry.factIds].sort(compareCodePoints).every((fid, index) => fid === sortedIds[index]),
+      );
+      if (bound === undefined) {
+        return {
+          valid: false,
+          errors: [
+            ...errors,
+            "Claim text is not an allowlisted edited-plan text with its frozen fact binding.",
+          ],
+        };
+      }
+      for (const fid of ids) {
+        if (!verified.has(fid)) {
+          return {
+            valid: false,
+            errors: [...errors, `Edited-plan claim cites unapproved fact_id '${fid}'.`],
+          };
+        }
+      }
+      const unionMetrics = new Set<string>();
+      const unionTechnologies = new Set<string>();
+      for (const fid of ids) {
+        const fact = verified.get(fid) as ApprovedFact;
+        for (const metric of fact.metrics) {
+          unionMetrics.add(metric);
+        }
+        for (const technology of fact.technologies) {
+          unionTechnologies.add(technology);
+        }
+      }
+      const tamperChecks = [
+        ["claimed_metrics", unionMetrics, "Metric tampering"],
+        ["claimed_technologies", unionTechnologies, "Unverified technology"],
+      ] as const;
+      for (const [claimKey, allowed, label] of tamperChecks) {
+        const values = claim[claimKey] ?? [];
+        if (!Array.isArray(values)) {
+          errors.push(`${claimKey} must be a list.`);
+        } else {
+          for (const value of values) {
+            if (!allowed.has(typeof value === "string" ? value : pyString(value))) {
+              errors.push(`${label} '${pyString(value)}' is not present in the cited facts.`);
+            }
+          }
+        }
+      }
+      if (section === "experience") {
+        const expKey = pyString(claim["entity_id"] ?? null);
+        const exp =
+          profile.work_experience.find(
+            (entry) => "id" in entry && pyString(entry.id ?? null) === expKey,
+          ) ?? null;
+        if (exp === null) {
+          errors.push("Experience claim names no candidate-owned employment record.");
+          return { valid: false, errors };
+        }
+        const pseudoFact: ApprovedFact = {
+          fact_id: ids[0] as string,
+          work_experience_id: pyString(exp.id ?? null),
+          category: "",
+          text: typeof text === "string" ? text : "",
+          technologies: [],
+          metrics: [],
+          verification_status: "approved",
+        };
+        const ok = validateExperienceBinding(claim, pseudoFact, profile, errors);
         return { valid: ok, errors };
       }
       return { valid: errors.length === 0, errors };
@@ -476,6 +599,7 @@ export function validateDraft(input: {
   profile: unknown;
   draft: unknown;
   variants?: unknown;
+  editedPlan?: { texts: EditedPlanClaimText[] };
 }): DraftValidation {
   const envelope = DraftEnvelope.parse(input);
   const errors: string[] = [];
@@ -491,7 +615,12 @@ export function validateDraft(input: {
   let count = 0;
   const referenced = new Set<string>();
   for (const rawClaim of claimList) {
-    const result = validateClaim({ profile: envelope.profile, claim: rawClaim, variants });
+    const result = validateClaim({
+      profile: envelope.profile,
+      claim: rawClaim,
+      variants,
+      ...(input.editedPlan === undefined ? {} : { editedPlan: input.editedPlan }),
+    });
     errors.push(...result.errors);
     if (!isRecord(rawClaim)) {
       continue;

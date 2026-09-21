@@ -9,7 +9,6 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const requiredFiles = [
   "PROJECT.md",
   "AGENTS.md",
-  "CLAUDE.md",
   "GEMINI.md",
   "README.md",
   "docs/README.md",
@@ -18,6 +17,12 @@ const requiredFiles = [
   "docs/operations.md",
   "docs/status.md",
   "docs/ui-ux-design-spec.md",
+  "docs/alignment-audit-v1.1.md",
+  "docs/work-orders-v1.2.md",
+  "docs/acceptance-v1.2.md",
+  "docs/execution-log-v1.2.md",
+  "docs/release-context-v1.2.md",
+  "docs/lifecycle-contracts-v1.2.md",
 ];
 
 const removedHarnessPaths = [
@@ -30,7 +35,6 @@ const removedHarnessPaths = [
 const activeEntrypoints = [
   "PROJECT.md",
   "AGENTS.md",
-  "CLAUDE.md",
   "GEMINI.md",
   "README.md",
   "docs/README.md",
@@ -39,6 +43,12 @@ const activeEntrypoints = [
   "docs/operations.md",
   "docs/status.md",
   "docs/ui-ux-design-spec.md",
+  "docs/alignment-audit-v1.1.md",
+  "docs/work-orders-v1.2.md",
+  "docs/acceptance-v1.2.md",
+  "docs/execution-log-v1.2.md",
+  "docs/release-context-v1.2.md",
+  "docs/lifecycle-contracts-v1.2.md",
 ];
 
 const staleReferencePatterns = [

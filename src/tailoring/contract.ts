@@ -1,4 +1,9 @@
 import { z } from "zod";
+import type {
+  PreparationInputV2 as PreparationInput,
+  PreparationProposalV2 as PreparationProposal,
+} from "../domain/step2Correction";
+import { FocusV1, RecommendationV1 } from "../domain/tailoringWorkspace";
 import { CandidateProfileInput } from "./schemas";
 
 /**
@@ -14,11 +19,13 @@ import { CandidateProfileInput } from "./schemas";
  */
 
 export const TAILORING_INPUT_SCHEMA_VERSION = "tailoring-input/v1";
+export const TAILORING_INPUT_SCHEMA_VERSION_V2 = "tailoring-input/v2";
 export const RESUME_PROPOSAL_SCHEMA_VERSION = "resume-proposal/v1";
 export const RESUME_CONTENT_SCHEMA_VERSION = "resume-content/v1";
 export const PROVIDER_ATTEMPT_SCHEMA_VERSION = "provider-attempt/v1";
 export const AUDIT_SUMMARY_SCHEMA_VERSION = "audit-summary/v1";
 export const TAILOR_PROMPT_VERSION = "tailor-prompt/v1";
+export const TAILOR_PROMPT_VERSION_V2 = "tailor-prompt/v2";
 export const TAILORING_POLICY_VERSION = "tailoring-policy/v1";
 export const ANALYSIS_REQUIREMENTS_SCHEMA_VERSION = "analysis-requirements/v1";
 export const ANALYSIS_GAPS_SCHEMA_VERSION = "analysis-gaps/v1";
@@ -42,9 +49,48 @@ export const TailoringInputV1 = z
     profileId: z.string().trim().min(1).max(64).optional(),
     selectedKeywords: z.array(z.string().trim().min(1).max(128)).max(20).optional(),
     directives: z.string().trim().max(1000).optional(),
+    // D4: the mandatory revision note on REVISION runs, bound into
+    // input_hash exactly like other steering (rank/wording only).
+    revisionNote: z.string().trim().max(2000).optional(),
   })
   .strict();
 export type TailoringInputV1 = z.infer<typeof TailoringInputV1>;
+
+/**
+ * v1.3 provider input (contracts §3.2): every v1 steering field plus
+ * the exact frozen focus and recommendation snapshots. Queued v2
+ * work keeps the v1 reader; new v3 work uses this envelope. The
+ * revision-note bound is explicit at 4000 characters — callers must
+ * not truncate v2 notes to the v1 2000-character bound.
+ */
+export const TailoringInputV2 = TailoringInputV1.omit({
+  schemaVersion: true,
+  promptVersion: true,
+  revisionNote: true,
+})
+  .extend({
+    schemaVersion: z.literal(TAILORING_INPUT_SCHEMA_VERSION_V2),
+    promptVersion: z.literal(TAILOR_PROMPT_VERSION_V2),
+    revisionNote: z.string().trim().min(1).max(4000).optional(),
+    focus: FocusV1,
+    recommendations: RecommendationV1,
+  })
+  .strict();
+export type TailoringInputV2 = z.infer<typeof TailoringInputV2>;
+
+/** Union reader for the v1/v2 provider-input migration window. */
+export const TailoringInputAnyVersion = z.discriminatedUnion("schemaVersion", [
+  TailoringInputV1,
+  TailoringInputV2,
+]);
+export type TailoringInputAnyVersion = z.infer<typeof TailoringInputAnyVersion>;
+
+/**
+ * Prompt versions accepted by attempt/audit readers. Historical v1
+ * records keep their v1 label; v2 runs record v2.
+ */
+export const TailorPromptVersion = z.enum([TAILOR_PROMPT_VERSION, TAILOR_PROMPT_VERSION_V2]);
+export type TailorPromptVersion = z.infer<typeof TailorPromptVersion>;
 
 /** Requirement proposal shape (mirrors the canonical requirement model). */
 export const ProposalRequirementV1 = z
@@ -93,7 +139,7 @@ export const ProviderAttemptV1 = z
     executable: z.string().max(1024).nullable(),
     argvHash: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
     configVersion: z.string().min(1).max(64),
-    promptVersion: z.literal(TAILOR_PROMPT_VERSION),
+    promptVersion: TailorPromptVersion,
     proposalSchemaVersion: z.literal(RESUME_PROPOSAL_SCHEMA_VERSION),
     startedAt: z.string().min(1),
     finishedAt: z.string().min(1),
@@ -122,7 +168,7 @@ export const AuditSummaryV1 = z
     proposalHash: z.string().regex(/^[0-9a-f]{64}$/),
     providerId: z.string().min(1),
     model: z.string().nullable(),
-    promptVersion: z.literal(TAILOR_PROMPT_VERSION),
+    promptVersion: TailorPromptVersion,
     rationale: z.string().max(2000),
     questions: z.array(z.string().max(500)).max(20),
   })
@@ -158,17 +204,36 @@ export const ResumeContentV1 = z
   .strict();
 export type ResumeContentV1 = z.infer<typeof ResumeContentV1>;
 
-/** Reason-coded provider failure. Never carries provider output bytes. */
-export type ProviderFailureReason = "PROVIDER_UNAVAILABLE" | "TIMEOUT";
+/**
+ * Reason-coded provider failure. Never carries provider output bytes.
+ * Reasons mirror the sidecar exit contract so the worker maps failures
+ * from actual codes, never prose. PROVIDER_UNAVAILABLE is the generic
+ * bucket for unclassified provider faults and our own envelope bugs.
+ */
+export type ProviderFailureReason =
+  | "PROVIDER_UNAVAILABLE"
+  | "TIMEOUT"
+  | "AUTHENTICATION"
+  | "RATE_LIMIT"
+  | "NETWORK"
+  | "INVALID_RESPONSE"
+  | "LOCAL_LAUNCH";
 
 export class ProviderError extends Error {
   readonly reason: ProviderFailureReason;
   readonly detail: string;
-  constructor(reason: ProviderFailureReason, detail: string) {
+  /**
+   * Raw spawn errno (LOCAL_LAUNCH only, e.g. ENOENT/EACCES). Captured
+   * from the actual spawn error so diagnostics can show a verified
+   * subcode; null for every other reason.
+   */
+  readonly spawnCode: string | null;
+  constructor(reason: ProviderFailureReason, detail: string, spawnCode: string | null = null) {
     super(`${reason}: ${detail}`);
     this.name = "ProviderError";
     this.reason = reason;
     this.detail = detail.slice(0, 2000);
+    this.spawnCode = spawnCode;
   }
 }
 
@@ -178,5 +243,58 @@ export class ProviderError extends Error {
  */
 export interface TailoringProvider {
   readonly providerId: string;
-  prepare(input: TailoringInputV1): Promise<{ proposal: ResumeProposalV1; attempt: ProviderAttemptV1 }>;
+  prepare(
+    input: TailoringInputV1 | TailoringInputV2,
+  ): Promise<{ proposal: ResumeProposalV1; attempt: ProviderAttemptV1 }>;
+}
+
+/**
+ * Step 2 preparation planning envelopes v1 (WO-1.3-S2-B, S2-A §9).
+ * Single source of truth is `../domain/step2`; this module
+ * re-exports so historical readers and tests share the exact
+ * contract text.
+ */
+export {
+  PREPARE_PROMPT_VERSION,
+  PreparationInputV1,
+  PreparationProposalV1,
+  type PreparationInputV1 as PreparationInputV1Type,
+  type PreparationProposalV1 as PreparationProposalV1Type,
+} from "../domain/step2";
+
+/**
+ * Step 2 preparation planning envelopes v2 (WO-1.3-S2-CP-B,
+ * correction contracts §9). Provider code consumes these; the
+ * provider interface speaks v2 only.
+ */
+export {
+  PREPARE_PROMPT_VERSION_V2,
+  PreparationInputV2,
+  PreparationProposalV2,
+  type PreparationInputV2 as PreparationInputV2Type,
+  type PreparationProposalV2 as PreparationProposalV2Type,
+} from "../domain/step2Correction";
+
+/** Attempt lineage the prepare adapter returns (stored as plan columns). */
+export interface PreparationAttemptLineage {
+  providerId: string;
+  model: string | null;
+  startedAt: string;
+  finishedAt: string;
+  outputBytes: number;
+  inputHash: string;
+  proposalHash: string;
+}
+
+/**
+ * Provider-neutral preparation interface (S2-A §9): same
+ * JSON-over-stdio discipline as TailoringProvider, planned-prompt
+ * envelope in, validated proposal out. Never renders resumes.
+ */
+export interface PrepareProvider {
+  readonly providerId: string;
+  preparePlan(input: PreparationInput): Promise<{
+    proposal: PreparationProposal;
+    lineage: PreparationAttemptLineage;
+  }>;
 }

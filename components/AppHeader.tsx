@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Briefcase,
   ExternalLink,
@@ -23,14 +23,37 @@ import {
 import { Notice, useNotice } from "@/components/ui/notice";
 import { cn } from "@/lib/utils";
 import { apiPost, errorMessage } from "./api";
-import SettingsModal from "./settings/SettingsModal";
+import SettingsModal, { type SettingsOpenRequest } from "./settings/SettingsModal";
+import { OPEN_SETTINGS_EVENT, type OpenSettingsDetail } from "./settings/profiles";
 
 export default function AppHeader() {
   const pathname = usePathname();
   const [addJobOpen, setAddJobOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsRequest, setSettingsRequest] = useState<SettingsOpenRequest | null>(null);
   const [quickUrl, setQuickUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Deep-link requests from other surfaces (e.g. drawer profile
+  // readiness): open settings at the requested tab/profile.
+  useEffect(() => {
+    function onOpenSettings(event: Event): void {
+      const detail = (event as CustomEvent<OpenSettingsDetail>).detail;
+      if (detail === undefined || detail === null) {
+        return;
+      }
+      setSettingsRequest((current) => ({
+        tab: detail.tab,
+        ...(detail.profileId === undefined ? {} : { profileId: detail.profileId }),
+        seq: (current?.seq ?? 0) + 1,
+      }));
+      setSettingsOpen(true);
+    }
+    window.addEventListener(OPEN_SETTINGS_EVENT, onOpenSettings);
+    return () => {
+      window.removeEventListener(OPEN_SETTINGS_EVENT, onOpenSettings);
+    };
+  }, []);
   const quickMessage = useNotice<{
     type: "success" | "error";
     text: string;
@@ -114,17 +137,25 @@ export default function AppHeader() {
               );
             })}
 
-            <div
-              className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground"
-              title="Local system running"
+            <Link
+              href="/health"
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted hover:text-foreground",
+                pathname === "/health"
+                  ? "bg-secondary text-secondary-foreground shadow-xs font-semibold"
+                  : "text-muted-foreground"
+              )}
+              title="System status: Ready · Click to view API health and diagnostics"
+              aria-label="System status: Ready (view health diagnostics)"
             >
               <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
               </span>
-              <span className="hidden md:inline text-[11px] font-medium text-muted-foreground">
+              <span className="hidden md:inline text-[11px] font-medium">
                 Ready
               </span>
-            </div>
+            </Link>
           </nav>
         </div>
 
@@ -248,7 +279,7 @@ export default function AppHeader() {
       </Dialog>
 
       {/* Settings & Data Management */}
-      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} openRequest={settingsRequest} />
     </header>
   );
 }

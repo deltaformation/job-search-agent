@@ -29,6 +29,7 @@ export interface JobBoardRow {
   rank: number;
   rowVersion: number;
   activeResumeVersionId: string | null;
+  selectedResumeVersionId: string | null;
 }
 
 export function getJobBoardRow(
@@ -42,6 +43,7 @@ export function getJobBoardRow(
       rank: jobs.rank,
       rowVersion: jobs.rowVersion,
       activeResumeVersionId: jobs.activeResumeVersionId,
+      selectedResumeVersionId: jobs.selectedResumeVersionId,
     })
     .from(jobs)
     .where(eq(jobs.id, jobId))
@@ -66,6 +68,12 @@ export interface CasUpdateJobBoardInput {
    */
   tailoringState?: string;
   tailoringReasonCode?: string | null;
+  /**
+   * D4 approval-selection pointer. Set only by the approval
+   * transaction alongside the tailoring flip; ordinary moves never
+   * touch it.
+   */
+  selectedResumeVersionId?: string | null;
 }
 
 /**
@@ -90,6 +98,9 @@ export function casUpdateJobBoard(
           tailoringState: input.tailoringState,
           tailoringReasonCode: input.tailoringReasonCode ?? null,
         }),
+      ...(input.selectedResumeVersionId === undefined
+        ? {}
+        : { selectedResumeVersionId: input.selectedResumeVersionId }),
     })
     .where(
       and(eq(jobs.id, input.jobId), eq(jobs.rowVersion, input.expectedVersion)),
@@ -102,6 +113,7 @@ export function casUpdateJobBoard(
       rank: jobs.rank,
       rowVersion: jobs.rowVersion,
       activeResumeVersionId: jobs.activeResumeVersionId,
+      selectedResumeVersionId: jobs.selectedResumeVersionId,
     })
     .from(jobs)
     .where(
@@ -239,6 +251,11 @@ export function upsertApplication(
     jobId: string;
     appliedAt: string;
     confirmationNumber: string | null;
+    /**
+     * D4: the job's selected version at record time, pinned honestly —
+     * null when nothing was ever approved for the job.
+     */
+    resumeVersionId?: string | null;
     now: string;
   },
 ): UpsertApplicationResult {
@@ -249,6 +266,9 @@ export function upsertApplication(
       .set({
         appliedAt: input.appliedAt,
         confirmationNumber: input.confirmationNumber,
+        ...(input.resumeVersionId === undefined
+          ? {}
+          : { resumeVersionId: input.resumeVersionId }),
         updatedAt: input.now,
       })
       .where(eq(applications.jobId, input.jobId))
@@ -264,6 +284,7 @@ export function upsertApplication(
       recordedBy: "human",
       appliedAt: input.appliedAt,
       confirmationNumber: input.confirmationNumber,
+      resumeVersionId: input.resumeVersionId ?? null,
       createdAt: input.now,
     })
     .run();

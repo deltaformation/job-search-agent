@@ -15,6 +15,8 @@ const REASON_COPY: Record<string, string> = {
   RENDER_FAILED:
     "The resume draft was built but a document check failed (page budget or cross-format mismatch). Retry to rebuild.",
   PROFILE_REQUIRED: "No approved candidate profile exists yet. Approve a profile first.",
+  VERSION_DECLINED:
+    "You declined this version. It is frozen; adjust guidance and generate a new version when ready.",
 };
 
 export function tailoringReasonCopy(reasonCode: string | null): string {
@@ -30,6 +32,15 @@ export function tailoringStateCopy(state: string): string {
   }
   if (state === "PENDING") {
     return "Queued for tailoring";
+  }
+  if (state === "READY") {
+    return "Ready to generate";
+  }
+  if (state === "DECLINED") {
+    return "Version declined";
+  }
+  if (state === "REVISION_REQUESTED") {
+    return "Revision run queued";
   }
   if (state === "FAILED" || state === "BLOCKED") {
     return "Tailoring failed";

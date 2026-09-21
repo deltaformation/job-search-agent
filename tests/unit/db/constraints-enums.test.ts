@@ -159,6 +159,7 @@ describe("enum and range CHECK constraints", () => {
           idempotencyKey: `k-${newId()}`,
           state: "RUNNING",
           leaseToken: "lease-1",
+          payloadJson: JSON.stringify({ schemaVersion: "tailor-queue/v2" }),
         })
         .run();
     });

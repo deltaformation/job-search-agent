@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 // File imports (not directory barrels): the SCRAPE handler runs in the
 // worker under the extensionless-file TS loader.
 import type { DatabaseHandle } from "../db/client";
@@ -18,7 +18,10 @@ import type { ReasonCode, ScrapeState } from "../domain/enums";
 import { planScrapeTransition } from "../domain/scrape";
 import { resolveArtifactPath } from "../security/paths";
 import type { ScrapePayloadV1 } from "../server/intake";
-import { requestTailoring } from "../tailoring/enqueue";
+import { workItems } from "../db/schema/queue";
+import { planTailoringTransition } from "../domain/tailoring";
+import type { TailoringState } from "../domain/enums";
+import { linkAndSchedulePreparation } from "../server/preparation";
 import {
   JOB_EXTRACTION_VERSION,
   type FieldProvenance,
@@ -251,6 +254,12 @@ export interface PersistFetchInput {
   evidenceDir: string;
   /** R2-D extraction; only valid with a SUCCEEDED fetch outcome. */
   extraction?: PersistExtractionInput | null;
+  /**
+   * Step 2 (S2-A §8.2): whether a provider key is configured, so
+   * extraction success can schedule preparation. Defaults false —
+   * the row stays PENDING for the explicit command.
+   */
+  providerKeyPresent?: boolean;
   now?: string;
 }
 
@@ -413,10 +422,55 @@ export function persistFetchOutcome(
         .run();
     }
     if (createdExtraction !== null) {
-      // Every successful new extraction idempotently requests
-      // tailoring in the same transaction: no loss window between the
-      // extraction row and its tailor request.
-      requestTailoring(handle, { jobId: input.jobId, extractionId: createdExtraction });
+      // WO-1.2-D (R-ADR-015): extraction publishes the JD and enqueues
+      // nothing. When no tailor run is live for the job, the fresh
+      // extraction rests the job in READY (extraction available, no
+      // run queued or running); a live run keeps its state and the
+      // publish fence decides its output.
+      const current = handle.db
+        .select({ tailoringState: jobs.tailoringState })
+        .from(jobs)
+        .where(eq(jobs.id, input.jobId))
+        .get();
+      const liveTailorWork =
+        current === undefined
+          ? null
+          : handle.db
+              .select({ id: workItems.id })
+              .from(workItems)
+              .where(
+                and(
+                  eq(workItems.jobId, input.jobId),
+                  eq(workItems.kind, "TAILOR"),
+                  inArray(workItems.state, ["QUEUED", "RUNNING"]),
+                ),
+              )
+              .limit(1)
+              .get();
+      if (current !== undefined && liveTailorWork === undefined) {
+        const planned = planTailoringTransition(current.tailoringState as TailoringState, {
+          to: "READY",
+        });
+        if (planned.ok) {
+          handle.db
+            .update(jobs)
+            .set({ tailoringState: "READY", updatedAt: now })
+            .where(eq(jobs.id, input.jobId))
+            .run();
+        }
+      }
+    }
+    // Step 2 (S2-A §8.2): link the intake-captured preparation row
+    // and schedule its PREPARE item in this same transaction —
+    // only on success, never competing with a live TAILOR run.
+    if (createdExtraction !== null && input.intakeItemId !== null) {
+      linkAndSchedulePreparation(handle, {
+        jobId: input.jobId,
+        extractionId: createdExtraction,
+        intakeItemId: input.intakeItemId,
+        providerKeyPresent: input.providerKeyPresent ?? false,
+        now,
+      });
     }
     return { attemptId: created, extractionId: createdExtraction };
   });

@@ -24,6 +24,8 @@ function card(): BoardCardView {
     tailoringState: "PENDING",
     tailoringReasonCode: null,
     resume: null,
+    selectedApprovedPdfArtifactId: null,
+    selectedApprovedPdfSha256: null,
     notesCount: 0,
     sourceUrl: null,
     appliedAt: null,

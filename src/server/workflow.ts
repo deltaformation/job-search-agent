@@ -1,6 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { DatabaseHandle } from "../db/client";
+import { failGenerationRequest, getGenerationRequestByWorkItem } from "../db/generation";
 import { resumeReviews, resumeVersions } from "../db/schema";
 import { utcNow } from "../db/utils";
 import { withTransaction } from "../db/transactions";
@@ -297,6 +298,9 @@ function executeStatusMove(args: StatusMoveArgs): MoveJobResult {
         appliedAt: args.appliedAt ?? "",
         confirmationNumber:
           normalizeConfirmation(args.confirmationNumber) ?? null,
+        // D4: pin the selected version at record time (null when the
+        // job never had an approval — honest unknown, not a default).
+        resumeVersionId: job.selectedResumeVersionId,
         now: args.now,
       });
       applicationId = applied.id;
@@ -307,6 +311,19 @@ function executeStatusMove(args: StatusMoveArgs): MoveJobResult {
         jobId: args.jobId,
         now: args.now,
       });
+      // Retire the requests behind cancelled TAILOR items so no live
+      // request outlives the rejection.
+      for (const workItemId of cancelledWorkItems) {
+        const request = getGenerationRequestByWorkItem(handle, workItemId);
+        if (request !== null) {
+          failGenerationRequest(handle, {
+            requestId: request.id,
+            errorCode: "STALE_INPUT",
+            errorDetail: "job was rejected; the queued run was cancelled",
+            now: args.now,
+          });
+        }
+      }
     }
     const metadata: WorkflowEventMetadataInput = {};
     if (args.reason !== undefined) {
@@ -606,6 +623,7 @@ export function approveTailored(
       rank: job.rank,
       tailoringState: "APPROVED",
       tailoringReasonCode: null,
+      selectedResumeVersionId: input.resumeVersionId,
       now,
     });
     if (updated === null) {
@@ -623,7 +641,11 @@ export function approveTailored(
       rank: job.rank,
       rowVersion: planned.newRowVersion,
       reason: "approval",
-      metadata: { resumeVersionId: input.resumeVersionId, reviewId: review.id },
+      metadata: {
+        resumeVersionId: input.resumeVersionId,
+        reviewId: review.id,
+        approvalCase: "move",
+      },
       now,
     });
     return {

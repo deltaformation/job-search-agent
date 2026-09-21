@@ -11,6 +11,7 @@ import {
   candidateProfileVersions,
   candidateProfiles,
   candidateSnapshots,
+  generationRequests,
   jdSnapshots,
   jobAnalyses,
   jobExtractions,
@@ -19,7 +20,10 @@ import {
   jobs,
   resumeVersions,
   scrapeAttempts,
+  workAttempts,
+  workItems,
 } from "../../../src/db/schema";
+import { canonicalJson } from "../../../src/domain/canonical";
 import type { BoardStatus } from "../../../src/domain/enums";
 import { getBoardView } from "../../../src/server/board";
 
@@ -55,7 +59,7 @@ function withDatabase(fn: (t: TestDatabase) => void): void {
 }
 
 /** Shared candidate profile/version/snapshot every analysis binds to. */
-function seedSharedCandidate(handle: DatabaseHandle): string {
+function seedSharedCandidate(handle: DatabaseHandle): { snapshotId: string; profileVersionId: string } {
   handle.db
     .insert(candidateProfiles)
     .values({ id: "local", name: "default", displayName: "Primary Profile", isDefault: true })
@@ -83,13 +87,14 @@ function seedSharedCandidate(handle: DatabaseHandle): string {
       sha256: "d".repeat(64),
     })
     .run();
-  return snapshotId;
+  return { snapshotId, profileVersionId };
 }
 
 function seedCardJob(
   handle: DatabaseHandle,
   index: number,
   candidateSnapshotId: string,
+  profileVersionId: string,
 ): void {
   const id = newId();
   const day = String(1 + (index % 27)).padStart(2, "0");
@@ -168,6 +173,53 @@ function seedCardJob(
       canonicalSha256: `bench-jd-${index}`,
     })
     .run();
+  const requestId = newId();
+  const queueItemId = newId();
+  const queueAttemptId = newId();
+  const requestIdentity = `genreq:v1:${requestId}`;
+  handle.db
+    .insert(workItems)
+    .values({
+      id: queueItemId,
+      kind: "TAILOR",
+      idempotencyKey: requestIdentity,
+      jobId: id,
+      payloadJson: canonicalJson({ schemaVersion: "tailor-queue/v2" }),
+      state: "SUCCEEDED",
+      attemptCount: 1,
+      maxAttempts: 3,
+    })
+    .run();
+  handle.db
+    .insert(generationRequests)
+    .values({
+      id: requestId,
+      requestIdentity,
+      jobId: id,
+      extractionId,
+      profileId: "local",
+      profileVersionId,
+      jdSnapshotId,
+      requestKind: "INITIAL",
+      steeringSnapshotJson: "{}",
+      selectedKeywordsJson: "[]",
+      payloadHash: "0".repeat(64),
+      status: "SUCCEEDED",
+      workItemId: queueItemId,
+    })
+    .run();
+  handle.db
+    .insert(workAttempts)
+    .values({
+      id: queueAttemptId,
+      workItemId: queueItemId,
+      attemptNumber: 1,
+      workerId: "bench",
+      startedAt: stamp,
+      finishedAt: stamp,
+      result: "SUCCEEDED",
+    })
+    .run();
   const analysisId = newId();
   handle.db
     .insert(jobAnalyses)
@@ -180,6 +232,8 @@ function seedCardJob(
       gapsJson: "[]",
       promptVersion: "prompt-v1",
       proposalSchemaVersion: "proposal-v1",
+      generationRequestId: requestId,
+      workAttemptId: queueAttemptId,
     })
     .run();
   const versionId = newId();
@@ -200,6 +254,8 @@ function seedCardJob(
       contentJson: "{}",
       contentHash: "0".repeat(64),
       reviewState: "AWAITING_REVIEW",
+      generationRequestId: requestId,
+      workAttemptId: queueAttemptId,
     })
     .run();
   handle.db
@@ -213,9 +269,9 @@ function seedBoard(
   handle: DatabaseHandle,
   cardCount: number,
 ): void {
-  const candidateSnapshotId = seedSharedCandidate(handle);
+  const shared = seedSharedCandidate(handle);
   for (let index = 0; index < cardCount; index += 1) {
-    seedCardJob(handle, index, candidateSnapshotId);
+    seedCardJob(handle, index, shared.snapshotId, shared.profileVersionId);
   }
 }
 

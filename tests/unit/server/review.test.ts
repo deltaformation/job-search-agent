@@ -12,6 +12,7 @@ import {
   candidateSnapshotFacts,
   candidateSnapshots,
   createTestDatabase,
+  generationRequests,
   jdSnapshots,
   jobAnalyses,
   jobExtractions,
@@ -23,6 +24,7 @@ import {
   resumeReviews,
   resumeVersions,
   scrapeAttempts,
+  workAttempts,
   workItems,
   workflowEvents,
   type TestDatabase,
@@ -34,7 +36,10 @@ import {
   requestRevision,
   resumeIdentityHash,
 } from "../../../src/server/review";
-import { tailorRevisionIdempotencyKey } from "../../../src/tailoring/enqueue";
+import { generationRequestIdentity } from "../../../src/tailoring/requests";
+import { canonicalJson } from "../../../src/domain/canonical";
+import { parseStoredProfilePayload } from "../../../src/domain/candidate";
+import { sha256HexUtf8 } from "../../../src/db/utils";
 
 /**
  * R4-F review command tests: exact-version approval with artifact
@@ -45,6 +50,7 @@ import { tailorRevisionIdempotencyKey } from "../../../src/tailoring/enqueue";
 
 const tempDirs: string[] = [];
 const testDbs: TestDatabase[] = [];
+const PROVIDER = { providerAvailable: () => true };
 
 afterEach(() => {
   while (testDbs.length > 0) {
@@ -154,6 +160,11 @@ interface ReviewSeed {
   extractionId: string;
   versionId: string;
   analysisId: string;
+  requestId: string;
+  attemptId: string;
+  profileVersionId: string;
+  jdSnapshotId: string;
+  candidateSnapshotId: string;
   digests: Record<string, string>;
 }
 
@@ -169,6 +180,7 @@ function seedReviewable(t: TestDatabase, artifactsDir: string, overrides: SeedOp
       rowVersion: 1,
       title: "Backend Engineer",
       company: "Acme",
+      descriptionText: "TypeScript API experience and Redis caching. Kubernetes deployment.",
       tailoringState: overrides.tailoringState ?? "AWAITING_REVIEW",
     })
     .run();
@@ -176,6 +188,21 @@ function seedReviewable(t: TestDatabase, artifactsDir: string, overrides: SeedOp
     .insert(candidateProfiles)
     .values({ id: "local", name: "default", displayName: "Primary Profile", isDefault: true })
     .run();
+  // A schema-valid master payload with a matching recorded hash: the
+  // revision follow-up snapshots the pinned version through the real
+  // candidate path, which rejects unparseable and hash-mismatched rows.
+  const profilePayload = parseStoredProfilePayload({
+    schemaVersion: "candidate-profile/v1",
+    identity: { fullName: "Review Candidate" },
+    achievements: [
+      {
+        factId: "f1",
+        category: "experience",
+        text: "Led the API migration to TypeScript.",
+        verification: "APPROVED",
+      },
+    ],
+  });
   const profileVersionId = newId();
   t.handle.db
     .insert(candidateProfileVersions)
@@ -183,9 +210,10 @@ function seedReviewable(t: TestDatabase, artifactsDir: string, overrides: SeedOp
       id: profileVersionId,
       profileId: "local",
       version: 1,
-      payloadJson: "{}",
-      payloadHash: "0".repeat(64),
+      payloadJson: JSON.stringify(profilePayload),
+      payloadHash: sha256HexUtf8(canonicalJson(profilePayload)),
       schemaVersion: "candidate-profile-v1",
+      activatedAt: NOW,
     })
     .run();
   t.handle.db
@@ -247,6 +275,72 @@ function seedReviewable(t: TestDatabase, artifactsDir: string, overrides: SeedOp
       canonicalSha256: "2".repeat(64),
     })
     .run();
+  // The completed run that produced the reviewable version: the 0007
+  // linkage triggers require every analysis and version to name the
+  // request and claim-minted attempt that published them.
+  const runWorkItemId = newId();
+  const runRequestId = newId();
+  const runAttemptId = newId();
+  t.handle.db
+    .insert(workItems)
+    .values({
+      id: runWorkItemId,
+      kind: "TAILOR",
+      idempotencyKey: generationRequestIdentity(runRequestId),
+      jobId,
+      payloadJson: JSON.stringify({
+        schemaVersion: "tailor-queue/v2",
+        generationRequestId: runRequestId,
+        jobId,
+        extractionId,
+        profileId: "local",
+        profileVersionId,
+        jdSnapshotId,
+        payloadHash: "3".repeat(64),
+      }),
+      state: "SUCCEEDED",
+      createdAt: NOW,
+      updatedAt: NOW,
+    })
+    .run();
+  t.handle.db
+    .insert(workAttempts)
+    .values({
+      id: runAttemptId,
+      workItemId: runWorkItemId,
+      attemptNumber: 1,
+      workerId: "seed-worker",
+      startedAt: NOW,
+      finishedAt: NOW,
+      result: "SUCCEEDED",
+      createdAt: NOW,
+    })
+    .run();
+  t.handle.db
+    .insert(generationRequests)
+    .values({
+      id: runRequestId,
+      requestIdentity: generationRequestIdentity(runRequestId),
+      jobId,
+      extractionId,
+      profileId: "local",
+      profileVersionId,
+      jdSnapshotId,
+      parentVersionId: null,
+      requestKind: "INITIAL",
+      steeringSnapshotJson: "{}",
+      selectedKeywordsJson: "[]",
+      directivesText: null,
+      revisionNote: null,
+      payloadHash: "3".repeat(64),
+      status: "SUCCEEDED",
+      workItemId: runWorkItemId,
+      startedAt: NOW,
+      finishedAt: NOW,
+      createdAt: NOW,
+      updatedAt: NOW,
+    })
+    .run();
   const analysisId = newId();
   t.handle.db
     .insert(jobAnalyses)
@@ -262,6 +356,8 @@ function seedReviewable(t: TestDatabase, artifactsDir: string, overrides: SeedOp
       promptVersion: "tailor-prompt/v1",
       proposalSchemaVersion: "resume-proposal/v1",
       rationale: "Two requirements supported by approved facts; one gap reported.",
+      generationRequestId: runRequestId,
+      workAttemptId: runAttemptId,
     })
     .run();
   const versionId = newId();
@@ -283,6 +379,8 @@ function seedReviewable(t: TestDatabase, artifactsDir: string, overrides: SeedOp
       contentJson: overrides.contentJson ?? CONTENT_JSON,
       contentHash: VERSION_CONTENT_HASH,
       reviewState: overrides.reviewState ?? "AWAITING_REVIEW",
+      generationRequestId: runRequestId,
+      workAttemptId: runAttemptId,
     })
     .run();
   t.handle.db.update(jobs).set({ activeResumeVersionId: versionId }).where(eq(jobs.id, jobId)).run();
@@ -321,16 +419,113 @@ function seedReviewable(t: TestDatabase, artifactsDir: string, overrides: SeedOp
       })
       .run();
   }
-  return { jobId, extractionId, versionId, analysisId, digests };
+  return {
+    jobId,
+    extractionId,
+    versionId,
+    analysisId,
+    requestId: runRequestId,
+    attemptId: runAttemptId,
+    profileVersionId,
+    jdSnapshotId,
+    candidateSnapshotId,
+    digests,
+  };
 }
 
-/** Attach a v2 child (same analysis) and move the active pointer to it. */
+/** Attach a v2 child via its own completed REVISION run and move the active pointer to it. */
 function seedSecondVersion(
   t: TestDatabase,
   artifactsDir: string,
   seed: ReviewSeed,
   reviewState = "AWAITING_REVIEW",
 ): string {
+  // v13 allows one version per (request, attempt): the child needs its own
+  // completed revision run, chained to v1 through parentVersionId on both
+  // the REVISION request and the version row.
+  const runWorkItemId = newId();
+  const runRequestId = newId();
+  const runAttemptId = newId();
+  t.handle.db
+    .insert(workItems)
+    .values({
+      id: runWorkItemId,
+      kind: "TAILOR",
+      idempotencyKey: generationRequestIdentity(runRequestId),
+      jobId: seed.jobId,
+      payloadJson: JSON.stringify({
+        schemaVersion: "tailor-queue/v2",
+        generationRequestId: runRequestId,
+        jobId: seed.jobId,
+        extractionId: seed.extractionId,
+        profileId: "local",
+        profileVersionId: seed.profileVersionId,
+        jdSnapshotId: seed.jdSnapshotId,
+        parentVersionId: seed.versionId,
+        payloadHash: "4".repeat(64),
+      }),
+      state: "SUCCEEDED",
+      createdAt: NOW,
+      updatedAt: NOW,
+    })
+    .run();
+  t.handle.db
+    .insert(workAttempts)
+    .values({
+      id: runAttemptId,
+      workItemId: runWorkItemId,
+      attemptNumber: 1,
+      workerId: "seed-worker",
+      startedAt: NOW,
+      finishedAt: NOW,
+      result: "SUCCEEDED",
+      createdAt: NOW,
+    })
+    .run();
+  t.handle.db
+    .insert(generationRequests)
+    .values({
+      id: runRequestId,
+      requestIdentity: generationRequestIdentity(runRequestId),
+      jobId: seed.jobId,
+      extractionId: seed.extractionId,
+      profileId: "local",
+      profileVersionId: seed.profileVersionId,
+      jdSnapshotId: seed.jdSnapshotId,
+      parentVersionId: seed.versionId,
+      requestKind: "REVISION",
+      steeringSnapshotJson: "{}",
+      selectedKeywordsJson: "[]",
+      directivesText: null,
+      revisionNote: "Seeded revision for supersede tests.",
+      payloadHash: "4".repeat(64),
+      status: "SUCCEEDED",
+      workItemId: runWorkItemId,
+      startedAt: NOW,
+      finishedAt: NOW,
+      createdAt: NOW,
+      updatedAt: NOW,
+    })
+    .run();
+  const revisionAnalysisId = newId();
+  t.handle.db
+    .insert(jobAnalyses)
+    .values({
+      id: revisionAnalysisId,
+      jobId: seed.jobId,
+      jdSnapshotId: seed.jdSnapshotId,
+      candidateSnapshotId: seed.candidateSnapshotId,
+      requirementsJson: REQUIREMENTS_JSON,
+      gapsJson: GAPS_JSON,
+      provider: "test-provider",
+      model: "test-model",
+      promptVersion: "tailor-prompt/v1",
+      proposalSchemaVersion: "resume-proposal/v1",
+      rationale: "Seeded revision analysis.",
+      generationRequestId: runRequestId,
+      workAttemptId: runAttemptId,
+    })
+    .run();
   const versionId = newId();
   t.handle.db
     .insert(resumeVersions)
@@ -339,7 +534,7 @@ function seedSecondVersion(
       jobId: seed.jobId,
       version: 2,
       parentVersionId: seed.versionId,
-      analysisId: seed.analysisId,
+      analysisId: revisionAnalysisId,
       templateId: "standard",
       templateVersion: "v1",
       templateHash: "t".repeat(64),
@@ -350,6 +545,8 @@ function seedSecondVersion(
       contentJson: CONTENT_JSON,
       contentHash: "d".repeat(64),
       reviewState,
+      generationRequestId: runRequestId,
+      workAttemptId: runAttemptId,
     })
     .run();
   t.handle.db.update(jobs).set({ activeResumeVersionId: versionId }).where(eq(jobs.id, seed.jobId)).run();
@@ -383,7 +580,9 @@ function readState(t: TestDatabase, jobId: string, versionId: string) {
     .where(eq(resumeReviews.resumeVersionId, versionId))
     .all();
   const events = t.handle.db.select().from(workflowEvents).where(eq(workflowEvents.jobId, jobId)).all();
-  const work = t.handle.db.select().from(workItems).all();
+  // Queued work only: the seed's SUCCEEDED run is linkage scaffolding,
+  // and every assertion here is about newly enqueued follow-up runs.
+  const work = t.handle.db.select().from(workItems).where(eq(workItems.state, "QUEUED")).all();
   return { job, version, reviews, events, work };
 }
 
@@ -534,7 +733,10 @@ describe("approveResume", () => {
     }
   });
 
-  it("rejects unknown ids, superseded versions, and repeat approvals", () => {
+  it("rejects unknown ids and repeat approvals; older awaiting versions stay decidable", () => {
+    // G (R-ADR-019): superseded AWAITING versions are decidable when
+    // their frozen inputs are eligible — `stale-version` now means
+    // stale frozen inputs, never "not active".
     const { t, artifactsDir } = setup();
     const seed = seedReviewable(t, artifactsDir);
     expect(
@@ -553,25 +755,34 @@ describe("approveResume", () => {
     ).toMatchObject({ ok: false, error: "unknown-version" });
 
     const v2 = seedSecondVersion(t, artifactsDir, seed);
-    const superseded = approveResume(
+    const older = approveResume(
       t.handle,
-      { jobId: seed.jobId, resumeVersionId: seed.versionId, observedRowVersion: 1, actor: "human" },
+      { jobId: seed.jobId, resumeVersionId: seed.versionId, observedRowVersion: 1, actor: "human", now: NOW },
       { artifactsDir },
     );
-    expect(superseded).toMatchObject({ ok: false, error: "stale-version", currentRowVersion: 1 });
+    expect(older).toMatchObject({ ok: true, approvalCase: "move", newRowVersion: 2 });
+    const olderState = readState(t, seed.jobId, seed.versionId);
+    expect(olderState.version?.reviewState).toBe("APPROVED");
+    expect(olderState.job?.status).toBe("TAILORED");
+    expect(olderState.job?.selectedResumeVersionId).toBe(seed.versionId);
+    // Tailoring follows the active (newer) draft, not the older decision.
+    expect(olderState.job?.tailoringState).toBe("AWAITING_REVIEW");
+    expect(olderState.job?.activeResumeVersionId).toBe(v2);
+    expect(olderState.reviews).toHaveLength(1);
+    expect(olderState.events).toHaveLength(1);
 
     const first = approveResume(
       t.handle,
-      { jobId: seed.jobId, resumeVersionId: v2, observedRowVersion: 1, actor: "human", now: NOW },
+      { jobId: seed.jobId, resumeVersionId: v2, observedRowVersion: 2, actor: "human", now: NOW },
       { artifactsDir },
     );
-    expect(first.ok).toBe(true);
+    expect(first).toMatchObject({ ok: true, approvalCase: "select", newRowVersion: 3 });
     const repeat = approveResume(
       t.handle,
       {
         jobId: seed.jobId,
         resumeVersionId: v2,
-        observedRowVersion: 2,
+        observedRowVersion: 3,
         actor: "human",
         now: NOW,
       },
@@ -583,9 +794,9 @@ describe("approveResume", () => {
     expect(state.events).toHaveLength(1);
   });
 
-  it("refuses non-NEW jobs and non-human actors", () => {
+  it("refuses rejected jobs and non-human actors, and binds post-NEW approvals in place", () => {
     const { t, artifactsDir } = setup();
-    const seed = seedReviewable(t, artifactsDir, { status: "TAILORED" });
+    const seed = seedReviewable(t, artifactsDir, { status: "REJECTED" });
     const refused = approveResume(
       t.handle,
       { jobId: seed.jobId, resumeVersionId: seed.versionId, observedRowVersion: 1, actor: "human" },
@@ -602,6 +813,37 @@ describe("approveResume", () => {
     const state = readState(t, seed.jobId, seed.versionId);
     expect(state.reviews).toHaveLength(0);
     expect(state.events).toHaveLength(0);
+
+    // Past NEW the card already moved: approval binds the version as the
+    // selected resume in place — no board move, no event.
+    const moved = setup();
+    const movedSeed = seedReviewable(moved.t, moved.artifactsDir, { status: "TAILORED" });
+    const approved = approveResume(
+      moved.t.handle,
+      {
+        jobId: movedSeed.jobId,
+        resumeVersionId: movedSeed.versionId,
+        observedRowVersion: 1,
+        actor: "human",
+      },
+      { artifactsDir: moved.artifactsDir },
+    );
+    expect(approved).toMatchObject({
+      ok: true,
+      approvalCase: "select",
+      eventId: null,
+      newRowVersion: 2,
+    });
+    const movedState = readState(moved.t, movedSeed.jobId, movedSeed.versionId);
+    expect(movedState.job).toMatchObject({
+      status: "TAILORED",
+      tailoringState: "APPROVED",
+      selectedResumeVersionId: movedSeed.versionId,
+      rowVersion: 2,
+    });
+    expect(movedState.version?.reviewState).toBe("APPROVED");
+    expect(movedState.reviews).toHaveLength(1);
+    expect(movedState.events).toHaveLength(0);
   });
 });
 
@@ -616,14 +858,14 @@ describe("requestRevision", () => {
       actor: "human",
       note: "Second bullet overstates the caching work.",
       now: NOW,
-    });
+    }, PROVIDER);
     expect(revised.ok).toBe(true);
     if (!revised.ok) return;
     expect(revised).toMatchObject({
       jobId: seed.jobId,
       resumeVersionId: seed.versionId,
       version: 1,
-      deduped: false,
+      requestId: expect.any(String),
       newRowVersion: 2,
     });
     const state = readState(t, seed.jobId, seed.versionId);
@@ -646,11 +888,14 @@ describe("requestRevision", () => {
       id: revised.workItemId,
       kind: "TAILOR",
       state: "QUEUED",
-      idempotencyKey: tailorRevisionIdempotencyKey(seed.jobId, seed.versionId),
+      idempotencyKey: generationRequestIdentity(revised.requestId),
     });
     expect(JSON.parse(state.work[0]?.payloadJson as string)).toMatchObject({
+      schemaVersion: "tailor-queue/v2",
+      generationRequestId: revised.requestId,
       jobId: seed.jobId,
       extractionId: seed.extractionId,
+      parentVersionId: seed.versionId,
     });
   });
 
@@ -703,7 +948,7 @@ describe("requestRevision", () => {
       observedRowVersion: 1,
       actor: "human",
       note: "The PDF looks corrupt; regenerate.",
-    });
+    }, PROVIDER);
     expect(revised.ok).toBe(true);
     // The revision binds the stored digests — the disk was never read.
     const state = readState(t, seed.jobId, seed.versionId);
@@ -818,7 +1063,12 @@ describe("getResumeReviewView", () => {
     expect(view.artifacts.map((artifact) => artifact.kind).sort()).toEqual(["DOCX", "MARKDOWN", "PDF"]);
     expect("relativePath" in (view.artifacts[0] as unknown as Record<string, unknown>)).toBe(false);
     expect(view.reviews).toHaveLength(0);
-    expect(view.actions).toEqual({ canApprove: true, canRequestRevision: true, reason: null });
+    expect(view.actions).toEqual({
+      canApprove: true,
+      canRequestRevision: true,
+      canDecline: true,
+      reason: null,
+    });
     // Artifact metadata resolves by id for the file route.
     const markdown = view.artifacts.find((artifact) => artifact.kind === "MARKDOWN");
     const file = getResumeArtifact(t.handle, markdown?.id as string);

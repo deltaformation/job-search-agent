@@ -90,11 +90,21 @@ describe("tailoring state machine", () => {
   });
 
   it("retries blocked, failed, and revision-requested runs", () => {
-    expect(planTailoringTransition("BLOCKED", { to: "RUNNING" }).ok).toBe(true);
-    expect(planTailoringTransition("FAILED", { to: "RUNNING" }).ok).toBe(true);
+    // D retries requeue through PENDING (explicit request) rather than
+    // jumping straight to RUNNING; only live queues claim RUNNING.
+    expect(planTailoringTransition("BLOCKED", { to: "PENDING" }).ok).toBe(true);
+    expect(planTailoringTransition("FAILED", { to: "PENDING" }).ok).toBe(true);
+    expect(planTailoringTransition("DECLINED", { to: "PENDING" }).ok).toBe(true);
+    expect(planTailoringTransition("READY", { to: "PENDING" }).ok).toBe(true);
+    expect(planTailoringTransition("BLOCKED", { to: "RUNNING" })).toMatchObject(
+      { ok: false, error: "forbidden" },
+    );
+    expect(planTailoringTransition("PENDING", { to: "RUNNING" }).ok).toBe(true);
     expect(planTailoringTransition("REVISION_REQUESTED", { to: "RUNNING" }).ok).toBe(
       true,
     );
+    expect(planTailoringTransition("PENDING", { to: "READY" }).ok).toBe(true);
+    expect(planTailoringTransition("AWAITING_REVIEW", { to: "DECLINED" }).ok).toBe(true);
     expect(planTailoringTransition("APPROVED", { to: "RUNNING" })).toMatchObject(
       { ok: false, error: "forbidden" },
     );

@@ -223,9 +223,10 @@ describe("POST /api/settings/ai-test", () => {
     makeRoot();
     const response = await aiTestPOST(localPost("/api/settings/ai-test"));
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { ok: boolean; error: string };
+    const body = (await response.json()) as { ok: boolean; error: string; reasonCode: string };
     expect(body.ok).toBe(false);
-    expect(body.error).toBe("OPENROUTER_API_KEY is not configured");
+    expect(body.reasonCode).toBe("missing-key");
+    expect(body.error).toContain("OPENROUTER_API_KEY is not configured");
   });
 
   it("pings the selected provider and validates the body", async () => {
@@ -246,7 +247,7 @@ describe("POST /api/settings/ai-test", () => {
       expect(google.status).toBe(200);
       expect((await google.json()) as { error: string }).toMatchObject({
         ok: false,
-        error: "GEMINI_API_KEY is not configured",
+        reasonCode: "missing-key",
       });
       const emptyObject = await aiTestPOST(
         localPost("/api/settings/ai-test", {
@@ -257,7 +258,7 @@ describe("POST /api/settings/ai-test", () => {
       expect(emptyObject.status).toBe(200);
       expect((await emptyObject.json()) as { error: string }).toMatchObject({
         ok: false,
-        error: "OPENROUTER_API_KEY is not configured",
+        reasonCode: "missing-key",
       });
       const unknown = await aiTestPOST(
         localPost("/api/settings/ai-test", {

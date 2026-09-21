@@ -24,6 +24,7 @@ interface BoardColumnProps {
   total: number;
   cards: BoardCardView[];
   onOpen: (jobId: string) => void;
+  onOpenProperties?: (jobId: string) => void;
   onShowMore: (status: BoardStatus) => void;
   loadingMore: boolean;
 }
@@ -33,6 +34,7 @@ export default function BoardColumn({
   total,
   cards,
   onOpen,
+  onOpenProperties,
   onShowMore,
   loadingMore,
 }: BoardColumnProps) {
@@ -63,7 +65,12 @@ export default function BoardColumn({
         >
           <ul className="flex flex-col gap-2">
             {cards.map((card) => (
-              <JobCard key={card.id} card={card} onOpen={onOpen} />
+              <JobCard
+                key={card.id}
+                card={card}
+                onOpen={onOpen}
+                onOpenProperties={onOpenProperties}
+              />
             ))}
           </ul>
         </SortableContext>

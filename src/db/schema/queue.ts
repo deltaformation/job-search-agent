@@ -6,6 +6,7 @@ import {
   sqliteTable,
   text,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import { createdAt, updatedAt } from "./columns";
 import { intakeItems } from "./intake";
@@ -30,6 +31,7 @@ export const workItems = sqliteTable(
     leasedAt: text("leased_at"),
     leaseExpiresAt: text("lease_expires_at"),
     workerId: text("worker_id"),
+    currentAttemptId: text("current_attempt_id"),
     attemptCount: integer("attempt_count").notNull().default(0),
     maxAttempts: integer("max_attempts").notNull().default(3),
     nextRunAt: text("next_run_at"),
@@ -38,6 +40,9 @@ export const workItems = sqliteTable(
   },
   (t) => [
     index("work_items_state_next_run").on(t.state, t.nextRunAt),
+    uniqueIndex("v13_one_live_tailor")
+      .on(t.jobId)
+      .where(sql.raw("kind='TAILOR' AND state IN ('QUEUED','RUNNING')")),
     index("work_items_job_id").on(t.jobId),
     index("work_items_intake_item_id").on(t.intakeItemId),
     check("work_items_kind", sql`${t.kind} IN ('SCRAPE','TAILOR')`),
@@ -74,11 +79,12 @@ export const workAttempts = sqliteTable(
   },
   (t) => [
     unique("work_attempts_item_number").on(t.workItemId, t.attemptNumber),
+    uniqueIndex("v13_attempt_owner").on(t.id, t.workItemId),
     index("work_attempts_work_item_id").on(t.workItemId),
     check("work_attempts_number", sql`${t.attemptNumber} >= 1`),
     check(
       "work_attempts_result",
-      sql`${t.result} IN ('SUCCEEDED','FAILED','BLOCKED')`,
+      sql`${t.result} IN ('RUNNING','SUCCEEDED','FAILED','BLOCKED')`,
     ),
   ],
 );

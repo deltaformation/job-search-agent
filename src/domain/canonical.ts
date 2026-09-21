@@ -90,3 +90,20 @@ export function canonicalJson(value: unknown): string {
 export function canonicalText(text: string): string {
   return text.replace(/\0/g, "").normalize("NFC").replace(/\r\n?/g, "\n").trim();
 }
+
+/**
+ * Deterministic code-point-safe truncation for schema-bounded
+ * server-built text (labels, summaries). Returns the input unchanged
+ * when it already fits; otherwise keeps the first `maxChars` code
+ * points. Never splits a surrogate pair. This bounds derived display
+ * text only — user-authored guidance still fails 400 over limit
+ * instead of truncating.
+ */
+export function truncateCodePoints(text: string, maxChars: number): string {
+  const limit = Math.max(0, Math.floor(maxChars));
+  const points = [...text];
+  if (points.length <= limit) {
+    return text;
+  }
+  return points.slice(0, limit).join("");
+}

@@ -14,6 +14,7 @@ import {
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowUpDown, Search, X } from "lucide-react";
 import type { BoardStatus } from "@/src/domain/enums";
 import type { BoardCardView, BoardView } from "@/src/server/board";
@@ -124,12 +125,36 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
     [limits],
   );
 
-  // The drawer mount is a heavy synchronous render, so it runs as a
-  // transition: the click paints first and the tree follows. Stable
-  // references keep memoized cards from re-rendering on unrelated updates.
-  const handleOpenJob = useCallback((jobId: string) => {
+  let router: ReturnType<typeof useRouter> | null = null;
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    router = useRouter();
+  } catch {
+    router = null;
+  }
+
+  // Activating a card opens the exact job tailor route (C1).
+  // Clicking Properties on a card opens the legacy drawer (C1, Deliverables 2 & 5).
+  const handleOpenJob = useCallback(
+    (jobId: string) => {
+      if (router && typeof router.push === "function") {
+        router.push(`/jobs/${jobId}/tailor`);
+        return;
+      }
+      if (typeof window !== "undefined" && window.location) {
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+        window.location.assign(`/jobs/${jobId}/tailor`);
+        return;
+      }
+      startTransition(() => setOpenJobId(jobId));
+    },
+    [router],
+  );
+
+  const handleOpenProperties = useCallback((jobId: string) => {
     startTransition(() => setOpenJobId(jobId));
   }, []);
+
   const handleCloseJob = useCallback(() => {
     startTransition(() => setOpenJobId(null));
   }, []);
@@ -457,6 +482,7 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
 
       {board !== null && (
         <DndContext
+          id="board-dnd-context"
           sensors={sensors}
           collisionDetection={closestCorners}
           accessibility={{ announcements }}
@@ -472,6 +498,7 @@ export default function Board({ initialData = null }: { initialData?: BoardView 
                 total={column.total}
                 cards={column.cards.slice(0, limitFor(column.status))}
                 onOpen={handleOpenJob}
+                onOpenProperties={handleOpenProperties}
                 onShowMore={(status) => void showMore(status)}
                 loadingMore={loadingMore}
               />

@@ -19,10 +19,14 @@ async function parseError(response: Response): Promise<{ message: string; payloa
     const body = (await response.json()) as {
       error?: unknown;
       reason?: unknown;
+      action?: unknown;
     };
     const error = typeof body.error === "string" ? body.error : "request failed";
     const reason = typeof body.reason === "string" ? body.reason : null;
-    return { message: reason === null ? error : `${error}: ${reason}`, payload: body };
+    const action = typeof body.action === "string" && body.action !== "" ? body.action : null;
+    const message =
+      reason === null ? error : action === null ? `${error}: ${reason}` : `${error}: ${reason} ${action}`;
+    return { message, payload: body };
   } catch {
     return { message: `request failed (${response.status})`, payload: null };
   }

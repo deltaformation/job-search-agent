@@ -1,0 +1,98 @@
+{
+  "caseId": "S2_SPARSE_01",
+  "description": "Two-requirement JD with one approved fact; plan accepts with zero suggestions.",
+  "extractionId": "11111111-1111-4111-8111-111111111111",
+  "profileVersionId": "22222222-2222-4222-8222-222222222222",
+  "planId": "33333333-3333-4333-8333-333333333333",
+  "preparationId": "44444444-4444-4444-8444-444444444444",
+  "jdHash": "fcee20cab472b2cc049932ac47fb4befb5bc1843ca8dd04710d9dcb3466eec20",
+  "payloadHash": "7642cd795a1f94d02e2e9b3e6e6108d693e51d291274d9588c063734af15b5e0",
+  "evidenceHash": "ad9450c17896e6880b2307bbe54a44ced0bf9ab48a8adac742929fcb2af2aa46",
+  "masterProjectionHash": "3417940454e5a4fe3ab817db241f6b5cb4ef83bf3db887a5f19f5521b6cf087f",
+  "planHash": "2556709c973138b1c5289998926e8132fb96df67bdf62880bd2d8342d1f6e5cb",
+  "versionCreatedAt": "2026-09-10T00:00:00.000Z",
+  "planAcceptedAt": "2026-09-17T00:00:00.000Z",
+  "now": "2026-09-17T01:00:00.000Z",
+  "priorities": [
+    {
+      "key": "support",
+      "priorityId": "b19df8ccd531d20a35fd425c1d6790cf10ec761e6fda4564a15cd89565064191",
+      "quote": {
+        "text": "customer support",
+        "startByte": 91,
+        "endByte": 107
+      },
+      "count": 1,
+      "category": "skill",
+      "importance": "required",
+      "support": "supported",
+      "factIds": [
+        "fact-acme-1"
+      ]
+    },
+    {
+      "key": "ticketing",
+      "priorityId": "ffc72119deb60e23734e666ed60e3d9f497ef9889af4125eacb1671087250eeb",
+      "quote": {
+        "text": "ticketing systems",
+        "startByte": 139,
+        "endByte": 156
+      },
+      "count": 1,
+      "category": "skill",
+      "importance": "required",
+      "support": "gap",
+      "factIds": []
+    }
+  ],
+  "plan": {
+    "schemaVersion": "step2-plan/v1",
+    "planId": "33333333-3333-4333-8333-333333333333",
+    "preparationId": "44444444-4444-4444-8444-444444444444",
+    "extractionId": "11111111-1111-4111-8111-111111111111",
+    "jdHash": "fcee20cab472b2cc049932ac47fb4befb5bc1843ca8dd04710d9dcb3466eec20",
+    "profileVersionId": "22222222-2222-4222-8222-222222222222",
+    "evidenceHash": "ad9450c17896e6880b2307bbe54a44ced0bf9ab48a8adac742929fcb2af2aa46",
+    "masterProjectionHash": "3417940454e5a4fe3ab817db241f6b5cb4ef83bf3db887a5f19f5521b6cf087f",
+    "priorities": [
+      {
+        "priorityId": "b19df8ccd531d20a35fd425c1d6790cf10ec761e6fda4564a15cd89565064191",
+        "quote": {
+          "text": "customer support",
+          "startByte": 91,
+          "endByte": 107
+        },
+        "count": 1,
+        "category": "skill",
+        "importance": "required",
+        "support": "supported",
+        "factIds": [
+          "fact-acme-1"
+        ]
+      },
+      {
+        "priorityId": "ffc72119deb60e23734e666ed60e3d9f497ef9889af4125eacb1671087250eeb",
+        "quote": {
+          "text": "ticketing systems",
+          "startByte": 139,
+          "endByte": 156
+        },
+        "count": 1,
+        "category": "skill",
+        "importance": "required",
+        "support": "gap",
+        "factIds": []
+      }
+    ],
+    "featuredPriorityIds": [
+      "b19df8ccd531d20a35fd425c1d6790cf10ec761e6fda4564a15cd89565064191",
+      "ffc72119deb60e23734e666ed60e3d9f497ef9889af4125eacb1671087250eeb"
+    ],
+    "positioning": {
+      "keepMasterSummary": "",
+      "angles": []
+    },
+    "suggestions": [],
+    "rationale": "Sparse evidence: two priorities, no usable suggestions, no padding."
+  }
+}

@@ -77,15 +77,22 @@ describe("chatCompletions", () => {
     });
     expect(result).toEqual({ model: "gemini-2.5-pro", content: '{"a":1}' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+    const [url, init] = fetchMock.mock.calls[0] as [string, { body: string; headers: Record<string, string> }];
     expect(url).toBe(googleUrl("gemini-2.5-pro", "k"));
     expect(url).toContain("generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent");
+    expect(init.headers["x-goog-api-key"]).toBe("k");
     const body = JSON.parse(init.body) as Record<string, unknown>;
     expect(body).toMatchObject({
       systemInstruction: { parts: [{ text: "be terse" }] },
       generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
     });
     expect(body["contents"]).toEqual([{ role: "user", parts: [{ text: "hi" }] }]);
+  });
+
+  it("strips models/ prefix in googleUrl", () => {
+    expect(googleUrl("models/gemini-3.5-flash-lite", "k")).toBe(
+      googleUrl("gemini-3.5-flash-lite", "k"),
+    );
   });
 
   it("maps assistant turns to the model role", async () => {
@@ -154,6 +161,34 @@ describe("chatCompletions", () => {
     }).catch((cause: unknown) => cause);
     expect(error).toBeInstanceOf(GoogleError);
     expect((error as GoogleError).status).toBe(503);
+  });
+
+  it("extracts Google API error message when available in response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        text: async () =>
+          JSON.stringify({
+            error: {
+              code: 404,
+              message: "models/gemini-3.5-flash-lite is not found for API version v1beta",
+              status: "NOT_FOUND",
+            },
+          }),
+      }),
+    );
+    const error = await chatCompletions({
+      apiKey: "k",
+      models: ["gemini-3.5-flash-lite"],
+      messages: [],
+    }).catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(GoogleError);
+    expect((error as GoogleError).status).toBe(404);
+    expect((error as GoogleError).message).toContain(
+      "models/gemini-3.5-flash-lite is not found for API version v1beta",
+    );
   });
 
   it("never fails over on auth errors", async () => {

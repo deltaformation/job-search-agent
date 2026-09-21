@@ -15,6 +15,7 @@ import {
 import { defaultResolver, type DnsResolver } from "./ssrf";
 import { canonicalizeUrl, detectAtsType } from "./urls";
 import type { PersistExtractionInput } from "./evidence";
+import { isProviderKeyConfigured } from "../server/preparation";
 import {
   FETCH_ENVELOPE_VERSION,
   FetchEnvelopeV1,
@@ -192,6 +193,7 @@ export function createScrapeHandler(deps: ScrapeHandlerDeps): WorkHandler {
           },
       ].filter((artifact) => artifact !== null),
       evidenceDir: deps.evidenceDir,
+      providerKeyPresent: isProviderKeyConfigured(process.env),
       now: finishedAt,
     });
     if (finalOutcome === "SUCCEEDED") {

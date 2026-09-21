@@ -2,26 +2,34 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest";
 import SettingsModal from "../../../../components/settings/SettingsModal";
 
+const providerChains = {
+  openrouter: {
+    configured: false,
+    fingerprint: null,
+    models: { primary: "provider/primary", fallback: "provider/fallback" },
+  },
+  google: {
+    configured: true,
+    fingerprint: "abc12345",
+    models: { primary: "gemini-2.5-pro", fallback: "gemini-2.5-flash" },
+  },
+  meta: {
+    configured: false,
+    fingerprint: null,
+    models: { primary: "meta-muse", fallback: "meta-muse" },
+  },
+};
+
 const snapshot = {
   models: { primary: "provider/primary", fallback: "provider/fallback" },
   activeProvider: "openrouter",
-  providers: {
-    openrouter: {
-      configured: false,
-      fingerprint: null,
-      models: { primary: "provider/primary", fallback: "provider/fallback" },
-    },
-    google: {
-      configured: true,
-      fingerprint: "abc12345",
-      models: { primary: "gemini-2.5-pro", fallback: "gemini-2.5-flash" },
-    },
-    meta: {
-      configured: false,
-      fingerprint: null,
-      models: { primary: "meta-muse", fallback: "meta-muse" },
-    },
-  },
+  providers: providerChains,
+  savedProvider: "openrouter",
+  saved: { exists: true, provider: "openrouter", providers: providerChains },
+  restartNeeded: false,
+  restartDetail: null,
+  worker: null,
+  workerMatch: null,
   openRouter: { configured: false, fingerprint: null },
   profile: { activeVersion: 2, activeVersionAt: "2026-09-01T12:00:00.000Z", displayName: "Test candidate", approvedFacts: 5, verifiedSkills: 3 },
   storage: { databaseBytes: 100, walBytes: 0, jobCount: 4, evidenceBytes: 20, evidenceFiles: 1,
@@ -44,6 +52,7 @@ const profileSummaries = [
       yearsOfExperience: 9,
       targetTitles: [],
       targetLocations: [],
+      careerKeywords: [],
     },
     executiveNarrative: "Platform narrative.",
     versionCount: 2,
@@ -51,6 +60,7 @@ const profileSummaries = [
     latestVersionAt: "2026-09-01T12:00:00.000Z",
     activeVersion: 2,
     approvedFacts: 5,
+    activeSource: null,
   },
   {
     id: "profile-2",
@@ -64,6 +74,7 @@ const profileSummaries = [
     latestVersionAt: null,
     activeVersion: null,
     approvedFacts: 0,
+    activeSource: null,
   },
 ];
 
@@ -153,7 +164,7 @@ it("auto-dismisses settings successes while [X] clears them at once", async () =
         return {
           ok: true,
           status: 200,
-          json: async () => ({ primary: "p", fallback: "f", restartRequired: true }),
+          json: async () => ({ primary: "p", fallback: "f", savedProvider: "openrouter", restartRequired: true }),
         };
       }
       return { ok: true, status: 200, json: async () => snapshot };
@@ -166,13 +177,13 @@ it("auto-dismisses settings successes while [X] clears them at once", async () =
     );
     fireEvent.click(screen.getByRole("button", { name: "Save Models" }));
     await vi.waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(/model chain saved/i),
+      expect(screen.getByRole("status")).toHaveTextContent(/OpenRouter saved.*restart/i),
     );
     fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
     expect(screen.queryByRole("status")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Save Models" }));
     await vi.waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(/model chain saved/i),
+      expect(screen.getByRole("status")).toHaveTextContent(/OpenRouter saved.*restart/i),
     );
     act(() => {
       vi.advanceTimersByTime(3500);
@@ -214,17 +225,22 @@ it("keeps settings errors until manually dismissed", async () => {
 });
 
 it("shows provider cards with status and saves the selected chain", async () => {
-  const { fetchMock } = setup();
+  const fetchMock = mockFetch({
+    onWrite: (url) =>
+      url === "/api/settings/model"
+        ? { primary: "gemini-2.5-pro", fallback: "gemini-2.5-flash", savedProvider: "google", restartRequired: true }
+        : undefined,
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<SettingsModal open onOpenChange={() => {}} />);
   selectTab("AI & Models");
   await waitFor(() =>
     expect(screen.getByLabelText("Primary model")).toHaveValue("provider/primary"),
   );
   expect(screen.getByRole("radio", { name: /Google AI Studio/ })).toHaveTextContent(
-    "Connected · abc12345",
+    "Configured · abc12345",
   );
-  expect(screen.getByRole("radio", { name: /Meta Muse/ })).toHaveTextContent(
-    "Key Missing in .env.local",
-  );
+  expect(screen.getByRole("radio", { name: /Meta Muse/ })).toHaveTextContent("Key missing");
   fireEvent.click(screen.getByRole("radio", { name: /Google AI Studio/ }));
   expect(screen.getByRole("radio", { name: /Google AI Studio/ })).toHaveAttribute(
     "aria-checked",
@@ -234,7 +250,7 @@ it("shows provider cards with status and saves the selected chain", async () => 
   expect(screen.getByLabelText("Fallback model")).toHaveValue("gemini-2.5-flash");
   fireEvent.click(screen.getByRole("button", { name: "Save Models" }));
   await waitFor(() =>
-    expect(screen.getByText(/model chain saved/i)).toBeInTheDocument(),
+    expect(screen.getByText(/Google AI Studio saved.*restart/i)).toBeInTheDocument(),
   );
   const modelPost = fetchMock.mock.calls.find(
     ([url]) => url === "/api/settings/model",
@@ -247,13 +263,24 @@ it("shows provider cards with status and saves the selected chain", async () => 
   });
 });
 
-it("tests the selected provider and shows latency", async () => {
+it("tests the entered draft models and shows the tested model", async () => {
   const fetchMock = vi.fn(async (url: string) => {
     if (url === "/api/settings/ai-test") {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ ok: true, model: "gemini-2.5-pro", latencyMs: 342, error: null }),
+        json: async () => ({
+          ok: true,
+          model: "gemini-2.5-pro",
+          latencyMs: 342,
+          error: null,
+          provider: "google",
+          testedModel: "gemini-2.5-pro",
+          keySource: "stored",
+          reasonCode: "ok",
+          action: null,
+          fallback: null,
+        }),
       };
     }
     return { ok: true, status: 200, json: async () => snapshot };
@@ -267,15 +294,185 @@ it("tests the selected provider and shows latency", async () => {
   fireEvent.click(screen.getByRole("radio", { name: /Google AI Studio/ }));
   fireEvent.click(screen.getByRole("button", { name: "Test Connection" }));
   await waitFor(() =>
-    expect(screen.getByText("✓ Connected (342 ms, gemini-2.5-pro)")).toBeInTheDocument(),
+    expect(screen.getByRole("group", { name: "Connection test result" })).toHaveTextContent(
+      /Test passed.*gemini-2.5-pro.*stored key, nothing saved/,
+    ),
   );
   const pingPost = fetchMock.mock.calls.find(
     ([url]) => url === "/api/settings/ai-test",
   ) as [string, { body: string } | undefined] | undefined;
-  expect(JSON.parse(pingPost?.[1]?.body ?? "{}")).toEqual({ provider: "google" });
+  expect(JSON.parse(pingPost?.[1]?.body ?? "{}")).toEqual({
+    provider: "google",
+    model: "gemini-2.5-pro",
+    fallbackModel: "gemini-2.5-flash",
+  });
 });
 
-it("renders career profiles with default badge and master resume metadata", async () => {
+it("keeps the saved selection when it differs from the running provider", async () => {
+  // Reported regression: OpenRouter saved while Google runs — the form
+  // must open on the saved OpenRouter draft, not revert to Google.
+  const diverged = {
+    ...snapshot,
+    activeProvider: "google",
+    savedProvider: "openrouter",
+    saved: { exists: true, provider: "openrouter", providers: providerChains },
+    restartNeeded: true,
+    restartDetail: "saved provider is OpenRouter but the web process is running Google AI Studio",
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      if (url === "/api/settings/profiles") {
+        return { ok: true, status: 200, json: async () => ({ profiles: [] }) };
+      }
+      return { ok: true, status: 200, json: async () => diverged };
+    }),
+  );
+  render(<SettingsModal open onOpenChange={() => {}} />);
+  selectTab("AI & Models");
+  await waitFor(() =>
+    expect(screen.getByLabelText("Primary model")).toHaveValue("provider/primary"),
+  );
+  expect(screen.getByRole("radio", { name: /OpenRouter/ })).toHaveAttribute("aria-checked", "true");
+  expect(screen.getByRole("radio", { name: /OpenRouter/ })).toHaveTextContent("Saved");
+  expect(screen.getByRole("radio", { name: /Google AI Studio/ })).toHaveTextContent("Active");
+  expect(screen.getByRole("note", { name: "Restart required" })).toHaveTextContent(
+    /OpenRouter saved — restart required/,
+  );
+});
+
+it("invalidates the test result when a tested input changes", async () => {
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url === "/api/settings/ai-test") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          model: "provider/primary",
+          latencyMs: 12,
+          error: null,
+          testedModel: "provider/primary",
+          keySource: "stored",
+          reasonCode: "ok",
+          action: null,
+          fallback: null,
+        }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => snapshot };
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<SettingsModal open onOpenChange={() => {}} />);
+  selectTab("AI & Models");
+  await waitFor(() =>
+    expect(screen.getByLabelText("Primary model")).toHaveValue("provider/primary"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Test Connection" }));
+  await waitFor(() =>
+    expect(screen.getByRole("group", { name: "Connection test result" })).toBeInTheDocument(),
+  );
+  fireEvent.change(screen.getByLabelText("Primary model"), { target: { value: "provider/edited" } });
+  expect(screen.queryByRole("group", { name: "Connection test result" })).toBeNull();
+});
+
+it("saves and removes keys write-only with explicit removal", async () => {
+  const { fetchMock } = setupProfiles({
+    profiles: [],
+    onWrite: (url) =>
+      url === "/api/settings/keys"
+        ? { provider: "openrouter", configured: true, changed: true, message: "OpenRouter key saved." }
+        : undefined,
+  });
+  selectTab("AI & Models");
+  await waitFor(() =>
+    expect(screen.getByLabelText(/API key for OpenRouter/)).toBeInTheDocument(),
+  );
+  fireEvent.change(screen.getByLabelText(/API key for OpenRouter/), {
+    target: { value: "typed-synthetic-key" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save Key" }));
+  await waitFor(() =>
+    expect(screen.getByRole("status")).toHaveTextContent(/OpenRouter key saved/),
+  );
+  const savePost = fetchMock.mock.calls.find(
+    ([url]) => url === "/api/settings/keys",
+  ) as [string, { body: string } | undefined] | undefined;
+  expect(JSON.parse(savePost?.[1]?.body ?? "{}")).toEqual({
+    provider: "openrouter",
+    key: "typed-synthetic-key",
+  });
+  // Key field clears after save; removal needs two clicks.
+  expect(screen.getByLabelText(/API key for OpenRouter/)).toHaveValue("");
+  fireEvent.click(screen.getByRole("button", { name: "Remove Key" }));
+  expect(screen.getByRole("button", { name: "Confirm Remove" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm Remove" }));
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.filter(([url]) => url === "/api/settings/keys"),
+    ).toHaveLength(2),
+  );
+  const removePost = fetchMock.mock.calls.filter(
+    ([url]) => url === "/api/settings/keys",
+  )[1] as [string, { body: string } | undefined];
+  expect(JSON.parse(removePost?.[1]?.body ?? "{}")).toEqual({
+    provider: "openrouter",
+    remove: true,
+  });
+});
+
+it("sends a transient key with the draft test and preserves input on failure", async () => {
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url === "/api/settings/ai-test") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: false,
+          model: "provider/draft",
+          latencyMs: 50,
+          error: "OpenRouter returned HTTP 502: a service-side error.",
+          provider: "openrouter",
+          testedModel: "provider/draft",
+          keySource: "transient",
+          reasonCode: "server",
+          action: "Retry the test shortly.",
+          fallback: null,
+        }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => snapshot };
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<SettingsModal open onOpenChange={() => {}} />);
+  selectTab("AI & Models");
+  await waitFor(() =>
+    expect(screen.getByLabelText("Primary model")).toHaveValue("provider/primary"),
+  );
+  fireEvent.change(screen.getByLabelText("Primary model"), { target: { value: "provider/draft" } });
+  fireEvent.change(screen.getByLabelText(/API key for OpenRouter/), {
+    target: { value: "transient-draft-key" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Test Connection" }));
+  await waitFor(() =>
+    expect(screen.getByRole("group", { name: "Connection test result" })).toHaveTextContent(
+    /Test failed.*502.*Retry the test shortly/,
+    ),
+  );
+  const pingPost = fetchMock.mock.calls.find(
+    ([url]) => url === "/api/settings/ai-test",
+  ) as [string, { body: string } | undefined] | undefined;
+  expect(JSON.parse(pingPost?.[1]?.body ?? "{}")).toMatchObject({
+    provider: "openrouter",
+    model: "provider/draft",
+    apiKey: "transient-draft-key",
+  });
+  // Failure preserves every entered input.
+  expect(screen.getByLabelText("Primary model")).toHaveValue("provider/draft");
+  expect(screen.getByLabelText(/API key for OpenRouter/)).toHaveValue("transient-draft-key");
+});
+
+it("renders career profiles with readiness, setup actions, and legacy metadata", async () => {
   setupProfiles({ profiles: profileSummaries });
   await waitFor(() => expect(screen.getByText("Staff Engineer")).toBeVisible());
   expect(screen.getByText("Engineering Manager")).toBeVisible();
@@ -284,9 +481,15 @@ it("renders career profiles with default badge and master resume metadata", asyn
     "active v2",
   );
   expect(screen.getByRole("button", { name: "Set Default" })).toBeVisible();
-  expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(2);
+  expect(screen.getAllByRole("button", { name: "Set up" })).toHaveLength(2);
+  // Per-profile readiness with its next action, independent of the default.
+  expect(screen.getByText(/Active master v2/)).toBeVisible();
+  expect(screen.getByText(/No master yet/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "Start empty" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Create from existing profile" })).toBeVisible();
+  // Legacy-file status stays visible; per-profile exports live in workspaces.
   expect(screen.getByText("Test candidate")).toBeVisible();
-  expect(screen.getByText("Download JSON")).toHaveAttribute("href", "/api/settings/master-resume");
+  expect(screen.getByRole("button", { name: "Re-sync Master Resume" })).toBeVisible();
 });
 
 it("switches the default profile from the card list", async () => {
@@ -310,7 +513,7 @@ it("switches the default profile from the card list", async () => {
   expect(call).toBeDefined();
 });
 
-it("creates a career profile from the inline form", async () => {
+it("creates an empty career profile and opens its setup workspace", async () => {
   const { fetchMock } = setupProfiles({
     profiles: [],
     onWrite: (url) =>
@@ -319,21 +522,12 @@ it("creates a career profile from the inline form", async () => {
         : undefined,
   });
   await waitFor(() => expect(screen.getByText(/no career profiles yet/i)).toBeVisible());
-  fireEvent.click(screen.getByRole("button", { name: "New Career Profile" }));
+  fireEvent.click(screen.getByRole("button", { name: "Start empty" }));
   fireEvent.change(screen.getByLabelText("Name (slug)"), { target: { value: "data-lead" } });
   fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Data Lead" } });
-  fireEvent.click(screen.getByLabelText("Remote"));
-  fireEvent.click(screen.getByLabelText("Hybrid"));
-  fireEvent.change(screen.getByLabelText("Work authorization (comma-separated)"), {
-    target: { value: "US citizen, EU blue card" },
-  });
-  fireEvent.change(screen.getByLabelText("Sponsorship required"), { target: { value: "yes" } });
-  fireEvent.change(screen.getByLabelText("Years of experience"), { target: { value: "11" } });
-  fireEvent.change(screen.getByLabelText("Salary min"), { target: { value: "170000" } });
-  fireEvent.change(screen.getByLabelText("Salary target"), { target: { value: "210000" } });
-  fireEvent.click(screen.getByRole("button", { name: "Create Profile" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create empty profile" }));
   await waitFor(() =>
-    expect(screen.getByRole("status")).toHaveTextContent(/career profile .* created/i),
+    expect(screen.getByRole("status")).toHaveTextContent(/created empty/i),
   );
   const call = fetchMock.mock.calls.find(
     ([url, init]) =>
@@ -341,23 +535,14 @@ it("creates a career profile from the inline form", async () => {
       (init as { method?: string } | undefined)?.method === "POST",
   ) as [string, { body: string } | undefined] | undefined;
   expect(call).toBeDefined();
+  // Start-empty posts identity only; preferences/master setup continues below.
   expect(JSON.parse(call?.[1]?.body ?? "{}")).toEqual({
     name: "data-lead",
     displayName: "Data Lead",
-    workPreferences: {
-      workAuthorization: ["US citizen", "EU blue card"],
-      workMode: ["REMOTE", "HYBRID"],
-      sponsorshipRequired: true,
-      willingToRelocate: false,
-      targetTitles: [],
-      targetLocations: [],
-      yearsOfExperience: 11,
-      salaryExpectation: { min: 170000, target: 210000 },
-    },
   });
 });
 
-it("edits preferences on an existing profile with prefilled values", async () => {
+it("edits preferences in a setup workspace with prefilled values", async () => {
   const { fetchMock } = setupProfiles({
     profiles: profileSummaries,
     onWrite: (url) =>
@@ -366,16 +551,20 @@ it("edits preferences on an existing profile with prefilled values", async () =>
         : undefined,
   });
   await waitFor(() => expect(screen.getByText("Staff Engineer")).toBeVisible());
-  fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0] as HTMLElement);
-  expect(screen.getByLabelText("Display name")).toHaveValue("Staff Engineer");
-  expect(screen.getByLabelText("Remote")).toBeChecked();
-  expect(screen.getByLabelText("Work authorization (comma-separated)")).toHaveValue("US citizen");
-  fireEvent.change(screen.getByLabelText("Display name"), {
+  fireEvent.click(screen.getAllByRole("button", { name: "Set up" })[0] as HTMLElement);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Save preferences" })).toBeVisible(),
+  );
+  const prefs = screen.getByRole("region", { name: "Preferences" });
+  expect(
+    (prefs as HTMLElement).querySelector("#prefs-profile-1-display"),
+  ).toHaveValue("Staff Engineer");
+  fireEvent.change((prefs as HTMLElement).querySelector("#prefs-profile-1-display") as HTMLElement, {
     target: { value: "Staff Engineer II" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save preferences" }));
   await waitFor(() =>
-    expect(screen.getByRole("status")).toHaveTextContent(/career profile .* updated/i),
+    expect(screen.getByRole("status")).toHaveTextContent(/preferences for .* saved/i),
   );
   const call = fetchMock.mock.calls.find(
     ([url, init]) =>
@@ -393,33 +582,101 @@ it("edits preferences on an existing profile with prefilled values", async () =>
   expect(body["executiveNarrative"]).toBe("Platform narrative.");
 });
 
-it("rejects a non-JSON master resume upload with a validation error", async () => {
+it("guards workspace switches when edits are unsaved", async () => {
   setupProfiles({ profiles: profileSummaries });
   await waitFor(() => expect(screen.getByText("Staff Engineer")).toBeVisible());
-  const input = document.getElementById("settings-resume-file") as HTMLInputElement;
-  const file = new File(["not json {{{ "], "bad.json", { type: "application/json" });
-  fireEvent.change(input, { target: { files: [file] } });
+  fireEvent.click(screen.getAllByRole("button", { name: "Set up" })[0] as HTMLElement);
   await waitFor(() =>
-    expect(screen.getByRole("alert")).toHaveTextContent(/is not valid JSON/i),
+    expect(screen.getByRole("button", { name: "Save preferences" })).toBeVisible(),
+  );
+  fireEvent.change(document.getElementById("prefs-profile-1-display") as HTMLElement, {
+    target: { value: "Staff Engineer II" },
+  });
+  // The open workspace's own button reads "Close setup"; one "Set up" remains.
+  fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+  expect(screen.getByText(/unsaved changes\. Discard them and switch/i)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+  expect(
+    (document.getElementById("prefs-profile-1-display") as HTMLInputElement).value,
+  ).toBe("Staff Engineer II");
+  fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+  fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+  await waitFor(() =>
+    expect(document.getElementById("prefs-profile-2-display")).toBeVisible(),
   );
 });
 
-it("uploads a master resume and re-syncs it", async () => {
+it("rejects pasted non-JSON in onboarding while preserving the text", async () => {
+  setupProfiles({ profiles: profileSummaries });
+  await waitFor(() => expect(screen.getByText("Staff Engineer")).toBeVisible());
+  fireEvent.click(screen.getAllByRole("button", { name: "Set up" })[0] as HTMLElement);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "JSON upload / paste" })).toBeVisible(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "JSON upload / paste" }));
+  const box = document.getElementById("onboard-profile-1-json") as HTMLTextAreaElement;
+  fireEvent.change(box, { target: { value: "not json {{{ " } });
+  fireEvent.click(screen.getByRole("button", { name: "Validate & preview" }));
+  expect(screen.getByText(/not valid JSON/)).toBeVisible();
+  expect((document.getElementById("onboard-profile-1-json") as HTMLTextAreaElement).value).toBe(
+    "not json {{{ ",
+  );
+});
+
+it("validates then explicitly activates an onboarded master per profile", async () => {
   const { fetchMock } = setupProfiles({
     profiles: profileSummaries,
-    onWrite: (url) =>
-      url === "/api/settings/master-resume"
-        ? { ok: true, versionId: "v3", version: 3, activated: true, alreadyCurrent: false }
-        : undefined,
+    onWrite: (url) => {
+      if (url === "/api/settings/master-resume/parse") {
+        return {
+          ok: true,
+          payload: {
+            identity: { fullName: "Casey Doe" },
+            targetTitles: [],
+            targetLocations: [],
+            employment: [],
+            achievements: [],
+            skills: [],
+            languages: [],
+            education: [],
+            credentials: [],
+          },
+          summary: {
+            employments: 0,
+            achievements: 0,
+            approvedAchievements: 0,
+            pendingAchievements: 0,
+            skills: 0,
+            verifiedSkills: 0,
+            languages: 0,
+            education: 0,
+            credentials: 0,
+          },
+        };
+      }
+      if (url === "/api/settings/master-resume") {
+        return { ok: true, versionId: "v3", version: 3, activated: true, alreadyCurrent: false };
+      }
+      return undefined;
+    },
   });
-  await waitFor(() => expect(screen.getByText("Staff Engineer")).toBeVisible());
-  const input = document.getElementById("settings-resume-file") as HTMLInputElement;
-  const file = new File(['{"achievements":[]}'], "master-resume.json", {
-    type: "application/json",
-  });
-  fireEvent.change(input, { target: { files: [file] } });
+  await waitFor(() => expect(screen.getByText("Engineering Manager")).toBeVisible());
+  // Second profile: setup never touches the default.
+  fireEvent.click(screen.getAllByRole("button", { name: "Set up" })[1] as HTMLElement);
   await waitFor(() =>
-    expect(screen.getByRole("status")).toHaveTextContent(/re-synced to version 3/i),
+    expect(screen.getByRole("button", { name: "JSON upload / paste" })).toBeVisible(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "JSON upload / paste" }));
+  fireEvent.change(document.getElementById("onboard-profile-2-json") as HTMLElement, {
+    target: { value: '{"identity":{"fullName":"Casey Doe"}}' },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Validate & preview" }));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Review and activate master" })).toBeVisible(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Review and activate master" }));
+  await waitFor(() =>
+    expect(screen.getByRole("status")).toHaveTextContent(/reviewed and activated as version 3/i),
   );
   const call = fetchMock.mock.calls.find(
     ([url, init]) =>
@@ -427,7 +684,31 @@ it("uploads a master resume and re-syncs it", async () => {
       (init as { method?: string } | undefined)?.method === "POST",
   ) as [string, { body: string } | undefined] | undefined;
   expect(call).toBeDefined();
-  expect(JSON.parse(call?.[1]?.body ?? "{}")).toEqual({ content: { achievements: [] } });
+  expect(JSON.parse(call?.[1]?.body ?? "{}")).toMatchObject({
+    profileId: "profile-2",
+    activate: true,
+  });
+});
+
+it("opens a deep-linked profile workspace from an open request", async () => {
+  const fetchMock = mockFetch({ profiles: profileSummaries });
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <SettingsModal
+      open
+      onOpenChange={() => {}}
+      openRequest={{ tab: "profile", profileId: "profile-2", seq: 1 }}
+    />,
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("tab", { name: "Candidate Profile" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    ),
+  );
+  await waitFor(() =>
+    expect(document.getElementById("prefs-profile-2-display")).toBeVisible(),
+  );
 });
 
 it("resets section scroll to the top when switching tabs", async () => {

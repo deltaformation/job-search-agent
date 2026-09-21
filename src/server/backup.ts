@@ -179,6 +179,7 @@ export async function createBackupArchive(input: BackupInput): Promise<BackupRes
   const files: WalkedFile[] = [
     ...walkArchiveDir(paths.evidenceDir, "evidence"),
     ...walkArchiveDir(paths.artifactsDir, "artifacts"),
+    ...walkArchiveDir(paths.sourcesDir, "sources"),
     ...walkArchiveDir(candidateDir, "candidate"),
   ];
   const mtimeSeconds = Math.floor(now.getTime() / 1000);
@@ -340,6 +341,46 @@ export function verifyStagedDatabase(
         );
       }
     }
+    // WO-1.3-B: a staged database that already carries 0008 must hold
+    // all four tailoring tables, and every staged database must be
+    // foreign-key clean before it replaces the live file.
+    if (applied.includes("0008_tailoring_workspaces")) {
+      for (const table of [
+        "tailoring_workspaces",
+        "tailoring_request_inputs",
+        "generation_progress_events",
+        "resume_assessments",
+      ]) {
+        if (!tables.has(table)) {
+          throw new BackupError(
+            `staged backup applied 0008_tailoring_workspaces but is missing table ${table}; refusing to restore a partial upgrade`,
+          );
+        }
+      }
+    }
+    // WO-1.3-S2-B: a staged database that already carries 0009 must
+    // hold all five preparation tables.
+    if (applied.includes("0009_step2_preparation")) {
+      for (const table of [
+        "step2_preparations",
+        "step2_plans",
+        "step2_preparation_events",
+        "step2_draft_validations",
+        "step2_generation_inputs",
+      ]) {
+        if (!tables.has(table)) {
+          throw new BackupError(
+            `staged backup applied 0009_step2_preparation but is missing table ${table}; refusing to restore a partial upgrade`,
+          );
+        }
+      }
+    }
+    const violations = handle.sqlite.prepare("PRAGMA foreign_key_check").all() as Array<unknown>;
+    if (violations.length > 0) {
+      throw new BackupError(
+        `staged backup fails foreign-key validation (${violations.length} violation(s)); refusing to restore a corrupt database`,
+      );
+    }
     const jobs = (
       handle.sqlite.prepare("SELECT COUNT(*) AS count FROM jobs").get() as { count: number }
     ).count;
@@ -377,7 +418,7 @@ function removeIfExists(path: string): void {
 
 /** Remove `*.prev-*` leftovers from an interrupted swap (idempotent). */
 export function cleanupSwapLeftovers(paths: DataRootPaths, candidateDir: string): void {
-  for (const dir of [dirname(paths.databasePath), dirname(paths.evidenceDir), dirname(paths.artifactsDir), dirname(candidateDir)]) {
+  for (const dir of [dirname(paths.databasePath), dirname(paths.evidenceDir), dirname(paths.artifactsDir), dirname(paths.sourcesDir), dirname(candidateDir)]) {
     let entries: string[];
     try {
       entries = readdirSync(dir);
@@ -421,6 +462,7 @@ export interface RestoreResult {
 const PRESERVED_TABLES_IN_FK_ORDER = [
   "candidate_profiles",
   "candidate_profile_versions",
+  "candidate_sources",
   "candidate_facts",
   "candidate_snapshots",
   "candidate_snapshot_facts",
@@ -446,8 +488,9 @@ export interface ResetResult {
  * Board reset ("Clear All Jobs"). DELETEs cannot express this: BEFORE
  * DELETE triggers guard evidence/attempt/extraction/analysis/snapshot
  * history, so reset rebuilds instead — a fresh migrated database keeps
- * only the five candidate tables, evidence/artifact trees are emptied,
- * and the candidate source dir is preserved. A pre-reset backup is taken
+ * only the six candidate tables, evidence/artifact trees are emptied,
+ * and the candidate source dir plus profile sources tree are preserved.
+ * A pre-reset backup is taken
  * first (architecture §8); the worker generation is bumped so the
  * worker reopens without a restart. The live handle must not be used
  * after this resolves.
@@ -572,10 +615,12 @@ export async function restoreArchive(input: RestoreInput): Promise<RestoreResult
     const stagedDirs = {
       evidence: join(stagingDir, "evidence"),
       artifacts: join(stagingDir, "artifacts"),
+      sources: join(stagingDir, "sources"),
       candidate: join(stagingDir, "candidate"),
     };
     mkdirSync(stagedDirs.evidence, { recursive: true });
     mkdirSync(stagedDirs.artifacts, { recursive: true });
+    mkdirSync(stagedDirs.sources, { recursive: true });
     mkdirSync(stagedDirs.candidate, { recursive: true });
     for (const [name, data] of verified.members) {
       if (name === MANIFEST_MEMBER || name === DATABASE_MEMBER) {
@@ -589,9 +634,11 @@ export async function restoreArchive(input: RestoreInput): Promise<RestoreResult
           ? stagedDirs.evidence
           : top === "artifacts"
             ? stagedDirs.artifacts
-            : top === "candidate"
-              ? stagedDirs.candidate
-              : null;
+            : top === "sources"
+              ? stagedDirs.sources
+              : top === "candidate"
+                ? stagedDirs.candidate
+                : null;
       if (targetRoot === null || rest === "") {
         throw new BackupError(`archive member targets an unknown root: ${name.slice(0, 60)}`);
       }
@@ -612,6 +659,7 @@ export async function restoreArchive(input: RestoreInput): Promise<RestoreResult
     }
     atomicFileSwap(paths.evidenceDir, stagedDirs.evidence, stamp);
     atomicFileSwap(paths.artifactsDir, stagedDirs.artifacts, stamp);
+    atomicFileSwap(paths.sourcesDir, stagedDirs.sources, stamp);
     atomicFileSwap(candidateDir, stagedDirs.candidate, stamp);
     writeGeneration(paths.root, now.toISOString());
     return { manifest: verified.manifest, preRestoreBackup: safety.filename, jobs: report.jobs };

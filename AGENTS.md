@@ -32,7 +32,10 @@ intent; code, migrations, data, artifacts, tests, and commits prove reality.
 
 - Own one bounded task per session; say what it is before starting.
 - Record the task prompt, outcome, implementation changes, and official handoff
-  block by appending an entry to the active execution log (`docs/work-orders-v1.1.md`).
+  block by appending an entry to `docs/execution-log-v1.2.md`.
+  Scope lives in `docs/work-orders-v1.2.md`; acceptance evidence lives in
+  `docs/acceptance-v1.2.md`. Keep prompts and historical handoffs out of the scope file.
+  `docs/work-orders-v1.1.md` is preserved history.
 - Use a separate branch/worktree for concurrent work that might overlap.
 - Do not let two agents edit `package.json`, the lockfile, one migration, or the
   same generated artifact at the same time.
@@ -166,3 +169,14 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+<!-- CODEGRAPH_START -->
+## CodeGraph
+
+In repositories indexed by CodeGraph (a `.codegraph/` directory exists at the repo root), reach for it BEFORE grep/find or reading files when you need to understand or locate code:
+
+- **MCP tool** (when available): `codegraph_explore` answers most code questions in one call — the relevant symbols' verbatim source plus the call paths between them, including dynamic-dispatch hops grep can't follow. Name a file or symbol in the query to read its current line-numbered source. If it's listed but deferred, load it by name via tool search.
+- **Shell** (always works): `codegraph explore "<symbol names or question>"` prints the same output.
+
+If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is the user's decision.
+<!-- CODEGRAPH_END -->

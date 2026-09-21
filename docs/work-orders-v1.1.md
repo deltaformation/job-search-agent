@@ -1082,3 +1082,166 @@ Safety/human checkpoint:
   - Metadata-only change; no code, schema, queue, provider, or boundary behavior touched. No commit/tag created — release tagging is the human's call.
 ```
 
+---
+
+## Record 12: System & API Health Diagnostics Dashboard & Header "Ready" Integration
+
+**Work Order ID:** `WO-1.1-HEALTH`
+**Scope:** API Health & Platform Diagnostics Redesign
+**Status:** `implemented`
+
+### Prompt Given to Agent
+```markdown
+now redesign the api health page which points to this section of the header "Ready"
+```
+
+### Official Handoff
+```text
+Task: Redesign System & API Health diagnostics dashboard and connect header "Ready" badge
+Outcome: Built a dedicated, first-class System & API Health diagnostics dashboard at /health (`app/health/page.tsx`) featuring real-time probe execution against /api/health, live roundtrip latency measurement (ms), SQLite database & WAL mode inspection, verified migrations checklist, data-root evidence/artifacts vault integrity checks, local-only 127.0.0.1 air-gapped security boundary enforcement, and an expandable raw JSON payload inspector with clipboard copy. Converted the static "Ready" indicator in AppHeader (`components/AppHeader.tsx`) into an accessible, interactive Link to /health with an animated ping indicator and active route styling. Modernized the root platform status components (`components/PlatformStatus.tsx` and `app/page.tsx`) to align with the Board and Intake spacing and density while preserving accessibility and test invariants. Added complete unit test coverage in `tests/unit/pages/health.test.tsx` and verified AppHeader navigation tests.
+Status: implemented
+Files changed:
+  - app/health/page.tsx (new)
+  - components/AppHeader.tsx (converted Ready badge to accessible Link to /health)
+  - components/PlatformStatus.tsx (modernized layout, added diagnostic chips, link to /health)
+  - app/page.tsx (aligned spacing to match board/intake grid, added secondary hub links)
+  - tests/unit/pages/health.test.tsx (new unit test suite for health page)
+  - tests/unit/components/AppHeader.test.tsx (verified Ready link href=/health)
+  - docs/work-orders-v1.1.md (appended Record 12)
+Migrations/data effects: none (UI & diagnostics presentation only)
+Verification performed and exact result:
+  - npm run typecheck: 0 errors
+  - npm run lint: 0 warnings
+  - npx vitest run tests/unit/pages/health.test.tsx tests/unit/components/AppHeader.test.tsx tests/unit/platform-status.test.tsx tests/unit/security/health.test.ts: 8/8 passed
+  - npx vitest run --exclude '**/browser/**': 121 files / 951 tests passed (100%)
+  - node scripts/check-project-context.mjs: 11/11 consistent
+  - npx next build --webpack: successful production build, /health generated as static route
+Acceptance criteria not yet proven:
+  - User visual impression in Chrome / macOS Job Tracker.app
+Decisions or deviations:
+  - REST endpoint /api/health kept unchanged returning JSON to preserve contracts with Playwright, launcher, and extension; /health provides the rich diagnostic GUI.
+Safety/human checkpoint:
+  - Preserves 127.0.0.1 localhost boundary, foreign keys, synchronous SQLite transactions, and immutable fact citation rules. No external network access or credential bypass.
+```
+
+---
+
+## Record 13: Release 1.1 Comprehensive Analysis & Alignment Audit
+
+**Work Order ID:** `WO-1.1-AUDIT`
+
+**Scope:** Original user intent → roadmap → work orders → implementation and acceptance evidence
+
+**Baseline:** `bd7a227` plus existing uncommitted Record 12 health-dashboard changes
+**Date:** 2026-09-14 UTC / 2026-09-13 Toronto
+
+### Prompt Given to Agent
+
+The user requested: “do a Comprehensive Analysis & Alignment Audit: Release 1.1,” explaining that after using v1.1 they felt a gap between their initial vision and the build. They supplied `docs/roadmap-v1.1.md`, this execution log, and original quotes labeled Steps 231, 235, 241, 251, and 265 covering multi-profile settings, master resume management and styling, direct providers, keyword/directive-led tailoring, resume version hierarchy, and Kanban/header ergonomics. The audit treats these quotes as primary intent evidence and does not infer the content of omitted assistant replies.
+
+### Outcome
+
+Created [`alignment-audit-v1.1.md`](alignment-audit-v1.1.md), with a requirements matrix, ten evidenced findings, planning-to-work-order omissions, a synthetic keyword reproduction, verification limits, and prioritized corrective acceptance gates. No product fixes are included in this audit.
+
+### Official Handoff
+
+```text
+Task: Comprehensive Release 1.1 analysis and alignment audit against supplied original user quotes, roadmap, work orders, actual implementation, and tests.
+Outcome: Audit completed. Release is partially aligned: automatic initial generation conflicts with pre-generation guidance; guided re-tailoring is rejected and revision drops guidance; profile metadata/source management is incomplete; saved narrative does not reach generation; ATS extraction has a reproduced business-role failure; historical input review, previews, provider diagnostics and responsive acceptance remain incomplete. Report distinguishes proven gaps from ambiguous intent and unverified runtime behavior.
+Status: implemented
+Files changed:
+  - docs/alignment-audit-v1.1.md (new audit artifact)
+  - docs/work-orders-v1.1.md (appended this record, preserving existing Record 12 changes)
+Migrations/data effects: none; no live candidate database reads, approvals, revision actions, provider calls, or product changes.
+Verification performed and exact result:
+  - Focused Vitest run across ATS extraction, enqueue/revision, server tailoring, profile routes, drawer/settings and board performance: 8 files / 71 tests passed, exit 0.
+  - Full non-browser Vitest run: 121 files / 951 tests passed, exit 0 (includes existing health-dashboard working-tree tests).
+  - Direct synthetic PM JD extractor reproduction: Figma, Go, Jira; Go incorrectly matched go-to-market, substantive business phrases omitted.
+  - node scripts/check-project-context.mjs: 11 required files / 11 active entrypoints consistent before and after documentation changes.
+  - git diff --check: existing Record 12 Markdown hard-break trailing spaces reported; audit-added trailing spaces removed and unrelated formatting preserved.
+Acceptance criteria not yet proven:
+  - Product correction tasks are proposed, not implemented.
+  - Browser visual/preview behavior, complete guided worker journey, live Google/Meta requests and Apple Silicon INP are not certified by this audit.
+Decisions or deviations:
+  - Documentation-only audit; preserves roadmap/status history rather than silently changing release decisions.
+  - Existing uncommitted health work preserved; no overlapping product edits or agents.
+  - Status implemented applies to the audit deliverable, not to closure of the product alignment findings.
+Safety/human checkpoint:
+  - Human approval/manual application boundaries retained. No generated resume was approved or submitted. Corrective plan requires immutable prior versions and evidence-qualified claims.
+```
+
+---
+
+## Record 14: Release 1.2 Comprehensive Alignment Work-Order Plan
+
+**Work Order ID:** `WO-1.2-PLAN`
+
+**Date:** 2026-09-14 UTC / 2026-09-13 Toronto
+
+### Prompt Given to Agent
+
+“Build a comprehensive new work order v.1.2 which will fix these gaps, you can add recommended improvements on top that don't have extensive build requirements.”
+
+### Outcome
+
+Created [Release 1.2 Workflow Alignment Work Orders](work-orders-v1.2.md) as one scope/dependency/acceptance document: ten bounded work orders, shared execution instructions, explicit lifecycle and profile/source decisions, the complete user acceptance journey, a mapping of all ten audit findings to required evidence, and small recommended improvements. Implementation has not started. The plan explicitly dispositions extra templates, arbitrary format import and exact DOCX visual emulation instead of allowing those old planning promises to disappear silently.
+
+### Official Handoff
+
+```text
+Task: Build the comprehensive v1.2 work-order plan to close the v1.1 alignment audit gaps, with modest recommended improvements.
+Outcome: Created docs/work-orders-v1.2.md with WO-1.2-A through J, dependencies, bounded deliverables, migration and failure-mode requirements, per-order acceptance, a full synthetic/human acceptance story, release evidence ledger, and honest cutover rules.
+Status: implemented
+Files changed:
+  - docs/work-orders-v1.2.md (new plan; no implementation marked complete)
+  - docs/work-orders-v1.1.md (this required preparation record)
+Migrations/data effects: none; no product code, live records, provider settings or package versions changed.
+Verification performed and exact result:
+  - Reviewed audit F1-F10 against the plan's ownership/acceptance ledger: all ten assigned.
+  - Validated local document links, unique WO-1.2-A through J headings and absence of trailing whitespace in the new plan.
+  - node scripts/check-project-context.mjs: 11 required files / 11 active entrypoints consistent.
+  - Product tests not rerun for documentation-only planning; prior audit test results are not presented as new execution evidence.
+Acceptance criteria not yet proven:
+  - All product v1.2 acceptance gates remain Open; this task only prepares the implementation plan.
+Decisions or deviations:
+  - One combined plan/work-order/acceptance document prevents roadmap/work-order numbering drift.
+  - Active log references remain unchanged during planning; WO-1.2-A owns their coordinated switch before implementation proceeds.
+  - JSON upload/paste plus structured editing and Markdown export are in scope; arbitrary Markdown/YAML and DOCX/PDF import, extra templates and pixel-exact DOCX emulation are explicitly deferred to keep the build bounded.
+  - Existing uncommitted health-dashboard and audit work preserved.
+Safety/human checkpoint:
+  - Planned generation remains user-started, review/application remain explicit human actions, and previous facts/artifacts/approvals/applications remain immutable or append-only as applicable. No user action was simulated against live data.
+```
+
+---
+
+## Record 15: Incorporate PR Feedback into the v1.2 Plan
+
+**Work Order ID:** `WO-1.2-PLAN-REVIEW`
+
+### Prompt Given to Agent
+
+The user supplied PR-agent comments on a similar gap analysis and asked: “any points you believe are still missing and we need to add?” The comments raised re-tailoring 409 errors, secondary-profile onboarding, missing key inputs, cloning source profile facts, template alternatives, keyword history and runtime acceptance.
+
+### Official Handoff
+
+```text
+Task: Compare supplied PR comments against the v1.2 plan and add justified missing requirements.
+Outcome: Main blockers were already assigned. Added Create from existing profile with preserved provenance and explicit activation, server preflight and worker continuity acceptance, early C+D/G browser-worker checkpoints, first-run setup without terminal edits, and separate code/test/runtime/human evidence reporting. Added PR feedback disposition and new B6/C6/D8/G6/U15/U16 criteria.
+Status: implemented
+Files changed:
+  - docs/work-orders-v1.2.md
+  - docs/work-orders-v1.1.md (this record)
+Migrations/data effects: none; documentation changes only.
+Verification performed and exact result:
+  - Inspected current candidate snapshot resolution, master upload route/UI and tailoring retry guard to qualify the feedback's claims.
+  - Validated ten unique work-order headings, local plan links, all ten audit ownership rows, added acceptance IDs and absence of trailing whitespace in the plan.
+  - node scripts/check-project-context.mjs: 11 required files / 11 active entrypoints consistent.
+Acceptance criteria not yet proven:
+  - No product implementation or live usability checks performed; all v1.2 product acceptance remains open.
+Decisions or deviations:
+  - PROFILE_REQUIRED alone proves controlled blockage, not process crash; backend profile targeting exists but is missing from normal settings upload wiring.
+  - Unmeasured 85%/45%/90% scores not adopted.
+  - Extra templates remain an explicit scope deferral; removing one 409 guard is not accepted as a complete lifecycle fix.
+Safety/human checkpoint:
+  - Profile copying cannot create approvals or modify historical facts/artifacts/applications. Existing unrelated changes preserved; no live mutations or provider calls.
+```

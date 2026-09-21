@@ -1,0 +1,117 @@
+{
+  "schemaVersion": "candidate-import/v1",
+  "identity": {
+    "fullName": "Jordan Lee",
+    "headline": "Product Manager | B2B SaaS Discovery, Roadmaps & Go-to-Market",
+    "email": "jordan.lee@example.com",
+    "phone": "+1-416-555-0100",
+    "location": "Toronto, ON, Canada"
+  },
+  "targetTitles": ["Product Manager", "Product Manager, Growth", "Technical Product Manager"],
+  "targetLocations": ["Toronto, ON", "Remote Canada"],
+  "summary": "Product Manager with 6 years turning customer discovery into shipped B2B SaaS roadmaps, pricing wins, and launches sales teams love.",
+  "employment": [
+    {
+      "id": "emp-harbor",
+      "company": "Harbor Analytics",
+      "role": "Product Manager",
+      "location": "Toronto, ON",
+      "startDate": "2021-04-01",
+      "isCurrent": true,
+      "description": "Own discovery-to-launch for a B2B SaaS analytics suite used by 2,000+ teams."
+    },
+    {
+      "id": "emp-beacon",
+      "company": "Beacon Tools",
+      "role": "Associate Product Manager",
+      "location": "Toronto, ON",
+      "startDate": "2019-01-15",
+      "endDate": "2021-03-31",
+      "isCurrent": false,
+      "description": "Supported onboarding and integrations for a team collaboration product."
+    }
+  ],
+  "achievements": [
+    {
+      "factId": "pm-fact-discovery",
+      "employmentId": "emp-harbor",
+      "category": "discovery",
+      "text": "Led customer discovery with 40+ B2B SaaS buyers that reshaped the roadmap and lifted trial-to-paid conversion by 18%.",
+      "technologies": ["Jira", "Figma"],
+      "metrics": ["40+ discovery interviews", "trial-to-paid conversion +18%"],
+      "source": "launch report 2024",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "pm-fact-pricing",
+      "employmentId": "emp-harbor",
+      "category": "growth",
+      "text": "Shipped a usage-based pricing and packaging revamp with billing, sales, and support that added $1.2M in expansion ARR.",
+      "technologies": ["Salesforce"],
+      "metrics": ["$1.2M expansion ARR"],
+      "source": "pricing review 2024",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "pm-fact-cadence",
+      "employmentId": "emp-harbor",
+      "category": "delivery",
+      "text": "Ran weekly stakeholder reviews across engineering, design, and data that cut roadmap thrash and shipped 95% of committed quarters.",
+      "technologies": ["Jira"],
+      "metrics": ["95% quarterly commitment delivery"],
+      "source": "performance review 2025",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "pm-fact-roadmap",
+      "employmentId": "emp-harbor",
+      "category": "strategy",
+      "text": "Own product strategy and roadmap prioritization for a B2B SaaS analytics suite used by 2,000+ teams.",
+      "technologies": ["Jira", "Figma"],
+      "metrics": ["2,000+ teams served"],
+      "source": "performance review 2025",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "pm-fact-gtm",
+      "employmentId": "emp-harbor",
+      "category": "go-to-market",
+      "text": "Launched go-to-market playbooks with product marketing that shortened enterprise sales cycles from 9 to 6 months.",
+      "technologies": ["Salesforce"],
+      "metrics": ["sales cycle 9 to 6 months"],
+      "source": "launch report 2023",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "pm-fact-experiment",
+      "employmentId": "emp-beacon",
+      "category": "experimentation",
+      "text": "Defined experimentation and KPI measurement standards adopted by six product squads.",
+      "technologies": [],
+      "metrics": ["6 squads adopted"],
+      "source": "performance review 2020",
+      "verification": "APPROVED"
+    }
+  ],
+  "skills": [
+    {"name": "Roadmap prioritization", "category": "Product", "proficiency": "expert", "verified": true},
+    {"name": "Customer discovery", "category": "Product", "proficiency": "expert", "verified": true},
+    {"name": "Go-to-market launches", "category": "Go-to-market", "proficiency": "proficient", "verified": true},
+    {"name": "Experimentation", "category": "Product", "proficiency": "proficient", "verified": true},
+    {"name": "Jira", "category": "Tools", "proficiency": "expert", "verified": true},
+    {"name": "Figma", "category": "Tools", "proficiency": "proficient", "verified": false},
+    {"name": "SQL", "category": "Technical", "proficiency": "beginner", "verified": false}
+  ],
+  "education": [
+    {
+      "degree": "B.Comm.",
+      "fieldOfStudy": "Marketing",
+      "institution": "Toronto Metropolitan University",
+      "startDate": "2013-09-01",
+      "endDate": "2017-06-30"
+    }
+  ],
+  "credentials": [
+    {"name": "Certified Scrum Product Owner", "issuer": "Scrum Alliance", "issuedDate": "2020-05-01"}
+  ]
+}

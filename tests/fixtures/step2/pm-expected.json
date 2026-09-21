@@ -1,0 +1,463 @@
+{
+  "caseId": "S2_PM_01",
+  "description": "Senior PM JD with Unicode prefix; NetSuite required gap; Volt Mobility Lime-like transferable experience.",
+  "extractionId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "profileVersionId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "planId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "preparationId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+  "jdHash": "ba8891389eba684ac3ba5d3b79e21d9c3d6f85f77625102a73c52a2c5eeb1ac1",
+  "payloadHash": "1f457dac8abccd516da3d4380e402d504bb503e6493fdac01f284a300ed29baa",
+  "evidenceHash": "f3e1489458055388811d31eb6f16da2598a49740d9b73cf6b24c70c14a981a2a",
+  "masterProjectionHash": "e7a2214c2c22c345a415c0427ca4be08363ed140f7c1404efc5a4616fdab2757",
+  "planHash": "45788dcbe48f3c62f4d7d8ec190ccf52332f18e65e0f5f77bba5f2decb432686",
+  "versionCreatedAt": "2026-09-10T00:00:00.000Z",
+  "planAcceptedAt": "2026-09-17T00:00:00.000Z",
+  "now": "2026-09-17T01:00:00.000Z",
+  "priorities": [
+    {
+      "key": "erp",
+      "priorityId": "100f96517f09ffbeceb22161d8cce60f15066c64b5c6a34093005d15dd5e459d",
+      "quote": {
+        "text": "enterprise resource planning",
+        "startByte": 157,
+        "endByte": 185
+      },
+      "count": 2,
+      "category": "domain",
+      "importance": "required",
+      "support": "supported",
+      "factIds": [
+        "fact-nw-3"
+      ]
+    },
+    {
+      "key": "gtm",
+      "priorityId": "c87790415cd1f70393f533e81897ed87ed79d7c32eabe6d91eb6dc11438a0f60",
+      "quote": {
+        "text": "go-to-market rollout",
+        "startByte": 231,
+        "endByte": 251
+      },
+      "count": 1,
+      "category": "responsibility",
+      "importance": "unspecified",
+      "support": "gap",
+      "factIds": []
+    },
+    {
+      "key": "netsuite",
+      "priorityId": "f5723fc36759817f4d855a6ee3b3c8fb6cc6dd30688d7ca8c380bcbd7f9a7152",
+      "quote": {
+        "text": "NetSuite administration",
+        "startByte": 404,
+        "endByte": 427
+      },
+      "count": 1,
+      "category": "skill",
+      "importance": "required",
+      "support": "gap",
+      "factIds": []
+    },
+    {
+      "key": "stakeholder",
+      "priorityId": "a07facc48a941203fb4b8c98220737b6ab3166cb9683e7ea051f181cecc68e67",
+      "quote": {
+        "text": "Stakeholder management",
+        "startByte": 465,
+        "endByte": 487
+      },
+      "count": 1,
+      "category": "skill",
+      "importance": "required",
+      "support": "supported",
+      "factIds": [
+        "fact-nw-2"
+      ]
+    },
+    {
+      "key": "micro",
+      "priorityId": "fb1cd0d644b5aafa2536382f74b94ca851357e1838a2f2d55d5659d5dc1f6e27",
+      "quote": {
+        "text": "micromobility operations",
+        "startByte": 574,
+        "endByte": 598
+      },
+      "count": 1,
+      "category": "domain",
+      "importance": "preferred",
+      "support": "related",
+      "factIds": [
+        "fact-gen-1"
+      ]
+    },
+    {
+      "key": "roadmap",
+      "priorityId": "827fef05ac287d1f0fcfc4f688f149ad9033ad4a7469398b58fec1855bec0d4e",
+      "quote": {
+        "text": "Roadmap planning",
+        "startByte": 616,
+        "endByte": 632
+      },
+      "count": 1,
+      "category": "responsibility",
+      "importance": "preferred",
+      "support": "gap",
+      "factIds": [
+        "fact-pending-1"
+      ]
+    }
+  ],
+  "featuredKeys": [
+    "netsuite",
+    "erp",
+    "stakeholder",
+    "micro",
+    "gtm"
+  ],
+  "plan": {
+    "schemaVersion": "step2-plan/v1",
+    "planId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "preparationId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    "extractionId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "jdHash": "ba8891389eba684ac3ba5d3b79e21d9c3d6f85f77625102a73c52a2c5eeb1ac1",
+    "profileVersionId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "evidenceHash": "f3e1489458055388811d31eb6f16da2598a49740d9b73cf6b24c70c14a981a2a",
+    "masterProjectionHash": "e7a2214c2c22c345a415c0427ca4be08363ed140f7c1404efc5a4616fdab2757",
+    "priorities": [
+      {
+        "priorityId": "100f96517f09ffbeceb22161d8cce60f15066c64b5c6a34093005d15dd5e459d",
+        "quote": {
+          "text": "enterprise resource planning",
+          "startByte": 157,
+          "endByte": 185
+        },
+        "count": 2,
+        "category": "domain",
+        "importance": "required",
+        "support": "supported",
+        "factIds": [
+          "fact-nw-3"
+        ]
+      },
+      {
+        "priorityId": "c87790415cd1f70393f533e81897ed87ed79d7c32eabe6d91eb6dc11438a0f60",
+        "quote": {
+          "text": "go-to-market rollout",
+          "startByte": 231,
+          "endByte": 251
+        },
+        "count": 1,
+        "category": "responsibility",
+        "importance": "unspecified",
+        "support": "gap",
+        "factIds": []
+      },
+      {
+        "priorityId": "f5723fc36759817f4d855a6ee3b3c8fb6cc6dd30688d7ca8c380bcbd7f9a7152",
+        "quote": {
+          "text": "NetSuite administration",
+          "startByte": 404,
+          "endByte": 427
+        },
+        "count": 1,
+        "category": "skill",
+        "importance": "required",
+        "support": "gap",
+        "factIds": []
+      },
+      {
+        "priorityId": "a07facc48a941203fb4b8c98220737b6ab3166cb9683e7ea051f181cecc68e67",
+        "quote": {
+          "text": "Stakeholder management",
+          "startByte": 465,
+          "endByte": 487
+        },
+        "count": 1,
+        "category": "skill",
+        "importance": "required",
+        "support": "supported",
+        "factIds": [
+          "fact-nw-2"
+        ]
+      },
+      {
+        "priorityId": "fb1cd0d644b5aafa2536382f74b94ca851357e1838a2f2d55d5659d5dc1f6e27",
+        "quote": {
+          "text": "micromobility operations",
+          "startByte": 574,
+          "endByte": 598
+        },
+        "count": 1,
+        "category": "domain",
+        "importance": "preferred",
+        "support": "related",
+        "factIds": [
+          "fact-gen-1"
+        ]
+      },
+      {
+        "priorityId": "827fef05ac287d1f0fcfc4f688f149ad9033ad4a7469398b58fec1855bec0d4e",
+        "quote": {
+          "text": "Roadmap planning",
+          "startByte": 616,
+          "endByte": 632
+        },
+        "count": 1,
+        "category": "responsibility",
+        "importance": "preferred",
+        "support": "gap",
+        "factIds": [
+          "fact-pending-1"
+        ]
+      }
+    ],
+    "featuredPriorityIds": [
+      "f5723fc36759817f4d855a6ee3b3c8fb6cc6dd30688d7ca8c380bcbd7f9a7152",
+      "100f96517f09ffbeceb22161d8cce60f15066c64b5c6a34093005d15dd5e459d",
+      "a07facc48a941203fb4b8c98220737b6ab3166cb9683e7ea051f181cecc68e67",
+      "fb1cd0d644b5aafa2536382f74b94ca851357e1838a2f2d55d5659d5dc1f6e27",
+      "c87790415cd1f70393f533e81897ed87ed79d7c32eabe6d91eb6dc11438a0f60"
+    ],
+    "positioning": {
+      "keepMasterSummary": "Product manager with 6 years across operations and internal platforms.",
+      "angles": [
+        {
+          "angleId": "angle-1",
+          "title": "Platform delivery",
+          "summaryText": "Product manager who shipped internal platforms for finance and operations.",
+          "factIds": [
+            "fact-nw-1",
+            "fact-nw-3"
+          ]
+        },
+        {
+          "angleId": "angle-2",
+          "title": "Operator turned PM",
+          "summaryText": "Operations lead turned product manager with city-scale launch experience.",
+          "factIds": [
+            "fact-volt-1",
+            "fact-nw-2"
+          ]
+        }
+      ]
+    },
+    "suggestions": [
+      {
+        "suggestionId": "sug-001",
+        "roleId": "emp-northwind",
+        "text": "Led enterprise resource planning upgrade for finance systems",
+        "factIds": [
+          "fact-nw-3"
+        ],
+        "usable": true,
+        "unusableReason": null
+      },
+      {
+        "suggestionId": "sug-002",
+        "roleId": "emp-volt",
+        "text": "Led city launch operations across 4 markets",
+        "factIds": [
+          "fact-volt-1"
+        ],
+        "usable": true,
+        "unusableReason": null
+      },
+      {
+        "suggestionId": "sug-003",
+        "roleId": "emp-northwind",
+        "text": "Administered NetSuite across 6 subsidiaries",
+        "factIds": [
+          "fact-nw-3"
+        ],
+        "usable": false,
+        "unusableReason": "NEW_METRIC"
+      }
+    ],
+    "rationale": "Ranked required concepts first; NetSuite stays a visible gap."
+  },
+  "prohibitedClaimCases": [
+    "fabricated-metric",
+    "fabricated-technology",
+    "fabricated-responsibility",
+    "cross-employer",
+    "new-employer"
+  ],
+  "segments": [
+    {
+      "case": "exact-fact",
+      "segmentId": "seg-01",
+      "kind": "bullet",
+      "roleId": "emp-northwind",
+      "text": "Ran stakeholder reviews across finance, engineering, and support",
+      "citedFactIds": [
+        "fact-nw-2"
+      ],
+      "verdict": "supported",
+      "match": "exact-fact",
+      "reason": null
+    },
+    {
+      "case": "equivalent-wording",
+      "segmentId": "seg-02",
+      "kind": "bullet",
+      "roleId": "emp-northwind",
+      "text": "Ran stakeholder reviews with finance, engineering, and support teams",
+      "citedFactIds": [
+        "fact-nw-2"
+      ],
+      "verdict": "needs-evidence",
+      "match": "none",
+      "reason": "REWORDED"
+    },
+    {
+      "case": "fabricated-metric",
+      "segmentId": "seg-03",
+      "kind": "bullet",
+      "roleId": "emp-volt",
+      "text": "Led city launch operations across 12 markets",
+      "citedFactIds": [
+        "fact-volt-1"
+      ],
+      "verdict": "needs-evidence",
+      "match": "none",
+      "reason": "NEW_METRIC"
+    },
+    {
+      "case": "fabricated-technology",
+      "segmentId": "seg-04",
+      "kind": "bullet",
+      "roleId": "emp-northwind",
+      "text": "Administered NetSuite for multi-subsidiary finance",
+      "citedFactIds": [
+        "fact-nw-3"
+      ],
+      "verdict": "needs-evidence",
+      "match": "none",
+      "reason": "REWORDED"
+    },
+    {
+      "case": "fabricated-responsibility",
+      "segmentId": "seg-05",
+      "kind": "bullet",
+      "roleId": "emp-northwind",
+      "text": "Owned the company roadmap as head of product",
+      "citedFactIds": [
+        "fact-nw-1"
+      ],
+      "verdict": "needs-evidence",
+      "match": "none",
+      "reason": "REWORDED"
+    },
+    {
+      "case": "cross-employer",
+      "segmentId": "seg-06",
+      "kind": "bullet",
+      "roleId": "emp-northwind",
+      "text": "Led city launch operations across 4 markets",
+      "citedFactIds": [
+        "fact-volt-1"
+      ],
+      "verdict": "needs-evidence",
+      "match": "none",
+      "reason": "FOREIGN_ROLE_FACT"
+    },
+    {
+      "case": "exact-plan-angle",
+      "segmentId": "seg-07",
+      "kind": "summary",
+      "roleId": null,
+      "text": "Product manager who shipped internal platforms for finance and operations.",
+      "citedFactIds": [
+        "fact-nw-1",
+        "fact-nw-3"
+      ],
+      "verdict": "supported",
+      "match": "exact-plan",
+      "reason": null
+    },
+    {
+      "case": "summary-master",
+      "segmentId": "seg-08",
+      "kind": "summary",
+      "roleId": null,
+      "text": "Product manager with 6 years across operations and internal platforms.",
+      "citedFactIds": [
+        "fact-nw-1"
+      ],
+      "verdict": "supported",
+      "match": "exact-plan",
+      "reason": null
+    },
+    {
+      "case": "derivation-manifest",
+      "segmentId": "seg-09",
+      "kind": "bullet",
+      "roleId": "emp-northwind",
+      "text": "Summary of approved platform work",
+      "citedFactIds": [
+        "fact-nw-1"
+      ],
+      "derivation": {
+        "finalText": "Summary of approved platform work",
+        "factIds": [
+          "fact-nw-1"
+        ]
+      },
+      "verdict": "supported",
+      "match": "derivation",
+      "reason": null
+    },
+    {
+      "case": "unknown-fact",
+      "segmentId": "seg-10",
+      "kind": "bullet",
+      "roleId": "emp-northwind",
+      "text": "Did something unrecorded",
+      "citedFactIds": [
+        "fact-nope"
+      ],
+      "verdict": "needs-evidence",
+      "match": "none",
+      "reason": "UNKNOWN_FACT"
+    },
+    {
+      "case": "unapproved-citation",
+      "segmentId": "seg-11",
+      "kind": "bullet",
+      "roleId": "emp-northwind",
+      "text": "Drafted roadmap planning templates for platform teams",
+      "citedFactIds": [
+        "fact-pending-1"
+      ],
+      "verdict": "needs-evidence",
+      "match": "none",
+      "reason": "FACT_NOT_APPROVED"
+    },
+    {
+      "case": "new-employer",
+      "segmentId": "seg-12",
+      "kind": "bullet",
+      "roleId": "emp-northwind",
+      "text": "Shipped internal billing platform for Volt Mobility finance staff",
+      "citedFactIds": [
+        "fact-nw-1"
+      ],
+      "verdict": "needs-evidence",
+      "match": "none",
+      "reason": "NEW_EMPLOYER"
+    },
+    {
+      "case": "transferable-exact",
+      "segmentId": "seg-13",
+      "kind": "bullet",
+      "roleId": "emp-volt",
+      "text": "Advised a micromobility startup on launch checklists",
+      "citedFactIds": [
+        "fact-gen-1"
+      ],
+      "verdict": "supported",
+      "match": "exact-fact",
+      "reason": null
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import {
   sqliteTable,
   text,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import { createdAt, updatedAt } from "./columns";
 
@@ -60,6 +61,7 @@ export const candidateProfileVersions = sqliteTable(
       t.profileId,
       t.version,
     ),
+    uniqueIndex("v13_profile_version_owner").on(t.id, t.profileId),
     index("candidate_profile_versions_profile_id").on(t.profileId),
     check(
       "candidate_profile_versions_version",
@@ -80,6 +82,7 @@ export const candidateFacts = sqliteTable(
     evidenceJson: text("evidence_json"),
     verification: text("verification").notNull().default("PENDING"),
     source: text("source"),
+    provenanceJson: text("provenance_json"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -123,9 +126,49 @@ export const candidateSnapshotFacts = sqliteTable(
   (t) => [primaryKey({ columns: [t.snapshotId, t.factId] })],
 );
 
+/**
+ * Profile/version-owned master source documents (R-ADR-016).
+ *
+ * One row per profile version: the validated master bytes that produced
+ * it, stored immutably under the sources root. Rows are insert-only
+ * (see migration `0006` triggers); bytes are content-verified on read
+ * against the stored size/hash. `origin` names how the bytes entered;
+ * `origin_detail_json` carries versioned detail (copy source,
+ * reconstruction lineage).
+ */
+export const candidateSources = sqliteTable(
+  "candidate_sources",
+  {
+    id: text("id").primaryKey(),
+    profileId: text("profile_id")
+      .notNull()
+      .references(() => candidateProfiles.id),
+    profileVersionId: text("profile_version_id")
+      .notNull()
+      .references(() => candidateProfileVersions.id),
+    relativePath: text("relative_path").notNull(),
+    mediaType: text("media_type").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    sha256: text("sha256").notNull(),
+    origin: text("origin").notNull(),
+    originDetailJson: text("origin_detail_json"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique("candidate_sources_version_unique").on(t.profileVersionId),
+    index("candidate_sources_profile_id").on(t.profileId),
+    check(
+      "candidate_sources_origin",
+      sql`${t.origin} IN ('upload','paste','form','copy','cli','reconstructed','legacy')`,
+    ),
+    check("candidate_sources_byte_size", sql`${t.byteSize} >= 0`),
+  ],
+);
+
 export type CandidateProfile = typeof candidateProfiles.$inferSelect;
 export type CandidateProfileVersion =
   typeof candidateProfileVersions.$inferSelect;
 export type CandidateFact = typeof candidateFacts.$inferSelect;
+export type CandidateSource = typeof candidateSources.$inferSelect;
 export type CandidateSnapshot = typeof candidateSnapshots.$inferSelect;
 export type CandidateSnapshotFact = typeof candidateSnapshotFacts.$inferSelect;

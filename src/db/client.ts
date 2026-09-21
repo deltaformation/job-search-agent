@@ -5,7 +5,7 @@ import {
 } from "drizzle-orm/better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { migrate } from "./migrate";
+import { migrate, preflightStep2Upgrade, preflightTailoringUpgrade } from "./migrate";
 import * as schema from "./schema";
 
 export type SqliteConnection = InstanceType<typeof Database>;
@@ -111,6 +111,8 @@ export interface EnsureDatabaseOptions extends OpenDatabaseOptions {
 export function ensureDatabase(options: EnsureDatabaseOptions): DatabaseHandle {
   const handle = openDatabase(options);
   try {
+    preflightTailoringUpgrade(handle.sqlite, options.migrationsDir);
+    preflightStep2Upgrade(handle.sqlite, options.migrationsDir);
     migrate(handle.sqlite, { migrationsDir: options.migrationsDir });
   } catch (error) {
     handle.close();

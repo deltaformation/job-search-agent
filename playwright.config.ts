@@ -30,6 +30,9 @@ export default defineConfig({
       APP_DATA_ROOT: "./.e2e-data",
       PORT: "3107",
       NEXT_DIST_DIR: ".next-e2e",
+      // Provider settings writes stay inside the isolated root (WO-1.2-G):
+      // specs must never touch the developer's real .env.local.
+      SETTINGS_ENV_FILE: "./.e2e-data/test.env.local",
     },
   },
 });

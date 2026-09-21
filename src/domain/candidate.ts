@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Verification } from "./enums";
+import { SalaryPeriod, Verification } from "./enums";
 import { EntityId } from "./fields";
 
 /**
@@ -21,6 +21,8 @@ import { EntityId } from "./fields";
 export const CANDIDATE_IMPORT_SCHEMA_VERSION = "candidate-import/v1";
 export const CANDIDATE_PROFILE_SCHEMA_VERSION = "candidate-profile/v1";
 export const CANDIDATE_SNAPSHOT_SCHEMA_VERSION = "candidate-snapshot/v1";
+export const CANDIDATE_IMPORT_SCHEMA_VERSION_V2 = "candidate-import/v2";
+export const CANDIDATE_PROFILE_SCHEMA_VERSION_V2 = "candidate-profile/v2";
 
 const TrimmedText = (max: number) => z.string().trim().min(1).max(max);
 
@@ -61,6 +63,18 @@ const IdentityV1 = z
     location: TrimmedText(200).optional(),
   })
   .strict();
+
+/** Contact links are identity-adjacent display data, never claim facts. */
+const IdentityLinksV2 = z
+  .object({
+    linkedin: TrimmedText(500).optional(),
+    github: TrimmedText(500).optional(),
+    portfolio: TrimmedText(500).optional(),
+    website: TrimmedText(500).optional(),
+  })
+  .strict();
+
+const IdentityV2 = IdentityV1.extend({ links: IdentityLinksV2.optional() }).strict();
 
 const EmploymentV1 = z
   .object({
@@ -115,6 +129,15 @@ const AchievementV1 = z
   .strict();
 
 const SkillProficiency = z.enum(["beginner", "proficient", "expert"]);
+
+/** Spoken/written languages: capability claims like skills. */
+const LanguageV2 = z
+  .object({
+    name: TrimmedText(200),
+    proficiency: SkillProficiency.optional(),
+    verified: z.boolean(),
+  })
+  .strict();
 
 const SkillV1 = z
   .object({
@@ -209,6 +232,112 @@ export const CandidateProfilePayloadV1 = z
   .superRefine(checkProfileBody);
 export type CandidateProfilePayloadV1 = z.infer<typeof CandidateProfilePayloadV1>;
 
+/**
+ * v2 additions (WO-1.2-B): contact links and languages join the
+ * versioned claim sources. Career keywords, profile notes, and the
+ * work-preference inventory stay mutable planning data on the profile
+ * row (`WorkPreferencesV1`), never versioned evidence. Import v2
+ * achievements may carry `editedFrom` (a fact-edit annotation the
+ * server validates and records as row provenance, then strips from
+ * the stored payload, which stays pure content).
+ */
+const ImportAchievementV2 = z
+  .object({
+    factId: FactId,
+    employmentId: EmploymentId.optional(),
+    category: TrimmedText(80),
+    text: TrimmedText(2000),
+    technologies: z.array(TrimmedText(120)).max(50).default([]),
+    metrics: z.array(TrimmedText(200)).max(50).default([]),
+    source: TrimmedText(200).optional(),
+    verification: Verification.default("PENDING"),
+    editedFrom: FactId.optional(),
+  })
+  .strict();
+
+const ProfileBodyFieldsV2 = {
+  ...ProfileBodyFields,
+  identity: IdentityV2,
+  languages: z.array(LanguageV2).max(30).default([]),
+};
+
+export const CandidateImportV2 = z
+  .object({
+    schemaVersion: z.literal(CANDIDATE_IMPORT_SCHEMA_VERSION_V2),
+    ...ProfileBodyFieldsV2,
+    achievements: z.array(ImportAchievementV2).max(500).default([]),
+  })
+  .strict()
+  .superRefine(checkProfileBody);
+export type CandidateImportV2 = z.infer<typeof CandidateImportV2>;
+
+export const CandidateProfilePayloadV2 = z
+  .object({ schemaVersion: z.literal(CANDIDATE_PROFILE_SCHEMA_VERSION_V2), ...ProfileBodyFieldsV2 })
+  .strict()
+  .superRefine(checkProfileBody);
+export type CandidateProfilePayloadV2 = z.infer<typeof CandidateProfilePayloadV2>;
+
+/** Either stored payload generation; v1 rows keep working unchanged. */
+export const StoredProfilePayload = z.union([CandidateProfilePayloadV1, CandidateProfilePayloadV2]);
+export type StoredProfilePayload = z.infer<typeof StoredProfilePayload>;
+
+/**
+ * Parse one stored version payload by its stamped literal. Unknown
+ * versions fail closed — never guessed.
+ */
+export function parseStoredProfilePayload(data: unknown): StoredProfilePayload {
+  const version =
+    typeof data === "object" && data !== null && "schemaVersion" in data
+      ? (data as { schemaVersion?: unknown }).schemaVersion
+      : undefined;
+  if (version === CANDIDATE_PROFILE_SCHEMA_VERSION) {
+    return CandidateProfilePayloadV1.parse(data);
+  }
+  if (version === CANDIDATE_PROFILE_SCHEMA_VERSION_V2) {
+    return CandidateProfilePayloadV2.parse(data);
+  }
+  throw new Error(`unsupported stored profile payload version: ${JSON.stringify(version)}`);
+}
+
+/**
+ * Normalize an authored master document (import v1, import v2, payload
+ * v1/v2, or an unstamped v1/v2 body — the upload path historically
+ * ignores the incoming literal) to a v2 payload plus the per-achievement
+ * edit annotations for provenance recording. v1 bodies are a strict
+ * subset of v2, so one v2 parse accepts every previously valid document.
+ */
+export function normalizeImportDocument(document: unknown): {
+  importVersion: 1 | 2 | "unstamped";
+  payload: CandidateProfilePayloadV2;
+  editedFrom: Map<string, string>;
+} {
+  const record = (document ?? {}) as Record<string, unknown>;
+  const literal = record["schemaVersion"];
+  const importVersion =
+    literal === CANDIDATE_IMPORT_SCHEMA_VERSION || literal === CANDIDATE_PROFILE_SCHEMA_VERSION
+      ? 1
+      : literal === CANDIDATE_IMPORT_SCHEMA_VERSION_V2 ||
+          literal === CANDIDATE_PROFILE_SCHEMA_VERSION_V2
+        ? 2
+        : "unstamped";
+  const parsed = CandidateImportV2.parse({
+    ...record,
+    schemaVersion: CANDIDATE_IMPORT_SCHEMA_VERSION_V2,
+  });
+  const editedFrom = new Map<string, string>();
+  for (const achievement of parsed.achievements) {
+    if (achievement.editedFrom !== undefined) {
+      editedFrom.set(achievement.factId, achievement.editedFrom);
+    }
+  }
+  const payload = CandidateProfilePayloadV2.parse({
+    ...parsed,
+    schemaVersion: CANDIDATE_PROFILE_SCHEMA_VERSION_V2,
+    achievements: parsed.achievements.map(({ editedFrom: _edited, ...rest }) => rest),
+  });
+  return { importVersion, payload, editedFrom };
+}
+
 /** Evidence co-stored with each fact row (`candidate_facts.evidence_json`). */
 export const FactEvidenceV1 = z
   .object({
@@ -240,7 +369,7 @@ export const CandidateSnapshotV1 = z
     profileVersionId: EntityId,
     version: z.int().min(1),
     payloadHash: z.string().regex(/^[0-9a-f]{64}$/),
-    payload: CandidateProfilePayloadV1,
+    payload: StoredProfilePayload,
     facts: z.array(SnapshotFactV1).max(500),
   })
   .strict()
@@ -273,6 +402,27 @@ export type ProfileSlug = z.infer<typeof ProfileSlug>;
 export const ProfileDisplayName = TrimmedText(200);
 export type ProfileDisplayName = z.infer<typeof ProfileDisplayName>;
 
+export const FACT_PROVENANCE_SCHEMA_VERSION = "fact-provenance/v1";
+
+/**
+ * Explicit reuse lineage for one fact row (R-ADR-020), stored in
+ * `candidate_facts.provenance_json`. `copy`: B6 profile copy retaining
+ * verification; `import-remap`: cross-profile import auto-mint;
+ * `edit`: form/JSON revision of one approved claim. `evidenceHash` is
+ * the canonical evidence fingerprint the reuse was judged identical by.
+ */
+export const FactProvenanceV1 = z
+  .object({
+    schemaVersion: z.literal(FACT_PROVENANCE_SCHEMA_VERSION),
+    origin: z.enum(["copy", "import-remap", "edit"]),
+    originProfileId: ProfileId.optional(),
+    originVersionId: EntityId.optional(),
+    originFactId: FactId,
+    evidenceHash: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict();
+export type FactProvenanceV1 = z.infer<typeof FactProvenanceV1>;
+
 const WorkModeV1 = z.enum(["REMOTE", "HYBRID", "ONSITE"]);
 
 /**
@@ -285,19 +435,26 @@ export const WorkPreferencesV1 = z
     schemaVersion: z.literal(WORK_PREFERENCES_SCHEMA_VERSION),
     workAuthorization: z.array(TrimmedText(120)).max(20).default([]),
     workMode: z.array(WorkModeV1).max(3).default([]),
-    sponsorshipRequired: z.boolean().default(false),
-    willingToRelocate: z.boolean().default(false),
+    // Tri-state since WO-1.2-B: null means unknown/unspecified and must
+    // never be read as a claim. Old stored `false` still parses.
+    sponsorshipRequired: z.boolean().nullable().default(null),
+    willingToRelocate: z.boolean().nullable().default(null),
     yearsOfExperience: z.number().finite().min(0).max(80).optional(),
     salaryExpectation: z
       .object({
         min: z.number().finite().min(0).optional(),
         target: z.number().finite().min(0).optional(),
         currency: TrimmedText(8).optional(),
+        period: SalaryPeriod.optional(),
       })
       .strict()
       .optional(),
     targetTitles: z.array(TrimmedText(200)).max(30).default([]),
     targetLocations: z.array(TrimmedText(200)).max(30).default([]),
+    // Mutable steering vocabulary and planning notes (WO-1.2-B):
+    // emphasis hints, never evidence. Versions stay untouched.
+    careerKeywords: z.array(TrimmedText(120)).max(50).default([]),
+    profileNotes: z.string().trim().max(2000).optional(),
   })
   .strict();
 export type WorkPreferencesV1 = z.infer<typeof WorkPreferencesV1>;

@@ -1,5 +1,9 @@
-import { retryTailoring } from "../../../../../../src/server/tailoring";
-import { TailoringGuidanceV1 } from "../../../../../../src/tailoring/enqueue";
+import {
+  RequestGenerationInput,
+  defaultProviderAvailable,
+  requestGeneration,
+  type RequestGenerationError,
+} from "../../../../../../src/server/tailoring";
 import {
   jsonError,
   mutationGate,
@@ -9,16 +13,34 @@ import {
 import { jobIdGate } from "../../../_lib/failures";
 
 /**
- * Human-driven tailoring retry for one job: requeues a FAILED tailor
- * run, enqueues a first run when none exists, and no-ops when work is
- * already queued, running, or succeeded. An optional guidance body
- * (`profileId`, `selectedKeywords`, `directives`) enqueues a
- * guidance-scoped run instead — except on already-tailored jobs, where
- * re-tailoring must go through a revision request. Retrying never
- * approves a resume and never moves the board card; the worker still
- * has to claim and run the item.
+ * Explicit human generation command for one job (WO-1.2-D). The body
+ * carries optional guidance (`profileId`, `selectedKeywords`,
+ * `directives`, `parentVersionId`, `requestId`); the command pref lights
+ * profile readiness, evidence, JD content, and provider availability
+ * before writing anything, then records the immutable request plus its
+ * v2 queue item. Preflight failures are 422 with an actionable next
+ * step; state conflicts are 409. Starting generation never approves a
+ * resume and never moves the board card — the worker still has to claim
+ * and run the item.
  */
 export const dynamic = "force-dynamic";
+
+const GenerationBody = RequestGenerationInput.omit({ jobId: true, actor: true });
+
+function generationFailureStatus(error: RequestGenerationError): number {
+  switch (error) {
+    case "unknown-job":
+      return 404;
+    case "conflict":
+    case "request-forbidden":
+    case "parent-mismatch":
+      return 409;
+    case "profile-not-found":
+      return 400;
+    default:
+      return 422;
+  }
+}
 
 interface RetryTailoringRouteContext {
   params: Promise<{ id: string }>;
@@ -37,7 +59,7 @@ export async function POST(
   if (idGate !== null) {
     return idGate;
   }
-  const body = await parseJsonBody(request, TailoringGuidanceV1);
+  const body = await parseJsonBody(request, GenerationBody);
   if (!body.ok) {
     return body.response;
   }
@@ -46,11 +68,28 @@ export async function POST(
     return database.response;
   }
   try {
-    const result = retryTailoring(database.handle, id, body.value);
+    const result = requestGeneration(
+      database.handle,
+      { ...body.value, jobId: id, actor: "human" },
+      { providerAvailable: () => defaultProviderAvailable() },
+    );
     if (!result.ok) {
-      return jsonError(result.status, result.error, result.message);
+      if (result.error === "unknown-job") {
+        return jsonError(404, "job not found", result.detail);
+      }
+      return Response.json(
+        { error: result.error, reason: result.detail, action: result.action },
+        { status: generationFailureStatus(result.error) },
+      );
     }
-    return Response.json({ workItemId: result.workItemId, action: result.action });
+    return Response.json({
+      requestId: result.requestId,
+      requestKind: result.requestKind,
+      workItemId: result.workItemId,
+      deduped: result.deduped,
+      requeued: result.requeued,
+      newRowVersion: result.newRowVersion,
+    });
   } finally {
     database.release();
   }

@@ -98,19 +98,24 @@ describe("multi-profile candidate repository (R-ADR-012)", () => {
             activatedAt: "2026-09-11T12:00:00.000Z",
           })
           .run();
-        handle.db
-          .insert(candidateFacts)
-          .values({
-            factId: "fact-1",
-            profileVersionId: versionId,
-            kind: "achievement",
-            statement: "Shipped it",
-            verification: "APPROVED",
-          })
-          .run();
+        // Raw SQL: the current Drizzle insert lists every column, but
+        // the legacy table predates provenance_json (added in 0006).
+        handle.sqlite
+          .prepare(
+            "INSERT INTO candidate_facts (fact_id, profile_version_id, kind, statement, verification) VALUES ('fact-1', ?, 'achievement', 'Shipped it', 'APPROVED')",
+          )
+          .run(versionId);
 
         const result = migrate(handle.sqlite, { migrationsDir: realDir });
-        expect(result.applied).toEqual(["0005_multi_candidate_profiles"]);
+        expect(result.applied).toEqual([
+          "0005_multi_candidate_profiles",
+          "0006_profile_sources",
+          "0007_generation_requests",
+          "0008_tailoring_workspaces",
+          "0009_step2_preparation",
+          "0010_step2_publish_fence",
+          "0011_step2_correction_versions",
+        ]);
         expect(result.alreadyApplied).toHaveLength(5);
 
         const backfilled = getProfile(handle, "local");
@@ -168,7 +173,10 @@ describe("multi-profile candidate repository (R-ADR-012)", () => {
         schemaVersion: "work-preferences/v1",
         workMode: ["REMOTE"],
         yearsOfExperience: 9,
-        sponsorshipRequired: false,
+        // Tri-state since WO-1.2-B: omitted sponsorship stays unknown (null),
+        // never an invented "false" claim.
+        sponsorshipRequired: null,
+        willingToRelocate: null,
       });
       const second = createProfile(t.handle, { name: "eng-manager", displayName: "EM" });
       expect(second.isDefault).toBe(false);

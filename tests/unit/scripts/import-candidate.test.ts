@@ -55,20 +55,29 @@ describe("import-candidate CLI", () => {
     });
   });
 
-  it("reuses identical facts on a second import without activating", () => {
+  it("no-ops an identical second import without activating (R-ADR-012)", () => {
     withTempDir((dir) => {
       const root = join(dir, "root");
       expect(runCli([FIXTURE], root).status).toBe(0);
       const second = runCli([FIXTURE, "--json"], root);
       expect(second.status, second.stderr).toBe(0);
       const parsed = JSON.parse(second.stdout) as {
-        imported: { version: number; insertedFacts: unknown[]; reusedFacts: unknown[] };
-        activation: null;
+        ok: boolean;
+        version: number;
+        activated: boolean;
+        alreadyCurrent: boolean;
+        insertedFacts: unknown[];
+        reusedFacts: unknown[];
       };
-      expect(parsed.imported.version).toBe(2);
-      expect(parsed.imported.insertedFacts).toEqual([]);
-      expect(parsed.imported.reusedFacts).toHaveLength(6);
-      expect(parsed.activation).toBeNull();
+      // Unchanged re-imports stay a no-op per R-ADR-012 (the CLI used to
+      // bypass resync and mint empty versions; WO-1.2-B routes it
+      // through the shared orchestrator).
+      expect(parsed.ok).toBe(true);
+      expect(parsed.version).toBe(1);
+      expect(parsed.alreadyCurrent).toBe(true);
+      expect(parsed.activated).toBe(false);
+      expect(parsed.insertedFacts).toEqual([]);
+      expect(parsed.reusedFacts).toEqual([]);
     });
   });
 

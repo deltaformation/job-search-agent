@@ -1,14 +1,14 @@
 import type { HTMLElement } from "node-html-parser";
 import type { Arrangement } from "../domain/enums";
 
+export { JOB_EXTRACTION_VERSION } from "../domain/extraction";
+
 /**
  * R2-D extraction contracts. Strategies run in deterministic precedence
  * (site adapter → JobPosting JSON-LD → generic fallback) and the first
  * strategy yielding a usable result wins outright — fields are never
  * merged across strategies, so every value has one clear provenance.
  */
-
-export const JOB_EXTRACTION_VERSION = "job-extraction-v1";
 
 export interface ExtractionInput {
   /** Raw page HTML decoded as UTF-8. */

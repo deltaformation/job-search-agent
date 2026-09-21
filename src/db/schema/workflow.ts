@@ -74,6 +74,7 @@ export const applications = sqliteTable(
     recordedBy: text("recorded_by").notNull().default("human"),
     appliedAt: text("applied_at").notNull(),
     confirmationNumber: text("confirmation_number"),
+    resumeVersionId: text("resume_version_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

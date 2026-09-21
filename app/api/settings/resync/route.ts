@@ -9,6 +9,7 @@ import {
   openRequestDatabase,
   routePolicy,
 } from "../../_lib/request";
+import { resolveRoutePaths } from "../../_lib/data-mgmt";
 
 /**
  * Candidate profile re-sync. Imports `data/candidate/master-resume.json`
@@ -28,9 +29,11 @@ export async function POST(request: Request): Promise<Response> {
     return database.response;
   }
   try {
+    const { paths } = resolveRoutePaths(process.env);
     const result = resyncMasterResume(
       database.handle,
       masterResumePath(resolveCandidateDir(process.env)),
+      { sourcesDir: paths.sourcesDir },
     );
     if (!result.ok) {
       const status = result.error === "activation-failed" ? 500 : 400;

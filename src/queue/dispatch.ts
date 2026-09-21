@@ -10,6 +10,8 @@ import {
   type WorkKind as WorkKindValue,
 } from "../domain/enums";
 import { createLogger } from "../security/logger";
+import { terminalizeExhaustedRun } from "../tailoring/persist";
+import { terminalizeExhaustedPreparation } from "../tailoring/prepareHandler";
 import {
   claimNextWorkItem,
   completeWorkItem,
@@ -52,6 +54,12 @@ export interface WorkHandlerContext {
    * handler must stop work because its completion will be dropped.
    */
   heartbeat: () => boolean;
+  /**
+   * Lease length this claim was granted (WO-1.3-F §6). Handlers renew
+   * on their own timer during long awaits; absent in synthetic test
+   * contexts, where handlers fall back to DEFAULT_LEASE_DURATION_MS.
+   */
+  leaseDurationMs?: number;
 }
 
 export interface HandlerOutcome {
@@ -60,6 +68,12 @@ export interface HandlerOutcome {
   errorDetail?: string;
   inputHash?: string;
   outputHash?: string;
+  /**
+   * Force terminal failure for FAILED/ERROR even with budget left.
+   * Explicit-only failures set this; transients leave it unset so the
+   * dispatcher auto-retries per the exhaustion rule.
+   */
+  terminal?: boolean;
 }
 
 export type WorkHandler = (
@@ -135,6 +149,7 @@ function coerceOutcome(value: unknown): HandlerOutcome {
       errorDetail: z.string().max(MAX_ERROR_DETAIL_CHARS + 1).optional(),
       inputHash: z.string().max(128).optional(),
       outputHash: z.string().max(128).optional(),
+      terminal: z.boolean().optional(),
     })
     .safeParse(value);
   if (!parsed.success) {
@@ -154,6 +169,7 @@ function coerceOutcome(value: unknown): HandlerOutcome {
         : truncateDetail(outcome.errorDetail),
     inputHash: outcome.inputHash,
     outputHash: outcome.outputHash,
+    terminal: outcome.terminal,
   };
 }
 
@@ -187,6 +203,65 @@ export async function runDispatcher(
         requeued: recovered.requeued,
         failed: recovered.failed,
       });
+    }
+    // §9: TAILOR items recovery finished FAILED leave their job stuck
+    // RUNNING (every handler-side terminal path moves it, but the dead
+    // worker never ran one). Terminalize each outside the recovery
+    // transaction; a moved job is a no-op, never an error.
+    for (const item of recovered.exhausted) {
+      if (item.kind === "PREPARE" && item.jobId !== null) {
+        // Step 2 (S2-A §6.3): the dead worker never ran a terminal
+        // move, so record the preparation FAILED here. Writes the
+        // preparation row only — never the job row or board status.
+        try {
+          const terminalized = terminalizeExhaustedPreparation(handle, {
+            jobId: item.jobId,
+            workItemId: item.workItemId,
+            attempts: item.attempts,
+            now: clock(),
+          });
+          if (terminalized.ok && terminalized.terminalized) {
+            log.info("terminalized exhausted preparation", {
+              workerId: input.workerId,
+              workItemId: item.workItemId,
+              jobId: item.jobId,
+            });
+          }
+        } catch (error: unknown) {
+          log.error("failed to terminalize exhausted preparation", {
+            workerId: input.workerId,
+            workItemId: item.workItemId,
+            jobId: item.jobId,
+            detail: (error as Error).message,
+          });
+        }
+        continue;
+      }
+      if (item.kind !== "TAILOR" || item.jobId === null) {
+        continue;
+      }
+      try {
+        const terminalized = terminalizeExhaustedRun(handle, {
+          jobId: item.jobId,
+          workItemId: item.workItemId,
+          attempts: item.attempts,
+          now: clock(),
+        });
+        if (terminalized.ok && terminalized.terminalized) {
+          log.info("terminalized exhausted tailor run", {
+            workerId: input.workerId,
+            workItemId: item.workItemId,
+            jobId: item.jobId,
+          });
+        }
+      } catch (error: unknown) {
+        log.error("failed to terminalize exhausted tailor run", {
+          workerId: input.workerId,
+          workItemId: item.workItemId,
+          jobId: item.jobId,
+          detail: (error as Error).message,
+        });
+      }
     }
     const item = kinds.length === 0
       ? null
@@ -223,6 +298,7 @@ export async function runDispatcher(
       renewLease(handle, {
         workItemId: item.id,
         leaseToken: item.leaseToken,
+        attemptId: item.currentAttemptId,
         leaseDurationMs,
         now: clock(),
       }).ok;
@@ -236,6 +312,7 @@ export async function runDispatcher(
           item: { ...item, leaseToken: item.leaseToken },
           workerId: input.workerId,
           heartbeat,
+          leaseDurationMs,
         }),
       );
     } catch (error: unknown) {
@@ -251,13 +328,14 @@ export async function runDispatcher(
       {
         workItemId: item.id,
         leaseToken: item.leaseToken,
+        attemptId: item.currentAttemptId,
         result: outcome.result,
         errorCode: outcome.errorCode ?? null,
         errorDetail: outcome.errorDetail ?? null,
         inputHash: outcome.inputHash ?? null,
         outputHash: outcome.outputHash ?? null,
       },
-      { now: clock() },
+      { now: clock(), terminal: outcome.terminal },
     );
     if (!completed.ok) {
       // Benign: the lease expired mid-handler and stale recovery already

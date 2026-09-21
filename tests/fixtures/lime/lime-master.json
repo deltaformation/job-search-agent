@@ -1,0 +1,665 @@
+{
+  "schemaVersion": "candidate-import/v2",
+  "identity": {
+    "fullName": "Mouad Atfi",
+    "headline": "Senior Product Manager",
+    "email": "mouad.atfi@example.com",
+    "phone": "+1-647-000-0000",
+    "location": "Toronto, ON, Canada"
+  },
+  "targetTitles": [
+    "Senior Product Manager",
+    "Lead Product Manager",
+    "Product Manager, AI",
+    "Head of Product",
+    "Technical Product Manager"
+  ],
+  "targetLocations": [
+    "Toronto, ON",
+    "Ontario, Canada",
+    "Remote Canada"
+  ],
+  "summary": "Product leader with 15+ years across engineering, consulting, operations, and product management. Owned P&L for a $150M+ AI decisioning portfolio at IBM serving the world’s largest banks and retailers, and currently leading the productization of an engineering-centric organization at AOT Technologies: first product framework, first design and marketing hires, 4x delivery velocity, and 20% month-over-month SaaS revenue growth. Hands-on developer roots in Python and Go. Specialty: taking AI from demo to deployed, then navigating the organization so it actually moves revenue, retention, and compliance outcomes.",
+  "employment": [
+    {
+      "id": "emp-aot",
+      "company": "AOT Technologies",
+      "role": "Lead Product Manager",
+      "location": "Toronto, Canada",
+      "startDate": "2025-07-01",
+      "isCurrent": true,
+      "description": "Leading productization of an engineering-centric organization into a scalable SaaS platform."
+    },
+    {
+      "id": "emp-ibm",
+      "company": "IBM",
+      "role": "Senior Product Manager, AI Decisioning Portfolio",
+      "location": "Toronto, Canada",
+      "startDate": "2021-08-01",
+      "endDate": "2025-07-31",
+      "isCurrent": false,
+      "description": "Owned strategy, GTM, and P&L for a $150M+ annual revenue portfolio of AI/ML decisioning and automation products."
+    },
+    {
+      "id": "emp-odotrack",
+      "company": "Odotrack",
+      "role": "Product Manager",
+      "location": "Montreal, Canada",
+      "startDate": "2019-11-01",
+      "endDate": "2021-08-31",
+      "isCurrent": false,
+      "description": "Grew last-mile delivery tracking platform into a broader fleet operations B2B SaaS product."
+    },
+    {
+      "id": "emp-myr",
+      "company": "MYR POS",
+      "role": "Head of Operations (Product & Growth)",
+      "location": "Montreal, Canada",
+      "startDate": "2017-11-01",
+      "endDate": "2019-12-31",
+      "isCurrent": false,
+      "description": "Led product and growth through 400% YoY customer acquisition growth at fintech POS startup."
+    },
+    {
+      "id": "emp-allagma",
+      "company": "Allagma Technologies",
+      "role": "Consultant",
+      "location": "Montreal, Canada",
+      "startDate": "2013-04-01",
+      "endDate": "2017-11-30",
+      "isCurrent": false,
+      "description": "Translated customer problems into product requirements and led phased POS system deployments."
+    },
+    {
+      "id": "emp-freelance",
+      "company": "Freelance",
+      "role": "Backend Developer",
+      "location": "Remote",
+      "startDate": "2010-07-01",
+      "endDate": "2013-06-30",
+      "isCurrent": false,
+      "description": "Engineered automation solutions in Python and Go, distributed web scrapers, crawlers, and database automation frameworks."
+    }
+  ],
+  "achievements": [
+    {
+      "factId": "fact_aot_001",
+      "employmentId": "emp-aot",
+      "category": "product_transformation",
+      "text": "Recruited to solve a problem the company had failed at multiple times: converting bespoke consulting assets into a scalable SaaS product. Established the first product management function, introducing structured discovery, data-driven roadmap prioritization, and the company’s inaugural Product Design and Product Marketing teams.",
+      "technologies": [
+        "SaaS",
+        "Roadmapping",
+        "Product Discovery",
+        "Product Marketing",
+        "Product Strategy"
+      ],
+      "metrics": [],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_aot_002",
+      "employmentId": "emp-aot",
+      "category": "delivery_velocity",
+      "text": "Refocused delivery in a mature, engineering-centric org: consolidated disparate core products into a SaaS-first platform and moved from two annual releases across three deployment flavors to consistent quarterly releases, a 4x increase in feature delivery velocity within six months.",
+      "technologies": [
+        "SaaS",
+        "Agile",
+        "Release Management",
+        "Platform Engineering"
+      ],
+      "metrics": [
+        "4x feature delivery velocity",
+        "6 months"
+      ],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_aot_003",
+      "employmentId": "emp-aot",
+      "category": "growth_metrics",
+      "text": "Improved product-market fit with measurable first-year results: +22-point NPS gain and 20% month-over-month SaaS revenue growth.",
+      "technologies": [
+        "Product Analytics",
+        "SaaS",
+        "NPS",
+        "Revenue Growth"
+      ],
+      "metrics": [
+        "+22-point NPS gain",
+        "20% month-over-month SaaS revenue growth"
+      ],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_aot_004",
+      "employmentId": "emp-aot",
+      "category": "ai_engineering",
+      "text": "Shipped AI capabilities into the core platform, including an AI-driven application builder and a hosted MCP server for agentic integrations.",
+      "technologies": [
+        "AI",
+        "MCP",
+        "Model Context Protocol",
+        "Agentic Integrations",
+        "LLMs",
+        "Application Builder"
+      ],
+      "metrics": [],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_ibm_001",
+      "employmentId": "emp-ibm",
+      "category": "portfolio_pnl",
+      "text": "Owned strategy, GTM, and P&L for a $150M+ annual revenue portfolio of AI/ML decisioning and automation products serving global BFSI and enterprise retail clients; started by leading a single product and earned ownership of the full portfolio.",
+      "technologies": [
+        "AI",
+        "ML",
+        "AI Decisioning",
+        "BFSI",
+        "Enterprise Retail",
+        "GTM",
+        "P&L Ownership"
+      ],
+      "metrics": [
+        "$150M+ annual revenue"
+      ],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_ibm_002",
+      "employmentId": "emp-ibm",
+      "category": "revenue_growth",
+      "text": "Drove 20% average year-over-year revenue growth by integrating predictive analytics into decisioning workflows at the world’s largest banking and retail institutions.",
+      "technologies": [
+        "Predictive Analytics",
+        "AI Decisioning",
+        "Machine Learning",
+        "Banking",
+        "Retail"
+      ],
+      "metrics": [
+        "20% average YoY revenue growth"
+      ],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_ibm_003",
+      "employmentId": "emp-ibm",
+      "category": "ai_workflows",
+      "text": "Led the portfolio’s transition from legacy rules-based automation to agentic AI workflows: 45% reduction in operational cycle times for BFSI clients while maintaining a 98% compliance rate across regulatory audits.",
+      "technologies": [
+        "Agentic AI",
+        "Agentic Workflows",
+        "Automation",
+        "Regulatory Compliance",
+        "BFSI",
+        "Audits"
+      ],
+      "metrics": [
+        "45% reduction in operational cycle times",
+        "98% compliance rate"
+      ],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_ibm_004",
+      "employmentId": "emp-ibm",
+      "category": "team_leadership",
+      "text": "Built and mentored a team of 8 product managers and designers; implemented outcome-over-output frameworks that cut product-to-market latency by 3 months.",
+      "technologies": [
+        "Team Leadership",
+        "Mentorship",
+        "Product Management",
+        "Product Design",
+        "OKRs"
+      ],
+      "metrics": [
+        "team of 8 product managers and designers",
+        "cut latency by 3 months"
+      ],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_ibm_005",
+      "employmentId": "emp-ibm",
+      "category": "retention_strategy",
+      "text": "Uncovered a correlation between migration patterns and client churn through support-ticket analysis, and pivoted the roadmap to protect retention on the portfolio’s largest accounts.",
+      "technologies": [
+        "Churn Analysis",
+        "Support-Ticket Analysis",
+        "Data Analytics",
+        "Roadmapping",
+        "Retention"
+      ],
+      "metrics": [],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_ibm_006",
+      "employmentId": "emp-ibm",
+      "category": "enterprise_expansion",
+      "text": "Shaped AI decisioning features tied directly to the portfolio’s largest banking renewals and expansions; authored executive narratives that informed quarterly and annual portfolio planning.",
+      "technologies": [
+        "AI Decisioning",
+        "Banking Renewals",
+        "Executive Narratives",
+        "Portfolio Planning"
+      ],
+      "metrics": [],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_odo_001",
+      "employmentId": "emp-odotrack",
+      "category": "product_expansion",
+      "text": "Grew a last-mile delivery tracking platform into a broader fleet operations product: identified expansion opportunities through qualitative interviews and quantitative usage analysis, then launched route optimization, ELD compliance, and electronic proof-of-delivery capabilities for trucks and fleets.",
+      "technologies": [
+        "Route Optimization",
+        "ELD Compliance",
+        "Electronic Proof-of-Delivery",
+        "Fleet Operations",
+        "Qualitative Interviews",
+        "Usage Analysis"
+      ],
+      "metrics": [],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_odo_002",
+      "employmentId": "emp-odotrack",
+      "category": "roadmap_prioritization",
+      "text": "Owned backlog and roadmap for the B2B SaaS platform, translating market segmentation and customer feedback into prioritized initiatives aligned with executive objectives.",
+      "technologies": [
+        "B2B SaaS",
+        "Roadmap",
+        "Backlog",
+        "Market Segmentation",
+        "Customer Feedback"
+      ],
+      "metrics": [],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_odo_003",
+      "employmentId": "emp-odotrack",
+      "category": "ux_efficiency",
+      "text": "Delivered wireframes, user stories, and acceptance criteria that shipped features improving operational efficiency and user experience by 30%.",
+      "technologies": [
+        "Wireframes",
+        "User Stories",
+        "Acceptance Criteria",
+        "Figma",
+        "User Experience"
+      ],
+      "metrics": [
+        "30% improvement in operational efficiency and UX"
+      ],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_myr_001",
+      "employmentId": "emp-myr",
+      "category": "growth_scaling",
+      "text": "Led product and growth through 400% year-over-year customer acquisition growth at a fintech POS startup, driving the hard prioritization and scaling decisions that kept the product and team ahead of demand.",
+      "technologies": [
+        "Fintech",
+        "POS",
+        "Customer Acquisition",
+        "Scaling",
+        "Prioritization"
+      ],
+      "metrics": [
+        "400% YoY customer acquisition growth"
+      ],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_myr_002",
+      "employmentId": "emp-myr",
+      "category": "cost_reduction",
+      "text": "Identified operational inefficiencies through data modeling and deployed automation that reduced costs by 65%.",
+      "technologies": [
+        "Data Modeling",
+        "Automation",
+        "Process Optimization"
+      ],
+      "metrics": [
+        "65% cost reduction"
+      ],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_allagma_001",
+      "employmentId": "emp-allagma",
+      "category": "client_consulting",
+      "text": "First client-facing role: translated customer problems into product requirements and led phased POS system deployments for a national retail client, delivering incremental value on schedule.",
+      "technologies": [
+        "POS",
+        "Product Requirements",
+        "Retail",
+        "Deployments",
+        "Consulting"
+      ],
+      "metrics": [],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    },
+    {
+      "factId": "fact_freelance_001",
+      "employmentId": "emp-freelance",
+      "category": "technical_roots",
+      "text": "Engineered automation solutions in Python and Go, including distributed web scrapers, decentralized crawlers, and database automation frameworks; the technical foundation behind later AI and automation product work.",
+      "technologies": [
+        "Python",
+        "Go",
+        "Web Scrapers",
+        "Crawlers",
+        "Database Automation"
+      ],
+      "metrics": [],
+      "source": "master_resume_html",
+      "verification": "APPROVED"
+    }
+  ],
+  "skills": [
+    {
+      "name": "Product Strategy and Vision",
+      "category": "Product Leadership",
+      "proficiency": "expert",
+      "yearsExperience": 10,
+      "verified": true
+    },
+    {
+      "name": "Portfolio Management & P&L Ownership",
+      "category": "Product Leadership",
+      "proficiency": "expert",
+      "yearsExperience": 6,
+      "verified": true
+    },
+    {
+      "name": "Roadmap Prioritization",
+      "category": "Product Leadership",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": true
+    },
+    {
+      "name": "Go-to-Market (GTM)",
+      "category": "Product Leadership",
+      "proficiency": "expert",
+      "yearsExperience": 6,
+      "verified": true
+    },
+    {
+      "name": "Pricing and Packaging",
+      "category": "Product Leadership",
+      "proficiency": "expert",
+      "yearsExperience": 5,
+      "verified": true
+    },
+    {
+      "name": "OKRs & Executive Communication",
+      "category": "Product Leadership",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": true
+    },
+    {
+      "name": "Team Building & Mentorship",
+      "category": "Product Leadership",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": true
+    },
+    {
+      "name": "AI Decisioning",
+      "category": "AI and ML",
+      "proficiency": "expert",
+      "yearsExperience": 5,
+      "verified": true
+    },
+    {
+      "name": "Agentic Workflows and Orchestration",
+      "category": "AI and ML",
+      "proficiency": "expert",
+      "yearsExperience": 3,
+      "verified": true
+    },
+    {
+      "name": "Generative AI and LLMs",
+      "category": "AI and ML",
+      "proficiency": "expert",
+      "yearsExperience": 3,
+      "verified": true
+    },
+    {
+      "name": "RAG",
+      "category": "AI and ML",
+      "proficiency": "expert",
+      "yearsExperience": 2,
+      "verified": true
+    },
+    {
+      "name": "Model Context Protocol (MCP)",
+      "category": "AI and ML",
+      "proficiency": "expert",
+      "yearsExperience": 2,
+      "verified": true
+    },
+    {
+      "name": "ML Product Lifecycle & Model Monitoring",
+      "category": "AI and ML",
+      "proficiency": "expert",
+      "yearsExperience": 5,
+      "verified": true
+    },
+    {
+      "name": "Predictive Analytics",
+      "category": "AI and ML",
+      "proficiency": "expert",
+      "yearsExperience": 5,
+      "verified": true
+    },
+    {
+      "name": "Customer Discovery & User Interviews",
+      "category": "Discovery and Delivery",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": true
+    },
+    {
+      "name": "Experimentation and A/B Testing",
+      "category": "Discovery and Delivery",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": true
+    },
+    {
+      "name": "Product Analytics",
+      "category": "Discovery and Delivery",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": true
+    },
+    {
+      "name": "Prototyping",
+      "category": "Discovery and Delivery",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": true
+    },
+    {
+      "name": "Agile, Scrum, and Kanban",
+      "category": "Discovery and Delivery",
+      "proficiency": "expert",
+      "yearsExperience": 10,
+      "verified": true
+    },
+    {
+      "name": "Banking and Financial Services (BFSI)",
+      "category": "Domain",
+      "proficiency": "expert",
+      "yearsExperience": 6,
+      "verified": true
+    },
+    {
+      "name": "Fintech",
+      "category": "Domain",
+      "proficiency": "expert",
+      "yearsExperience": 6,
+      "verified": true
+    },
+    {
+      "name": "Regulatory Compliance and Data Governance",
+      "category": "Domain",
+      "proficiency": "expert",
+      "yearsExperience": 5,
+      "verified": true
+    },
+    {
+      "name": "Enterprise Workflow Automation",
+      "category": "Domain",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": true
+    },
+    {
+      "name": "B2B SaaS",
+      "category": "Domain",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": true
+    },
+    {
+      "name": "Point of Sale (POS)",
+      "category": "Domain",
+      "proficiency": "expert",
+      "yearsExperience": 6,
+      "verified": true
+    },
+    {
+      "name": "SQL",
+      "category": "Technical",
+      "proficiency": "expert",
+      "yearsExperience": 10,
+      "verified": true
+    },
+    {
+      "name": "Python",
+      "category": "Technical",
+      "proficiency": "expert",
+      "yearsExperience": 10,
+      "verified": true
+    },
+    {
+      "name": "Go",
+      "category": "Technical",
+      "proficiency": "proficient",
+      "yearsExperience": 5,
+      "verified": true
+    },
+    {
+      "name": "Git",
+      "category": "Technical",
+      "proficiency": "expert",
+      "yearsExperience": 10,
+      "verified": true
+    },
+    {
+      "name": "JIRA",
+      "category": "Technical",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": true
+    },
+    {
+      "name": "Confluence",
+      "category": "Technical",
+      "proficiency": "expert",
+      "yearsExperience": 8,
+      "verified": true
+    },
+    {
+      "name": "Aha!",
+      "category": "Technical",
+      "proficiency": "proficient",
+      "yearsExperience": 5,
+      "verified": true
+    },
+    {
+      "name": "Figma",
+      "category": "Technical",
+      "proficiency": "proficient",
+      "yearsExperience": 5,
+      "verified": true
+    },
+    {
+      "name": "Notion",
+      "category": "Technical",
+      "proficiency": "proficient",
+      "yearsExperience": 6,
+      "verified": true
+    },
+    {
+      "name": "n8n",
+      "category": "Technical",
+      "proficiency": "expert",
+      "yearsExperience": 4,
+      "verified": true
+    },
+    {
+      "name": "Make",
+      "category": "Technical",
+      "proficiency": "expert",
+      "yearsExperience": 4,
+      "verified": true
+    },
+    {
+      "name": "English",
+      "category": "Languages",
+      "proficiency": "expert",
+      "verified": true
+    },
+    {
+      "name": "French",
+      "category": "Languages",
+      "proficiency": "expert",
+      "verified": true
+    }
+  ],
+  "education": [
+    {
+      "degree": "Bachelor's",
+      "fieldOfStudy": "Information Science",
+      "institution": "Concordia University",
+      "startDate": "2010-09-01",
+      "endDate": "2013-05-31"
+    }
+  ],
+  "credentials": [],
+  "_redaction": {
+    "note": "Contact identity redacted for the committed fixture.",
+    "redactedFields": [
+      "email",
+      "location",
+      "phone"
+    ],
+    "source": "data/rebuild/sources/local/32a2ce20-5bfd-4195-95f2-e29785d80bf8.json (ignored local data)"
+  }
+}

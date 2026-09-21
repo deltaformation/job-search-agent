@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
  * Tailoring Provider CLI Adapter for Local Job Tracker.
- * Reads `TailoringInputV1` from stdin and writes `ResumeProposalV1` to stdout.
+ * Reads `TailoringInputV1`/`TailoringInputV2` from stdin and writes `ResumeProposalV1` to stdout.
  * Uses the active AI provider (`ACTIVE_AI_PROVIDER`: openrouter, google, or
  * meta — default openrouter) with robust post-validation and deterministic
  * fallback.
  *
  * Exit contract (mirrored by `PROVIDER_EXIT_*` in
- * `src/tailoring/commandAdapter.ts`): 0 prints a proposal; 10/11/12/13
+ * `src/tailoring/commandAdapter.ts`): 0 prints a proposal; 10/11/12/13/14
  * report a classified API failure so the queue can surface an actionable
  * error with retry instead of silently degrading. The deterministic
  * fallback runs only when no API key is configured (offline/test use).
@@ -17,6 +17,7 @@ const EXIT_AUTH = 10;
 const EXIT_RATE_LIMIT = 11;
 const EXIT_TIMEOUT = 12;
 const EXIT_BAD_RESPONSE = 13;
+const EXIT_NETWORK = 14;
 
 class ProviderFailure extends Error {
   constructor(exitCode, message) {
@@ -66,19 +67,164 @@ function providerConfig() {
   };
 }
 
+const TAILORING_INPUT_VERSIONS = {
+  "tailoring-input/v1": "tailor-prompt/v1",
+  "tailoring-input/v2": "tailor-prompt/v2",
+};
+
+/**
+ * Structural input gate (contracts §3.2): the sidecar accepts only
+ * the two provider-input versions with their paired prompt version,
+ * the frozen v2 focus/recommendation snapshots, and steering inside
+ * the contractual bounds. Anything else fails before any remote
+ * call or deterministic fallback. Pure and exported for unit tests.
+ */
+export function validateTailoringInput(input) {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, detail: "tailoring input must be an object" };
+  }
+  const promptVersion = TAILORING_INPUT_VERSIONS[input.schemaVersion];
+  if (promptVersion === undefined) {
+    return { ok: false, detail: "unsupported tailoring input version" };
+  }
+  if (input.promptVersion !== promptVersion) {
+    return { ok: false, detail: "prompt version does not match the input version" };
+  }
+  const requiredText = ["jobId", "jdSnapshotId", "candidateSnapshotId"];
+  for (const key of requiredText) {
+    if (typeof input[key] !== "string" || input[key].length === 0) {
+      return { ok: false, detail: `tailoring input is missing ${key}` };
+    }
+  }
+  if (
+    typeof input.jdText !== "string" ||
+    input.jdText.length === 0 ||
+    input.jdText.length > 500000
+  ) {
+    return { ok: false, detail: "tailoring input carries an unusable job description" };
+  }
+  if (
+    !Array.isArray(input.approvedFactIds) ||
+    input.approvedFactIds.some((entry) => typeof entry !== "string" || entry.length === 0)
+  ) {
+    return { ok: false, detail: "tailoring input carries unusable approved facts" };
+  }
+  if (input.selectedKeywords !== undefined) {
+    if (
+      !Array.isArray(input.selectedKeywords) ||
+      input.selectedKeywords.length > 20 ||
+      input.selectedKeywords.some(
+        (entry) =>
+          typeof entry !== "string" || entry.trim().length === 0 || entry.trim().length > 128,
+      )
+    ) {
+      return { ok: false, detail: "selected keywords exceed the frozen projection bounds" };
+    }
+  }
+  if (
+    input.directives !== undefined &&
+    (typeof input.directives !== "string" || input.directives.trim().length > 1000)
+  ) {
+    return { ok: false, detail: "directives exceed the 1000-character bound" };
+  }
+  const revisionLimit = input.schemaVersion === "tailoring-input/v2" ? 4000 : 2000;
+  if (
+    input.revisionNote !== undefined &&
+    (typeof input.revisionNote !== "string" ||
+      input.revisionNote.trim().length === 0 ||
+      input.revisionNote.trim().length > revisionLimit)
+  ) {
+    return { ok: false, detail: "revision note exceeds its input-version bound" };
+  }
+  if (input.schemaVersion === "tailoring-input/v2") {
+    if (input.focus?.schemaVersion !== "tailoring-focus/v1") {
+      return { ok: false, detail: "v2 input is missing its frozen focus snapshot" };
+    }
+    if (input.recommendations?.schemaVersion !== "tailoring-recommendations/v1") {
+      return { ok: false, detail: "v2 input is missing its frozen recommendation snapshot" };
+    }
+  }
+  return { ok: true };
+}
+
+function phraseTextById(recommendations, phraseId) {
+  if (!Array.isArray(recommendations?.phrases)) return null;
+  const phrase = recommendations.phrases.find((entry) => entry?.id === phraseId);
+  return typeof phrase?.text === "string" && phrase.text !== "" ? phrase.text : null;
+}
+
+function roleLabelById(recommendations, roleId) {
+  if (!Array.isArray(recommendations?.roles)) return null;
+  const role = recommendations.roles.find((entry) => entry?.id === roleId);
+  if (typeof role?.label === "string" && role.label !== "") return role.label;
+  return roleId;
+}
+
+function themeTitleById(recommendations, themeId) {
+  if (!Array.isArray(recommendations?.themes)) return null;
+  const theme = recommendations.themes.find((entry) => entry?.id === themeId);
+  if (typeof theme?.title === "string" && theme.title !== "") return theme.title;
+  return themeId;
+}
+
+/**
+ * v2 focus steering: chosen theme, requested summary direction, and
+ * phrase-to-role mappings, explicitly usable only when identifying
+ * evidenced requirements. Pure and exported for unit tests.
+ */
+export function buildFocusSection(input) {
+  if (input?.schemaVersion !== "tailoring-input/v2") return "";
+  const focus = input.focus;
+  const recommendations = input.recommendations;
+  if (focus === null || typeof focus !== "object") return "";
+  const lines = ["FOCUS STEERING (frozen v2 snapshots; subordinate to the RULES above):"];
+  if (typeof focus.themeId === "string" && focus.themeId !== "") {
+    lines.push(
+      `- Chosen theme: ${themeTitleById(recommendations, focus.themeId)} — consider it only when identifying evidenced requirements.`,
+    );
+  }
+  if (typeof focus.summaryDirection === "string" && focus.summaryDirection.trim() !== "") {
+    lines.push(
+      "- Requested summary direction (requested wording only; it is not candidate evidence and never overrides the evidence rules):",
+      '"""',
+      focus.summaryDirection.trim(),
+      '"""',
+    );
+  }
+  if (Array.isArray(focus.mappings) && focus.mappings.length > 0) {
+    lines.push(
+      "- Phrase-to-role mappings (prioritize these role-owned facts only where the candidate has supporting approved facts):",
+    );
+    for (const mapping of focus.mappings) {
+      const phrase = phraseTextById(recommendations, mapping?.phraseId) ?? mapping?.phraseId ?? "";
+      const role = roleLabelById(recommendations, mapping?.roleId) ?? mapping?.roleId ?? "";
+      const facts = Array.isArray(mapping?.factIds)
+        ? mapping.factIds.map((entry) => String(entry)).filter((entry) => entry !== "")
+        : [];
+      lines.push(`  - ${phrase} → ${role}${facts.length > 0 ? ` (${facts.join(", ")})` : ""}`);
+    }
+  }
+  if (lines.length === 1) return "";
+  lines.push(
+    "- Use this steering only when identifying requirements with approved-fact evidence; never invent evidence for it.",
+  );
+  return lines.join("\n");
+}
+
 /**
  * Human guidance prompt section (R-ADR-013): selected ATS keywords plus
  * free-text directives, explicitly subordinated to the evidence rules.
- * Returns "" when the envelope carries no guidance. Pure and exported
- * for unit tests.
+ * v2 envelopes append the frozen focus steering. Returns "" when the
+ * envelope carries no guidance. Pure and exported for unit tests.
  */
 export function buildGuidanceSection(input) {
   const keywords = Array.isArray(input?.selectedKeywords)
     ? input.selectedKeywords.map((entry) => String(entry).trim()).filter((entry) => entry !== "")
     : [];
   const directives = typeof input?.directives === "string" ? input.directives.trim() : "";
+  const focusSection = buildFocusSection(input);
   if (keywords.length === 0 && directives === "") {
-    return "";
+    return focusSection;
   }
   const lines = ["TAILORING GUIDANCE (human-selected steering; subordinate to the RULES above):"];
   if (keywords.length > 0) {
@@ -94,6 +240,9 @@ export function buildGuidanceSection(input) {
       directives,
       '"""',
     );
+  }
+  if (focusSection !== "") {
+    lines.push("", focusSection);
   }
   return lines.join("\n");
 }
@@ -373,7 +522,10 @@ Analyze the JD, extract exact keyword-dense quotes, map each requirement to EVER
       if (err.kind === "bad-response") {
         throw new ProviderFailure(EXIT_BAD_RESPONSE, `Empty content from ${config.label} API`);
       }
-      if (err.kind === "timeout" || err.kind === "network") {
+      if (err.kind === "network") {
+        throw new ProviderFailure(EXIT_NETWORK, err.message);
+      }
+      if (err.kind === "timeout") {
         throw new ProviderFailure(EXIT_TIMEOUT, err.message);
       }
       if (err.kind === "status" && (err.status === 408 || err.status >= 500)) {
@@ -481,6 +633,12 @@ async function main() {
     input = JSON.parse(rawInput);
   } catch (err) {
     process.stderr.write(`Invalid JSON on stdin: ${err.message}\n`);
+    process.exit(1);
+  }
+
+  const validated = validateTailoringInput(input);
+  if (!validated.ok) {
+    process.stderr.write(`Unsupported tailoring input: ${validated.detail}\n`);
     process.exit(1);
   }
 

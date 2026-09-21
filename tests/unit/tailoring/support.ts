@@ -361,7 +361,7 @@ export function seedJob(t: TestDatabase, descriptionText: string): { jobId: stri
   const jobId = newId();
   t.handle.db
     .insert(jobs)
-    .values({ id: jobId, title: "Backend Engineer", company: "Acme", status: "NEW" })
+    .values({ id: jobId, title: "Backend Engineer", company: "Acme", status: "NEW", tailoringState: "READY" })
     .run();
   const attemptId = newId();
   t.handle.db

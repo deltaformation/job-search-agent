@@ -9,6 +9,7 @@ import {
   workItems,
   type TestDatabase,
 } from "../../../src/db";
+import { intakeBatches } from "../../../src/db/schema/intake";
 import { completeWorkItem } from "../../../src/queue/leases";
 import { ensureFetchShell, persistFetchOutcome } from "../../../src/scraping/evidence";
 import { canonicalizeUrl } from "../../../src/scraping/urls";
@@ -88,6 +89,20 @@ describe("batch views", () => {
       expect(listBatches(t.handle, 1)).toHaveLength(1);
       expect(listBatches(t.handle, 0)).toHaveLength(1);
       expect(listBatches(t.handle, 1000).length).toBeLessThanOrEqual(100);
+    });
+  });
+
+  it("breaks same-millisecond ties by insertion order", async () => {
+    await withDatabase(async (t) => {
+      const first = newId();
+      const second = newId();
+      for (const id of [first, second]) {
+        t.handle.db
+          .insert(intakeBatches)
+          .values({ id, createdAt: T0, updatedAt: T0 })
+          .run();
+      }
+      expect(listBatches(t.handle).map((b) => b.id)).toEqual([second, first]);
     });
   });
 
@@ -239,8 +254,10 @@ describe("work item views", () => {
           state: "RUNNING",
           leaseToken: "token",
           leasedAt: T0,
-          leaseExpiresAt: T0,
+          // WO-1.3-F: expiry is exclusive — a live lease for completion.
+          leaseExpiresAt: new Date(Date.parse(T0) + 60_000).toISOString(),
           workerId: "worker-a",
+          currentAttemptId: newId(),
           attemptCount: 1,
           maxAttempts: 3,
         })

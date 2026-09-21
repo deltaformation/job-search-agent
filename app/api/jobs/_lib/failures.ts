@@ -77,7 +77,7 @@ export function reviewFailureResponse(failure: ReviewCommandFailure): Response {
   if (failure.error === "unknown-version") {
     return jsonError(404, "resume version not found", failure.detail);
   }
-  if (failure.error === "conflict") {
+  if (failure.error === "conflict" || failure.error === "stale-version") {
     return Response.json(detail, { status: 409 });
   }
   if (

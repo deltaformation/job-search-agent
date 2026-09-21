@@ -1,8 +1,7 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle,
   ArrowLeft,
   Banknote,
   Briefcase,
@@ -11,28 +10,30 @@ import {
   ExternalLink,
   History,
   MessageSquare,
-  RotateCcw,
   Sparkles,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { BoardStatus } from "@/src/domain/enums";
-import { extractAtsKeywords } from "@/src/domain/atsKeywords";
+
 import type { BoardCardView, JobDetailView } from "@/src/server/board";
-import { apiGet, apiPost, errorMessage } from "../api";
+import { apiGet, errorMessage } from "../api";
 import AddNoteForm from "./AddNoteForm";
 import Dialog from "./dialog";
 import { postJobMutation } from "./mutate";
-import ResumeReview from "./ResumeReview";
 import { formatSalaryRange } from "./salaryFormat";
-import { tailoringReasonCopy } from "./tailoringCopy";
+import TailorEntryPanel from "./TailorEntryPanel";
 
 /**
- * Card detail drawer: facts, source links, attempts, missing fields,
- * resumes, notes, the application record, workflow history, and intake
- * provenance — plus the keyboard-operable action path (move menu,
- * correction, application recording) that mirrors drag and drop.
+ * Card detail drawer (WO-1.3-H cutover): job facts, source links,
+ * attempts, missing fields, tailoring/resume ENTRY points (state +
+ * deep links into the tailor route), notes, the application record,
+ * workflow history, and intake provenance — plus the keyboard-
+ * operable action path (move menu, correction, application
+ * recording) that mirrors drag and drop. Generation, editing, and
+ * review happen only in the tailor route; the drawer issues no
+ * tailoring mutations.
  */
 
 const ORDINARY_TARGETS: Record<BoardStatus, BoardStatus[]> = {
@@ -42,14 +43,6 @@ const ORDINARY_TARGETS: Record<BoardStatus, BoardStatus[]> = {
   INTERVIEWED: ["REJECTED"],
   REJECTED: [],
 };
-
-const DIRECTIVE_STARTERS: readonly string[] = [
-  "Emphasize profile skills",
-  "Prioritize B2B SaaS experience",
-  "Highlight quantifiable KPI results and metrics",
-];
-
-const MAX_DIRECTIVES_CHARS = 1000;
 
 function pretty(value: string | null): string {
   if (value === null || value === "") {
@@ -64,26 +57,6 @@ function formatBytes(bytes: number): string {
     return `${bytes} B`;
   }
   return `${(bytes / 1024).toFixed(1)} KB`;
-}
-
-/**
- * Client-observed run clock. Attempt rows are written at completion, so
- * while RUNNING the elapsed time counts from when this banner mounted
- * (opening the tab on an in-flight run starts near zero). Mounted only
- * while the progress banner renders, so every run starts at zero
- * without reset bookkeeping.
- */
-function RunElapsedClock() {
-  const [startedAt] = useState(() => Date.now());
-  const [now, setNow] = useState(startedAt);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-  const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000));
-  return <span className="font-mono tabular-nums">Tailoring in progress ({elapsed}s elapsed)</span>;
 }
 
 interface CardDrawerProps {
@@ -109,37 +82,9 @@ export default function CardDrawer({
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [moveTo, setMoveTo] = useState<BoardStatus | "">("");
-  const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
-  const [matchSummary, setMatchSummary] = useState<string>("Select a resume to inspect its requirement matches.");
   const [activeTab, setActiveTab] = useState<string | null>(null);
-  const [retrying, setRetrying] = useState(false);
-  const [retryNotice, setRetryNotice] = useState<string | null>(null);
-  const [profiles, setProfiles] = useState<Array<{
-    id: string;
-    name: string;
-    displayName: string;
-    isDefault: boolean;
-    activeVersion: number | null;
-    latestVersion: number | null;
-  }> | null>(null);
-  const [profilesError, setProfilesError] = useState<string | null>(null);
-  const [guideProfileId, setGuideProfileId] = useState("");
-  const [guideKeywords, setGuideKeywords] = useState<string[]>([]);
-  const [guideDirectives, setGuideDirectives] = useState("");
-  const [guideJobId, setGuideJobId] = useState(jobId);
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const centerScrollRef = useRef<HTMLDivElement>(null);
-
-  // Guidance selections belong to one job: reset during render when the
-  // drawer retargets (the sanctioned render-time adjustment pattern).
-  if (guideJobId !== jobId) {
-    setGuideJobId(jobId);
-    setProfiles(null);
-    setProfilesError(null);
-    setGuideProfileId("");
-    setGuideKeywords([]);
-    setGuideDirectives("");
-  }
 
   function resetSectionScroll(): void {
     // Section switches start at the top: without a reset, newly shown
@@ -177,7 +122,10 @@ export default function CardDrawer({
   }, [refreshDetail, refreshToken]);
 
   const tailoringState = detail?.job.tailoringState ?? null;
-  const tailoringLive = tailoringState === "PENDING" || tailoringState === "RUNNING";
+  const tailoringLive =
+    tailoringState === "PENDING" ||
+    tailoringState === "RUNNING" ||
+    tailoringState === "REVISION_REQUESTED";
 
   useEffect(() => {
     // Active polling while a tailoring run is queued or in flight: the
@@ -191,84 +139,6 @@ export default function CardDrawer({
     }, 2000);
     return () => clearInterval(timer);
   }, [tailoringLive, refreshDetail]);
-
-  async function onRetryTailoring(): Promise<void> {
-    setRetrying(true);
-    setRetryNotice(null);
-    setActionError(null);
-    try {
-      const result = await apiPost<{ workItemId: string; action: string }>(
-        `/api/jobs/${jobId}/tailor/retry`,
-        {},
-      );
-      setRetryNotice(
-        result.action === "requeued" || result.action === "enqueued"
-          ? "Tailoring restarted — watching for the new run."
-          : `Tailoring already ${result.action.replace("already_", "")} — watching for updates.`,
-      );
-      onChanged();
-      await refreshDetail();
-    } catch (retryError: unknown) {
-      setActionError(errorMessage(retryError));
-    } finally {
-      setRetrying(false);
-    }
-  }
-
-  function toggleGuideKeyword(keyword: string): void {
-    setGuideKeywords((current) =>
-      current.includes(keyword)
-        ? current.filter((entry) => entry !== keyword)
-        : [...current, keyword].slice(0, 20),
-    );
-  }
-
-  function appendStarter(starter: string): void {
-    setGuideDirectives((current) => {
-      const trimmed = current.trimEnd();
-      const joined = trimmed === "" ? starter : `${trimmed}\n${starter}`;
-      return joined.slice(0, MAX_DIRECTIVES_CHARS);
-    });
-  }
-
-  async function onGuidedTailoring(hasResumes: boolean): Promise<void> {
-    setRetrying(true);
-    setRetryNotice(null);
-    setActionError(null);
-    try {
-      const body: {
-        profileId?: string;
-        selectedKeywords?: string[];
-        directives?: string;
-      } = {};
-      if (guideProfileId !== "") {
-        body.profileId = guideProfileId;
-      }
-      if (guideKeywords.length > 0) {
-        body.selectedKeywords = guideKeywords;
-      }
-      if (guideDirectives.trim() !== "") {
-        body.directives = guideDirectives.trim();
-      }
-      const result = await apiPost<{ workItemId: string; action: string }>(
-        `/api/jobs/${jobId}/tailor/retry`,
-        body,
-      );
-      setRetryNotice(
-        result.action === "requeued" || result.action === "enqueued"
-          ? hasResumes
-            ? "Re-tailoring with your guidance — watching for the new run."
-            : "Tailoring with your guidance — watching for the new run."
-          : `Tailoring already ${result.action.replace("already_", "")} — watching for updates.`,
-      );
-      onChanged();
-      await refreshDetail();
-    } catch (retryError: unknown) {
-      setActionError(errorMessage(retryError));
-    } finally {
-      setRetrying(false);
-    }
-  }
 
   function asCard(view: JobDetailView): BoardCardView {
     const active = view.resumes.find((resume) => resume.id === view.job.activeResumeVersionId);
@@ -293,6 +163,10 @@ export default function CardDrawer({
         active === undefined
           ? null
           : { versionId: active.id, version: active.version, reviewState: active.reviewState },
+      // Detail views carry no batched PDF metadata; Download Resume
+      // lives on the board card (WO-1.3-H).
+      selectedApprovedPdfArtifactId: null,
+      selectedApprovedPdfSha256: null,
       notesCount: view.notes.length,
       sourceUrl: view.source?.submittedUrl ?? null,
       appliedAt: view.application?.appliedAt ?? null,
@@ -335,42 +209,6 @@ export default function CardDrawer({
   // function runs, so opening the drawer never builds the two hidden trees.
   const currentTab =
     activeTab ?? (view !== null && view.resumes.length > 0 ? "resumes" : "overview");
-
-  const suggestedKeywords = useMemo(
-    () => extractAtsKeywords(detail?.job.descriptionText ?? ""),
-    [detail?.job.descriptionText],
-  );
-
-  useEffect(() => {
-    if (currentTab !== "resumes" || profiles !== null || profilesError !== null) {
-      return;
-    }
-    let cancelled = false;
-    apiGet<{
-      profiles: Array<{
-        id: string;
-        name: string;
-        displayName: string;
-        isDefault: boolean;
-        activeVersion: number | null;
-        latestVersion: number | null;
-      }>;
-    }>("/api/settings/profiles").then(
-      (data) => {
-        if (!cancelled) {
-          setProfiles(Array.isArray(data.profiles) ? data.profiles : []);
-        }
-      },
-      (fetchError: unknown) => {
-        if (!cancelled) {
-          setProfilesError(errorMessage(fetchError));
-        }
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [currentTab, profiles, profilesError, jobId]);
 
   const renderOverview = (v: JobDetailView) => (
     <div className="space-y-4">
@@ -521,242 +359,9 @@ export default function CardDrawer({
     </div>
   );
 
-  const renderTailoringAlert = (v: JobDetailView) => {
-    const state = v.job.tailoringState;
-    if (state !== "FAILED" && state !== "BLOCKED") {
-      return null;
-    }
-    return (
-      <div role="alert" className="workspace-tab rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm space-y-2">
-        <p className="flex items-center gap-2 font-semibold text-destructive">
-          <AlertTriangle className="size-4" aria-hidden="true" />
-          <span>Tailoring failed{v.job.tailoringReasonCode !== null ? ` (${pretty(v.job.tailoringReasonCode)})` : ""}</span>
-        </p>
-        <p className="text-foreground/90">{tailoringReasonCopy(v.job.tailoringReasonCode)}</p>
-        {v.tailoringAttempt?.errorDetail && (
-          <p className="rounded-md border border-border/60 bg-background p-2 text-xs font-mono tabular-nums break-words">
-            {v.tailoringAttempt.errorDetail}
-          </p>
-        )}
-        <div className="flex items-center gap-2 pt-1">
-          <Button type="button" size="sm" onClick={() => void onRetryTailoring()} disabled={retrying}>
-            <RotateCcw className={`size-3.5 mr-1 ${retrying ? "animate-spin" : ""}`} aria-hidden="true" />
-            {retrying ? "Restarting…" : "Retry tailoring"}
-          </Button>
-        </div>
-      </div>
-    );
-  };
-
-  const renderTailoringProgress = (v: JobDetailView) => {
-    const state = v.job.tailoringState;
-    if (state === "RUNNING") {
-      return (
-        <div className="workspace-tab rounded-lg border border-border/80 bg-card p-4 text-sm" role="status" aria-live="polite">
-          <p className="flex items-center gap-2 font-semibold">
-            <Sparkles className="size-4 animate-spin text-primary" aria-hidden="true" />
-            <RunElapsedClock />
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Calling the AI provider to extract verbatim requirements and Top 5 ATS keywords, then
-            compiling the resume. This view updates automatically.
-          </p>
-        </div>
-      );
-    }
-    if (state === "PENDING" && v.resumes.length === 0) {
-      return (
-        <div className="workspace-tab rounded-lg border border-border/80 bg-card p-4 text-sm" role="status">
-          <p className="flex items-center gap-2 font-semibold">
-            <Clock className="size-4 text-muted-foreground" aria-hidden="true" />
-            <span>Queued for tailoring</span>
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Waiting for the background worker to claim this job. This view updates automatically.
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  const renderTailoringGuidance = (v: JobDetailView) => {
-    const live = v.job.tailoringState === "PENDING" || v.job.tailoringState === "RUNNING";
-    return (
-      <section
-        aria-labelledby="drawer-guidance"
-        className="workspace-tab rounded-lg border border-border/80 bg-card p-4 space-y-3"
-      >
-        <h4 id="drawer-guidance" className="font-semibold text-sm flex items-center gap-2">
-          <Sparkles className="size-4 text-primary" aria-hidden="true" />
-          <span>Tailoring Guidance</span>
-        </h4>
-        <div className="grid gap-1.5">
-          <label htmlFor="guide-profile" className="text-xs font-medium">
-            Career profile
-          </label>
-          {profilesError !== null ? (
-            <p role="alert" className="text-xs text-destructive">
-              Could not load profiles: {profilesError}
-            </p>
-          ) : profiles === null ? (
-            <p className="text-xs text-muted-foreground">Loading profiles…</p>
-          ) : (
-            <select
-              id="guide-profile"
-              value={guideProfileId}
-              onChange={(event) => setGuideProfileId(event.target.value)}
-              disabled={retrying}
-              className="rounded-lg border border-input bg-background p-2 text-sm"
-            >
-              <option value="">Default profile</option>
-              {profiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.displayName}
-                  {profile.isDefault ? " (default)" : ""}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-        <div className="grid gap-1.5">
-          <span id="guide-keywords-label" className="text-xs font-medium">
-            Top ATS keywords
-          </span>
-          {suggestedKeywords.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No keyword suggestions — this job has no extracted description text yet.
-            </p>
-          ) : (
-            <div role="group" aria-labelledby="guide-keywords-label" className="flex flex-wrap gap-1.5">
-              {suggestedKeywords.map((entry) => {
-                const selected = guideKeywords.includes(entry.keyword);
-                return (
-                  <button
-                    key={entry.keyword}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => toggleGuideKeyword(entry.keyword)}
-                    disabled={retrying}
-                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
-                      selected
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border/80 bg-background text-muted-foreground"
-                    }`}
-                  >
-                    {selected ? `✓ ${entry.keyword}` : entry.keyword}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        <div className="grid gap-1.5">
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Directive starters">
-            {DIRECTIVE_STARTERS.map((starter) => (
-              <button
-                key={starter}
-                type="button"
-                onClick={() => appendStarter(starter)}
-                disabled={retrying}
-                className="rounded-full border border-border/80 bg-muted/30 px-2.5 py-1 text-xs text-muted-foreground"
-              >
-                🏷️ {starter}
-              </button>
-            ))}
-          </div>
-          <label htmlFor="guide-directives" className="text-xs font-medium">
-            Directive notes
-          </label>
-          <textarea
-            id="guide-directives"
-            rows={3}
-            maxLength={MAX_DIRECTIVES_CHARS}
-            value={guideDirectives}
-            onChange={(event) => setGuideDirectives(event.target.value)}
-            disabled={retrying}
-            placeholder="Custom instructions for this run…"
-            className="rounded-lg border border-input bg-background p-2 text-sm"
-          />
-          <p className="text-[11px] tabular-nums text-muted-foreground" aria-live="polite">
-            {guideDirectives.length}/{MAX_DIRECTIVES_CHARS}
-          </p>
-        </div>
-        <div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => void onGuidedTailoring(v.resumes.length > 0)}
-            disabled={retrying || live}
-            title={live ? "A tailoring run is already in flight" : undefined}
-          >
-            <RotateCcw className={`size-3.5 mr-1 ${retrying ? "animate-spin" : ""}`} aria-hidden="true" />
-            {retrying ? "Starting…" : v.resumes.length > 0 ? "Re-tailor Resume" : "Tailor Resume"}
-          </Button>
-        </div>
-        <p className="text-[11px] text-muted-foreground">
-          Guidance steers ranking and wording only — every claim still cites approved facts, and
-          unsupported requirements stay explicit gaps.
-        </p>
-      </section>
-    );
-  };
-
-  const renderMasterResumeCard = () => {
-    const fallback = (message: string) => (
-      <div className="workspace-tab rounded-lg border border-border/80 bg-card p-4">
-        <p className="text-sm font-semibold">Master Resume</p>
-        <p className="mt-1 text-xs text-muted-foreground">{message}</p>
-      </div>
-    );
-    if (profilesError !== null) {
-      return fallback(`Could not load profiles: ${profilesError}`);
-    }
-    if (profiles === null) {
-      return fallback("Loading master resume…");
-    }
-    const master = profiles.find((profile) => profile.isDefault) ?? profiles[0] ?? null;
-    if (master === null) {
-      return fallback("No career profiles yet — create one in Settings first.");
-    }
-    const version = master.activeVersion ?? master.latestVersion ?? null;
-    return (
-      <div className="workspace-tab rounded-lg border border-border/80 bg-card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-sm font-semibold">Master Resume</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {master.displayName}
-              {version === null ? " · no versions yet" : ` · version ${version}`}
-            </p>
-          </div>
-          <a
-            href="/master-resume"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-8 items-center rounded-md border border-input bg-background px-3 text-xs font-medium"
-          >
-            Preview
-            <ExternalLink className="ml-1.5 size-3.5" aria-hidden="true" />
-          </a>
-        </div>
-      </div>
-    );
-  };
-
-  const renderVersionStatusBadge = (reviewState: string) => {
-    if (reviewState === "AWAITING_REVIEW") {
-      return <Badge variant="warning" className="text-[11px] py-0.5 font-medium">Awaiting review</Badge>;
-    }
-    if (reviewState === "APPROVED") {
-      return <Badge variant="success" className="text-[11px] py-0.5 font-medium">Approved</Badge>;
-    }
-    if (reviewState === "REVISION_REQUESTED") {
-      return <Badge variant="destructive" className="text-[11px] py-0.5 font-medium">Revision requested</Badge>;
-    }
-    return <Badge variant="outline" className="text-[11px] py-0.5 font-normal">{pretty(reviewState)}</Badge>;
-  };
-
+  // WO-1.3-H cutover: the resumes tab is now entry points only —
+  // Step 2 state plus deep links into the tailor route. Generation,
+  // editing, and review live in the route; nothing here mutates.
   const renderResumes = (v: JobDetailView) => (
     <section aria-labelledby="drawer-resumes" className="space-y-4">
       <div className="flex items-center justify-between">
@@ -771,78 +376,19 @@ export default function CardDrawer({
         )}
       </div>
 
-      {renderMasterResumeCard()}
-
-      {renderTailoringAlert(v)}
-
-      {renderTailoringProgress(v)}
-
-      {v.resumes.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border/80 p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            No tailored resumes generated yet. Choose your profile and keywords below to tailor a
-            resume for this role.
-          </p>
-        </div>
-      )}
-
-      {v.resumes.length > 0 && (() => {
-        const resume = v.resumes.find((r) => r.id === selectedVersion)
-          ?? v.resumes.find((r) => r.id === v.job.activeResumeVersionId) ?? v.resumes[0]!;
-        const previewFor = (version: JobDetailView["resumes"][number], kind: string) =>
-          version.artifacts.find((artifact) => artifact.kind === kind) ?? null;
-        return <div className="space-y-4">
-          <ul aria-label="Resume versions" className="space-y-2">
-            {v.resumes.map((r) => {
-              const selected = r.id === resume.id;
-              return (
-                <li
-                  key={r.id}
-                  className={`rounded-lg border p-3 ${selected ? "border-primary/60 bg-primary/5" : "border-border/80 bg-card"}`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedVersion(r.id);
-                      setMatchSummary("Loading requirement matches…");
-                      resetSectionScroll();
-                    }}
-                    aria-current={selected ? "true" : undefined}
-                    className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-left"
-                  >
-                    <span className="text-sm font-semibold">Version {r.version}</span>
-                    {renderVersionStatusBadge(r.reviewState)}
-                    <span className="text-xs text-muted-foreground">
-                      Profile &ldquo;{r.profileDisplayName ?? r.profileName ?? "Unknown profile"}&rdquo;
-                    </span>
-                  </button>
-                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-                    {(["DOCX", "MARKDOWN", "PDF"] as const).map((kind) => {
-                      const artifact = previewFor(r, kind);
-                      return artifact === null ? null : (
-                        <a
-                          key={kind}
-                          href={`/api/resumes/artifacts/${artifact.id}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="font-mono text-xs tabular-nums text-primary underline-offset-2 hover:underline"
-                        >
-                          [{kind}]
-                        </a>
-                      );
-                    })}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-          <ResumeReview key={resume.id} versionId={resume.id} refreshToken={refreshToken}
-            onChanged={onChanged} onReviewed={() => void refreshDetail()} onSummary={setMatchSummary} />
-        </div>;
-      })()}
-
-      {renderTailoringGuidance(v)}
-
+      <TailorEntryPanel
+        jobId={v.job.id}
+        tailoringState={v.job.tailoringState}
+        tailoringReasonCode={v.job.tailoringReasonCode}
+        tailorLive={tailoringLive}
+        versions={v.resumes.map((resume) => ({
+          id: resume.id,
+          version: resume.version,
+          reviewState: resume.reviewState,
+          profileDisplayName: resume.profileDisplayName,
+          profileName: resume.profileName,
+        }))}
+      />
     </section>
   );
 
@@ -1080,9 +626,6 @@ export default function CardDrawer({
                     <span className="text-right text-xs font-medium">{pretty(view.job.tailoringState)}</span>
                   </li>
                 </ul>
-                {retryNotice !== null && (
-                  <p className="flash-enter mt-3 border-t border-border/40 pt-2 text-xs text-muted-foreground">{retryNotice}</p>
-                )}
               </section>
               <section aria-labelledby="drawer-actions" className="rounded-xl border bg-card p-5">
                 <h3 id="drawer-actions" className="mb-3 font-semibold">Card actions</h3>
@@ -1142,11 +685,6 @@ export default function CardDrawer({
                   ))}
                   {view.intake && <div><dt className="text-xs text-muted-foreground">Batch origin</dt><dd><a className="underline" href={`/intake/batches/${view.intake.batchId}`}>Intake line {view.intake.lineNumber}</a></dd></div>}
                 </dl>
-              </section>
-              <section className="rounded-xl border bg-card p-5">
-                <h3 className="mb-2 font-semibold">Requirement matches</h3>
-                <p className="text-sm text-muted-foreground">{matchSummary}</p>
-                <p className="mt-2 text-xs text-muted-foreground">Evidence coverage, not a hiring prediction.</p>
               </section>
               <section className="rounded-xl border bg-card p-5 space-y-3">
                 <h3 className="font-semibold">Application tracker</h3>

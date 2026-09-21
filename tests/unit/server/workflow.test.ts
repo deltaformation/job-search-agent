@@ -12,6 +12,7 @@ import {
   candidateProfileVersions,
   candidateProfiles,
   candidateSnapshots,
+  generationRequests,
   intakeBatches,
   intakeItems,
   jdSnapshots,
@@ -22,9 +23,11 @@ import {
   resumeReviews,
   resumeVersions,
   scrapeAttempts,
+  workAttempts,
   workItems,
   workflowEvents,
 } from "../../../src/db/schema";
+import { canonicalJson } from "../../../src/domain/canonical";
 import type { BoardStatus } from "../../../src/domain/enums";
 import { parseWorkflowEventMetadata } from "../../../src/domain/workflow";
 import {
@@ -162,6 +165,53 @@ function seedApprovalChain(
       sha256: "2".repeat(64),
     })
     .run();
+  const requestId = newId();
+  const queueItemId = newId();
+  const queueAttemptId = newId();
+  const requestIdentity = `genreq:v1:${requestId}`;
+  handle.db
+    .insert(workItems)
+    .values({
+      id: queueItemId,
+      kind: "TAILOR",
+      idempotencyKey: requestIdentity,
+      jobId,
+      payloadJson: canonicalJson({ schemaVersion: "tailor-queue/v2" }),
+      state: "SUCCEEDED",
+      attemptCount: 1,
+      maxAttempts: 3,
+    })
+    .run();
+  handle.db
+    .insert(generationRequests)
+    .values({
+      id: requestId,
+      requestIdentity,
+      jobId,
+      extractionId,
+      profileId: "local",
+      profileVersionId,
+      jdSnapshotId,
+      requestKind: "INITIAL",
+      steeringSnapshotJson: "{}",
+      selectedKeywordsJson: "[]",
+      payloadHash: "0".repeat(64),
+      status: "SUCCEEDED",
+      workItemId: queueItemId,
+    })
+    .run();
+  handle.db
+    .insert(workAttempts)
+    .values({
+      id: queueAttemptId,
+      workItemId: queueItemId,
+      attemptNumber: 1,
+      workerId: "worker-a",
+      startedAt: NOW,
+      finishedAt: NOW,
+      result: "SUCCEEDED",
+    })
+    .run();
   const analysisId = newId();
   handle.db
     .insert(jobAnalyses)
@@ -174,6 +224,8 @@ function seedApprovalChain(
       gapsJson: "[]",
       promptVersion: "prompt-v1",
       proposalSchemaVersion: "proposal-v1",
+      generationRequestId: requestId,
+      workAttemptId: queueAttemptId,
     })
     .run();
   const versionId = newId();
@@ -195,6 +247,8 @@ function seedApprovalChain(
       contentJson: "{}",
       contentHash: versionContentHash,
       reviewState: overrides.reviewState ?? "APPROVED",
+      generationRequestId: requestId,
+      workAttemptId: queueAttemptId,
     })
     .run();
   const reviewId = newId();

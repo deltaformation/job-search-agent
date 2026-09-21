@@ -28,6 +28,7 @@ import {
 } from "../scraping/fetch";
 import { canonicalizeUrl, detectAtsType } from "../scraping/urls";
 import { SCRAPE_PAYLOAD_VERSION, type ScrapePayloadV1 } from "./intake";
+import { captureIntakeBinding, isProviderKeyConfigured } from "./preparation";
 
 /**
  * Direct DOM intake: the human clips a page they are already viewing, so the
@@ -441,6 +442,16 @@ function finalizeExtraction(
       detail: outcome.detail,
     };
   }
+  // Step 2 (S2-A §8.1): freeze the globally selected profile
+  // version, evidence, and master before persisting the retained
+  // extraction, so linkage in the same request binds this exact
+  // capture. Absent configuration captures nothing and never
+  // blocks the clip.
+  captureIntakeBinding(handle, {
+    intakeItemId: args.intakeItemId,
+    batchId: args.batchId,
+    now: args.now,
+  });
   const artifacts: PersistArtifactInput[] = [
     {
       kind: "HTML",
@@ -483,6 +494,7 @@ function finalizeExtraction(
       missingFields: outcome.missingFields,
       contentHash: outcome.contentHash,
     },
+    providerKeyPresent: isProviderKeyConfigured(process.env),
     now: args.now,
   });
   finalizeItem(handle, {

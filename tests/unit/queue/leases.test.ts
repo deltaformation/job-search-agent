@@ -30,12 +30,29 @@ function seedItem(
   overrides: Partial<typeof workItems.$inferInsert> = {},
 ): string {
   const id = newId();
+  const kind = overrides.kind ?? "SCRAPE";
   handle.db
     .insert(workItems)
     .values({
       id,
       kind: "SCRAPE",
       idempotencyKey: `key-${id}`,
+      // The D9 legacy guard rejects TAILOR rows without a v2 payload;
+      // queue tests seed a minimal one (ids are opaque to the queue).
+      ...(kind === "TAILOR" && overrides.payloadJson === undefined
+        ? {
+            payloadJson: JSON.stringify({
+              schemaVersion: "tailor-queue/v2",
+              generationRequestId: newId(),
+              jobId: newId(),
+              extractionId: newId(),
+              profileId: "profile-a",
+              profileVersionId: newId(),
+              jdSnapshotId: newId(),
+              payloadHash: "0".repeat(64),
+            }),
+          }
+        : {}),
       ...overrides,
     })
     .run();
@@ -280,6 +297,7 @@ describe("queue completion", () => {
         ok: true,
         state: "SUCCEEDED",
         attemptNumber: 1,
+        attemptId: claimed?.currentAttemptId,
         nextRunAt: null,
       });
       expect(getItem(t.handle, id)).toMatchObject({
@@ -353,6 +371,7 @@ describe("queue completion", () => {
         ok: true,
         state: "QUEUED",
         attemptNumber: 1,
+        attemptId: claimed?.currentAttemptId,
         nextRunAt: plus(failedAt, 30_000),
       });
       expect(getItem(t.handle, id)).toMatchObject({
@@ -400,6 +419,7 @@ describe("queue completion", () => {
         ok: true,
         state: "FAILED",
         attemptNumber: 1,
+        attemptId: claimed?.currentAttemptId,
         nextRunAt: null,
       });
     });
@@ -457,7 +477,11 @@ describe("queue completion", () => {
         ),
       ).toEqual({ ok: false, error: "unknown-item" });
       expect(getItem(t.handle, id)?.state).toBe("RUNNING");
-      expect(attemptsFor(t.handle, id)).toHaveLength(0);
+      // The claim wrote the RUNNING attempt row; refused completions
+      // leave it untouched.
+      const attempts = attemptsFor(t.handle, id);
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]).toMatchObject({ id: claimed?.currentAttemptId, result: "RUNNING" });
     });
   });
 });
@@ -487,7 +511,7 @@ describe("stale lease recovery", () => {
         leaseExpiresAt: plus(T0, 600_000),
       });
       const result = recoverStaleLeases(t.handle, { now: plus(T0, 61_000) });
-      expect(result).toEqual({ recovered: 1, requeued: 1, failed: 0 });
+      expect(result).toEqual({ recovered: 1, requeued: 1, failed: 0, exhausted: [] });
       expect(getItem(t.handle, id)).toMatchObject({
         state: "QUEUED",
         leaseToken: null,
@@ -516,7 +540,12 @@ describe("stale lease recovery", () => {
     withDatabase((t) => {
       const id = seedRunning(t.handle, { attemptCount: 3, maxAttempts: 3 });
       const result = recoverStaleLeases(t.handle, { now: plus(T0, 61_000) });
-      expect(result).toEqual({ recovered: 1, requeued: 0, failed: 1 });
+      expect(result).toEqual({
+        recovered: 1,
+        requeued: 0,
+        failed: 1,
+        exhausted: [{ workItemId: id, kind: "SCRAPE", jobId: null, attempts: 3 }],
+      });
       expect(getItem(t.handle, id)).toMatchObject({
         state: "FAILED",
         nextRunAt: null,
@@ -636,7 +665,7 @@ describe("queue requeue", () => {
       const recovered = recoverStaleLeases(t.handle, {
         now: plus(T0, 20_000),
       });
-      expect(recovered).toEqual({ recovered: 1, requeued: 1, failed: 0 });
+      expect(recovered).toEqual({ recovered: 1, requeued: 1, failed: 0, exhausted: [] });
       expect(attemptsFor(t.handle, id)).toHaveLength(5);
     });
   });

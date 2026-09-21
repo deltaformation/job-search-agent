@@ -7,6 +7,7 @@ import {
   sqliteTable,
   text,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import { createdAt, updatedAt } from "./columns";
 import { intakeItems } from "./intake";
@@ -43,6 +44,7 @@ export const jobs = sqliteTable(
     tailoringReasonCode: text("tailoring_reason_code"),
     activeExtractionId: text("active_extraction_id"),
     activeResumeVersionId: text("active_resume_version_id"),
+    selectedResumeVersionId: text("selected_resume_version_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -71,7 +73,7 @@ export const jobs = sqliteTable(
     ),
     check(
       "jobs_tailoring_state",
-      sql`${t.tailoringState} IN ('PENDING','BLOCKED','RUNNING','AWAITING_REVIEW','APPROVED','REVISION_REQUESTED','FAILED')`,
+      sql`${t.tailoringState} IN ('PENDING','READY','BLOCKED','RUNNING','AWAITING_REVIEW','APPROVED','REVISION_REQUESTED','DECLINED','FAILED')`,
     ),
   ],
 );
@@ -169,6 +171,7 @@ export const jobExtractions = sqliteTable(
   },
   (t) => [
     unique("job_extractions_job_version").on(t.jobId, t.version),
+    uniqueIndex("v13_extraction_owner").on(t.id, t.jobId),
     index("job_extractions_job_id").on(t.jobId),
     check("job_extractions_version", sql`${t.version} >= 1`),
     check(

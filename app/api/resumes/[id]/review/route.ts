@@ -1,3 +1,4 @@
+import { resolveDataRoot } from "../../../../../src/security/data-root";
 import { getResumeReviewView } from "../../../../../src/server/review";
 import { jsonError, openRequestDatabase, readGate } from "../../../_lib/request";
 import { entityIdGate } from "../../../jobs/_lib/failures";
@@ -30,8 +31,18 @@ export async function GET(
   if (!database.ok) {
     return database.response;
   }
+  // G: pass the artifacts root so the workflowReview extension can
+  // read + verify the exact canonical markdown. A misconfigured
+  // root degrades the extension to "unchecked", never 500: the v1
+  // view still serves.
+  let artifactsDir: string | undefined;
   try {
-    const view = getResumeReviewView(database.handle, id);
+    artifactsDir = resolveDataRoot(process.env).artifactsDir;
+  } catch {
+    artifactsDir = undefined;
+  }
+  try {
+    const view = getResumeReviewView(database.handle, id, { artifactsDir });
     if (view === null) {
       return jsonError(404, "resume version not found");
     }

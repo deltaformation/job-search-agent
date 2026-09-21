@@ -1,5 +1,5 @@
 import { resolveDataRoot } from "../../../src/security/data-root";
-import { getSettingsSnapshot } from "../../../src/server/settings";
+import { getSettingsSnapshot, resolveEnvFilePath } from "../../../src/server/settings";
 import {
   jsonError,
   openRequestDatabase,
@@ -8,10 +8,11 @@ import {
 } from "../_lib/request";
 
 /**
- * Settings snapshot for the Settings modal: model chain, OpenRouter
- * status (key fingerprint only, never the secret), active profile
- * summary, and storage stats. Read-only; mutations live under
- * `/api/settings/model`, `/api/settings/ai-test`, `/api/settings/resync`.
+ * Settings snapshot for the Settings modal: active vs saved provider
+ * configuration (key fingerprints only, never secrets), restart state,
+ * last worker report, active profile summary, and storage stats.
+ * Read-only; mutations live under `/api/settings/model`,
+ * `/api/settings/keys`, `/api/settings/ai-test`, `/api/settings/resync`.
  */
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,13 @@ export async function GET(request: Request): Promise<Response> {
       const detail = error instanceof Error ? error.message : String(error);
       return jsonError(500, "data root misconfigured", detail);
     }
-    return Response.json(getSettingsSnapshot(database.handle, { paths }));
+    return Response.json(
+      getSettingsSnapshot(database.handle, {
+        paths,
+        env: process.env,
+        envFilePath: resolveEnvFilePath(process.env),
+      }),
+    );
   } finally {
     database.release();
   }

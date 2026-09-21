@@ -32,6 +32,8 @@ export const WorkflowEventMetadataV1 = z
     /** Exact-version approval binding for NEW → TAILORED. */
     resumeVersionId: EntityId.optional(),
     reviewId: EntityId.optional(),
+    /** D4: `move` flipped NEW→TAILORED (bind-only approvals emit no event). */
+    approvalCase: z.enum(["move", "select"]).optional(),
     /** QUEUED work cancelled by a move into REJECTED. */
     cancelledWorkItems: z.array(EntityId).optional(),
   })

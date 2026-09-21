@@ -109,6 +109,28 @@ describe("createBackupArchive", () => {
     expect(verified.manifest.database.sha256).toBe(result.manifest.database.sha256);
   });
 
+  it("never archives env secrets planted in walked trees (G3)", async () => {
+    const { paths, candidateDir } = makeRoot(true);
+    seedFiles(paths);
+    writeFileSync(join(paths.evidenceDir, ".env.local"), "OPENROUTER_API_KEY=backup-secret-key\n");
+    writeFileSync(join(candidateDir, ".env.local"), "GEMINI_API_KEY=backup-secret-key\n");
+    const handle = openDatabase({ path: paths.databasePath });
+    handles.push(handle);
+    const result = await createBackupArchive({
+      handle,
+      paths,
+      candidateDir,
+      stagingDir: join(paths.root, "staging"),
+      kind: "manual",
+      now: new Date("2026-09-12T09:00:00.000Z"),
+    });
+    const verified = parseAndVerifyArchive(result.bytes);
+    for (const name of verified.members.keys()) {
+      expect(name.toLowerCase()).not.toContain(".env");
+    }
+    expect(result.bytes.includes(Buffer.from("backup-secret-key", "utf8"))).toBe(false);
+  });
+
   it("captures uncheckpointed WAL frames through the backup API", async () => {
     const { paths, candidateDir } = makeRoot(false);
     const handle = openDatabase({ path: paths.databasePath });
@@ -294,7 +316,7 @@ describe("restoreArchive", () => {
     expect(jobs.map((row) => row.id)).toEqual(["job-1"]);
     expect(
       reopened.sqlite.prepare("SELECT version AS version FROM _schema_migrations").all(),
-    ).toHaveLength(6);
+    ).toHaveLength(12);
     const { readFileSync: read } = await import("node:fs");
     expect(read(join(candidateDir, "master-resume.json"), "utf8")).toBe('{"v":1}');
     expect(read(join(paths.evidenceDir, "abc123"), "utf8")).toBe("<html>raw</html>");

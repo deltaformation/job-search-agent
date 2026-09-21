@@ -12,6 +12,7 @@ import {
   candidateProfileVersions,
   candidateProfiles,
   candidateSnapshots,
+  generationRequests,
   intakeBatches,
   intakeItems,
   jdSnapshots,
@@ -29,6 +30,7 @@ import {
   workItems,
   workflowEvents,
 } from "../../../src/db/schema";
+import { canonicalJson } from "../../../src/domain/canonical";
 import type { BoardStatus } from "../../../src/domain/enums";
 import { getBoardView, getJobDetail } from "../../../src/server/board";
 
@@ -401,6 +403,63 @@ function seedRichJob(handle: DatabaseHandle): string {
       canonicalSha256: "e".repeat(64),
     })
     .run();
+  // D9 durable linkage for the analysis + version below.
+  const requestId = newId();
+  const queueItemId = newId();
+  const queueAttemptId = newId();
+  const requestIdentity = `genreq:v1:${requestId}`;
+  handle.db
+    .insert(workItems)
+    .values({
+      id: queueItemId,
+      kind: "TAILOR",
+      idempotencyKey: requestIdentity,
+      jobId,
+      payloadJson: canonicalJson({
+        schemaVersion: "tailor-queue/v2",
+        generationRequestId: requestId,
+        jobId,
+        extractionId,
+        profileId: "local",
+        profileVersionId,
+        jdSnapshotId,
+        payloadHash: "0".repeat(64),
+      }),
+      state: "SUCCEEDED",
+      attemptCount: 1,
+      maxAttempts: 3,
+    })
+    .run();
+  handle.db
+    .insert(generationRequests)
+    .values({
+      id: requestId,
+      requestIdentity,
+      jobId,
+      extractionId,
+      profileId: "local",
+      profileVersionId,
+      jdSnapshotId,
+      requestKind: "INITIAL",
+      steeringSnapshotJson: "{}",
+      selectedKeywordsJson: "[]",
+      payloadHash: "0".repeat(64),
+      status: "SUCCEEDED",
+      workItemId: queueItemId,
+    })
+    .run();
+  handle.db
+    .insert(workAttempts)
+    .values({
+      id: queueAttemptId,
+      workItemId: queueItemId,
+      attemptNumber: 1,
+      workerId: "worker-a",
+      startedAt: "2026-09-11T10:00:00.000Z",
+      finishedAt: "2026-09-11T10:00:05.000Z",
+      result: "SUCCEEDED",
+    })
+    .run();
   const analysisId = newId();
   handle.db
     .insert(jobAnalyses)
@@ -413,6 +472,8 @@ function seedRichJob(handle: DatabaseHandle): string {
       gapsJson: "[]",
       promptVersion: "prompt-v1",
       proposalSchemaVersion: "proposal-v1",
+      generationRequestId: requestId,
+      workAttemptId: queueAttemptId,
     })
     .run();
   const versionId = newId();
@@ -433,6 +494,8 @@ function seedRichJob(handle: DatabaseHandle): string {
       contentJson: "{}",
       contentHash: "0".repeat(64),
       reviewState: "AWAITING_REVIEW",
+      generationRequestId: requestId,
+      workAttemptId: queueAttemptId,
     })
     .run();
   handle.db
@@ -602,6 +665,53 @@ describe("getJobDetail", () => {
           canonicalSha256: "e".repeat(64),
         })
         .run();
+      const topRequestId = newId();
+      const topItemId = newId();
+      const topAttemptId = newId();
+      const topIdentity = `genreq:v1:${topRequestId}`;
+      t.handle.db
+        .insert(workItems)
+        .values({
+          id: topItemId,
+          kind: "TAILOR",
+          idempotencyKey: topIdentity,
+          jobId,
+          payloadJson: canonicalJson({ schemaVersion: "tailor-queue/v2" }),
+          state: "SUCCEEDED",
+          attemptCount: 1,
+          maxAttempts: 3,
+        })
+        .run();
+      t.handle.db
+        .insert(generationRequests)
+        .values({
+          id: topRequestId,
+          requestIdentity: topIdentity,
+          jobId,
+          extractionId,
+          profileId: "local",
+          profileVersionId,
+          jdSnapshotId,
+          requestKind: "INITIAL",
+          steeringSnapshotJson: "{}",
+          selectedKeywordsJson: "[]",
+          payloadHash: "0".repeat(64),
+          status: "SUCCEEDED",
+          workItemId: topItemId,
+        })
+        .run();
+      t.handle.db
+        .insert(workAttempts)
+        .values({
+          id: topAttemptId,
+          workItemId: topItemId,
+          attemptNumber: 1,
+          workerId: "worker-a",
+          startedAt: "2026-09-11T12:00:00.000Z",
+          finishedAt: "2026-09-11T12:00:05.000Z",
+          result: "SUCCEEDED",
+        })
+        .run();
       t.handle.db
         .insert(jobAnalyses)
         .values({
@@ -609,6 +719,8 @@ describe("getJobDetail", () => {
           jobId,
           jdSnapshotId,
           candidateSnapshotId: snapshotId,
+          generationRequestId: topRequestId,
+          workAttemptId: topAttemptId,
           requirementsJson: JSON.stringify({
             schemaVersion: "analysis-requirements/v1",
             requirements: [
@@ -656,9 +768,9 @@ describe("getJobDetail", () => {
         .values({
           id: itemId,
           kind: "TAILOR",
-          idempotencyKey: `tailor:v1:${jobId}:ext-1`,
+          idempotencyKey: `genreq:v1:${newId()}`,
           jobId,
-          payloadJson: JSON.stringify({ schemaVersion: "tailor-queue/v1" }),
+          payloadJson: JSON.stringify({ schemaVersion: "tailor-queue/v2" }),
           state: "FAILED",
         })
         .run();
@@ -764,6 +876,198 @@ describe("getJobDetail", () => {
       expect(serialized).not.toContain(".sqlite");
       // Raw markup travels untouched for the renderer to escape.
       expect(detail.notes[0].body).toBe("<b>bold note</b>");
+    });
+  });
+
+  it("reports frozen generation-time lineage and the selected pointer (F1/F2)", () => {
+    withDatabase((t) => {
+      const jobId = seedJob(t.handle, { status: "TAILORED", rowVersion: 2 });
+      const { handle } = t;
+      handle.db
+        .insert(candidateProfiles)
+        .values({ id: "pm", name: "pm", displayName: "Product Manager", isDefault: true })
+        .run();
+      const profileVersionId = newId();
+      handle.db
+        .insert(candidateProfileVersions)
+        .values({
+          id: profileVersionId,
+          profileId: "pm",
+          version: 1,
+          payloadJson: "{}",
+          payloadHash: "c".repeat(64),
+          schemaVersion: "candidate-profile-v1",
+        })
+        .run();
+      const snapshotId = newId();
+      handle.db
+        .insert(candidateSnapshots)
+        .values({
+          id: snapshotId,
+          profileVersionId,
+          canonicalJson: "{}",
+          schemaVersion: "candidate-snapshot-v1",
+          sha256: "d".repeat(64),
+        })
+        .run();
+      const attemptId = newId();
+      handle.db
+        .insert(scrapeAttempts)
+        .values({
+          id: attemptId,
+          jobId,
+          canonicalUrl: "https://example.com/jobs/7",
+          startedAt: "2026-09-11T10:00:00.000Z",
+          finishedAt: "2026-09-11T10:00:05.000Z",
+          outcome: "SUCCEEDED",
+          workerId: "worker-a",
+        })
+        .run();
+      const extractionId = newId();
+      handle.db
+        .insert(jobExtractions)
+        .values({
+          id: extractionId,
+          jobId,
+          scrapeAttemptId: attemptId,
+          version: 1,
+          schemaVersion: "job-extraction-v1",
+          adapter: "generic",
+          extractedJson: "{}",
+        })
+        .run();
+      const jdSnapshotId = newId();
+      handle.db
+        .insert(jdSnapshots)
+        .values({
+          id: jdSnapshotId,
+          jobId,
+          extractionId,
+          jdText: "Product Manager",
+          canonicalSha256: "e".repeat(64),
+        })
+        .run();
+      const requestId = newId();
+      const queueItemId = newId();
+      const queueAttemptId = newId();
+      handle.db
+        .insert(workItems)
+        .values({
+          id: queueItemId,
+          kind: "TAILOR",
+          idempotencyKey: `genreq:v1:${requestId}`,
+          jobId,
+          payloadJson: canonicalJson({
+            schemaVersion: "tailor-queue/v2",
+            generationRequestId: requestId,
+            jobId,
+            extractionId,
+            profileId: "pm",
+            profileVersionId,
+            jdSnapshotId,
+            payloadHash: "0".repeat(64),
+          }),
+          state: "SUCCEEDED",
+          attemptCount: 1,
+          maxAttempts: 3,
+        })
+        .run();
+      handle.db
+        .insert(generationRequests)
+        .values({
+          id: requestId,
+          requestIdentity: `genreq:v1:${requestId}`,
+          jobId,
+          extractionId,
+          profileId: "pm",
+          profileVersionId,
+          jdSnapshotId,
+          requestKind: "INITIAL",
+          steeringSnapshotJson: JSON.stringify({
+            profileName: "pm",
+            profileDisplayName: "Product Manager",
+          }),
+          selectedKeywordsJson: "[]",
+          payloadHash: "0".repeat(64),
+          status: "SUCCEEDED",
+          workItemId: queueItemId,
+        })
+        .run();
+      handle.db
+        .insert(workAttempts)
+        .values({
+          id: queueAttemptId,
+          workItemId: queueItemId,
+          attemptNumber: 1,
+          workerId: "worker-a",
+          startedAt: "2026-09-11T10:00:00.000Z",
+          finishedAt: "2026-09-11T10:00:05.000Z",
+          result: "SUCCEEDED",
+        })
+        .run();
+      const analysisId = newId();
+      handle.db
+        .insert(jobAnalyses)
+        .values({
+          id: analysisId,
+          jobId,
+          jdSnapshotId,
+          candidateSnapshotId: snapshotId,
+          generationRequestId: requestId,
+          workAttemptId: queueAttemptId,
+          requirementsJson: JSON.stringify({ schemaVersion: "analysis-requirements/v1", requirements: [] }),
+          gapsJson: JSON.stringify({ schemaVersion: "analysis-gaps/v1", gaps: [] }),
+          promptVersion: "tailor-prompt/v1",
+          proposalSchemaVersion: "resume-proposal/v1",
+        })
+        .run();
+      const versionId = newId();
+      handle.db
+        .insert(resumeVersions)
+        .values({
+          id: versionId,
+          jobId,
+          version: 1,
+          parentVersionId: null,
+          analysisId,
+          generationRequestId: requestId,
+          workAttemptId: queueAttemptId,
+          templateId: "standard",
+          templateVersion: "v1",
+          templateHash: "t".repeat(64),
+          rankerVersion: "ranker-v1",
+          policyVersion: "policy-v1",
+          configVersion: "config-v1",
+          renderSchemaVersion: "render-v1",
+          contentJson: "{}",
+          contentHash: "f".repeat(64),
+          reviewState: "APPROVED",
+        })
+        .run();
+      handle.db
+        .update(jobs)
+        .set({ activeResumeVersionId: versionId, selectedResumeVersionId: versionId })
+        .where(eq(jobs.id, jobId))
+        .run();
+
+      // A later profile rename cannot rewrite recorded history: the
+      // row keeps its generation-time frozen name.
+      handle.db
+        .update(candidateProfiles)
+        .set({ displayName: "Renamed PM" })
+        .where(eq(candidateProfiles.id, "pm"))
+        .run();
+
+      const detail = getJobDetail(handle, jobId);
+      expect(detail?.job.selectedResumeVersionId).toBe(versionId);
+      expect(detail?.resumes).toHaveLength(1);
+      expect(detail?.resumes[0]).toMatchObject({
+        profileId: "pm",
+        profileVersionId,
+        profileVersionNumber: 1,
+        profileName: "pm",
+        profileDisplayName: "Product Manager",
+      });
     });
   });
 

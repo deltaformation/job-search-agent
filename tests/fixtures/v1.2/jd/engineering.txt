@@ -1,0 +1,1 @@
+Backend Engineer. Build distributed systems in Go and Rust on Kubernetes. Design REST APIs, event-driven services with Kafka, and Postgres schemas. Own CI/CD pipelines with GitHub Actions, Terraform modules, and Datadog dashboards. Practice TDD and system design reviews.

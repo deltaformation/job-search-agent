@@ -1,22 +1,28 @@
 import { ReasonCode, TailoringState } from "./enums";
 
 /**
- * Tailoring lifecycle for one job. `BLOCKED` (missing profile or provider
- * configuration) and `FAILED` outcomes require a reason code; both retry
- * into `RUNNING`, as does `REVISION_REQUESTED` when a new revision run
- * starts. `APPROVED` is terminal: further work is a new resume version.
+ * Tailoring lifecycle for one job (WO-1.2-D explicit generation).
+ * `READY` means an extracted JD is available with no run queued or
+ * running; stored `PENDING` means an explicit request is queued
+ * awaiting worker claim. `BLOCKED` (missing profile or provider
+ * configuration) and `FAILED` outcomes require a reason code.
+ * Explicit new-version commands move `AWAITING_REVIEW`, `APPROVED`,
+ * `DECLINED`, `BLOCKED`, and `FAILED` back to queued `PENDING`;
+ * a claim moves `PENDING` (or `REVISION_REQUESTED`) to `RUNNING`.
  */
 
 export const TAILORING_TRANSITIONS: Readonly<
   Record<TailoringState, readonly TailoringState[]>
 > = {
-  PENDING: ["RUNNING", "BLOCKED"],
-  BLOCKED: ["RUNNING"],
+  PENDING: ["READY", "RUNNING", "BLOCKED", "FAILED"],
+  READY: ["PENDING", "BLOCKED"],
+  BLOCKED: ["PENDING"],
   RUNNING: ["AWAITING_REVIEW", "FAILED"],
-  AWAITING_REVIEW: ["APPROVED", "REVISION_REQUESTED", "FAILED"],
-  APPROVED: [],
+  AWAITING_REVIEW: ["APPROVED", "REVISION_REQUESTED", "DECLINED", "FAILED", "PENDING"],
+  APPROVED: ["PENDING"],
   REVISION_REQUESTED: ["RUNNING"],
-  FAILED: ["RUNNING"],
+  DECLINED: ["PENDING"],
+  FAILED: ["PENDING"],
 };
 
 export type TailoringTransitionResult =

@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 // File imports: routes bundle this module into the Next server runtime,
 // which resolves like the worker loader (no directory barrels).
 import type { DatabaseHandle } from "../db/client";
@@ -12,7 +12,9 @@ import {
 } from "../db/schema/jobs";
 import { workAttempts, workItems } from "../db/schema/queue";
 import { canonicalizeUrl } from "../scraping/urls";
+import type { BatchItemPreparationV1 as BatchItemPreparationV1Type } from "../domain/step2";
 import { scrapeIdempotencyKey } from "./intake";
+import { getBatchPreparationStates } from "./preparation";
 
 /**
  * Read-only views for the intake/attempt UI. Plain synchronous SELECTs;
@@ -38,6 +40,8 @@ export interface BatchItemView {
   canonicalUrl: string | null;
   jobId: string | null;
   queue: QueueLineState | null;
+  /** Step 2 preparation diagnostics (S2-A §4.3); null while unbound. */
+  preparation: BatchItemPreparationV1Type;
 }
 
 export interface BatchView {
@@ -179,6 +183,10 @@ export function getBatchView(
     .where(eq(intakeItems.batchId, batchId))
     .orderBy(intakeItems.lineNumber)
     .all();
+  const preparations = getBatchPreparationStates(handle, {
+    itemIds: rows.map((row) => row.id),
+    jobIdByItemId: new Map(rows.map((row) => [row.id, row.jobId])),
+  });
   return {
     id: batch.id,
     createdAt: batch.createdAt,
@@ -196,6 +204,7 @@ export function getBatchView(
       canonicalUrl: row.canonicalUrl,
       jobId: row.jobId,
       queue: findWorkForCanonicalUrl(handle, row.canonicalUrl),
+      preparation: preparations.get(row.id) ?? null,
     })),
   };
 }
@@ -216,7 +225,10 @@ export function listBatches(
       blockedCount: intakeBatches.blockedCount,
     })
     .from(intakeBatches)
-    .orderBy(desc(intakeBatches.createdAt), desc(intakeBatches.id))
+    // Same-millisecond batches tie on created_at; ids are random UUIDs,
+    // so insertion order (rowid) is the only deterministic newest-first
+    // tiebreak. (Drive-by: pre-existing flake found by the D suite.)
+    .orderBy(desc(intakeBatches.createdAt), desc(sql`"intake_batches"."rowid"`))
     .limit(bounded)
     .all();
 }

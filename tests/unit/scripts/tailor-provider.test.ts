@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildFocusSection,
   buildGuidanceSection,
   extractDeterministicFallback,
+  validateTailoringInput,
 } from "../../../scripts/tailor-provider.mjs";
+import { v2FocusPair } from "../tailoring/v2FocusFixtures";
 
 function fallbackInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -78,5 +81,88 @@ describe("extractDeterministicFallback guidance", () => {
       expect(entry.evidence_fact_ids).toEqual([]);
     }
     expect(proposal.schemaVersion).toBe("resume-proposal/v1");
+  });
+});
+
+describe("v2 input gate (E3)", () => {
+  function v2Input(overrides: Record<string, unknown> = {}) {
+    const { focus, recommendations } = v2FocusPair();
+    return {
+      schemaVersion: "tailoring-input/v2",
+      promptVersion: "tailor-prompt/v2",
+      jobId: "job-v2-1",
+      jdSnapshotId: "jd-v2-1",
+      candidateSnapshotId: "cs-v2-1",
+      jdText: "Build APIs with Redis caching.",
+      approvedFactIds: ["f_scale"],
+      focus,
+      recommendations,
+      ...overrides,
+    };
+  }
+
+  it("accepts v1 and v2 envelopes with their paired prompts", () => {
+    expect(
+      validateTailoringInput({
+        schemaVersion: "tailoring-input/v1",
+        promptVersion: "tailor-prompt/v1",
+        jobId: "job-1",
+        jdSnapshotId: "jd-1",
+        candidateSnapshotId: "cs-1",
+        jdText: "Build APIs.",
+        approvedFactIds: [],
+      }),
+    ).toEqual({ ok: true });
+    expect(validateTailoringInput(v2Input())).toEqual({ ok: true });
+    expect(validateTailoringInput(v2Input({ revisionNote: "n".repeat(4000) }))).toEqual({
+      ok: true,
+    });
+  });
+
+  it("refuses version, prompt, snapshot, and bound violations before any call", () => {
+    expect(validateTailoringInput(v2Input({ schemaVersion: "tailoring-input/v9" }))).toMatchObject({
+      ok: false,
+    });
+    expect(validateTailoringInput(v2Input({ promptVersion: "tailor-prompt/v1" }))).toMatchObject({
+      ok: false,
+    });
+    expect(validateTailoringInput(v2Input({ focus: null }))).toMatchObject({ ok: false });
+    expect(
+      validateTailoringInput(v2Input({ selectedKeywords: ["k".repeat(129)] })),
+    ).toMatchObject({ ok: false });
+    expect(validateTailoringInput(v2Input({ directives: "d".repeat(1001) }))).toMatchObject({
+      ok: false,
+    });
+    expect(validateTailoringInput(v2Input({ revisionNote: "n".repeat(4001) }))).toMatchObject({
+      ok: false,
+    });
+  });
+});
+
+describe("v2 focus steering (E3)", () => {
+  it("names theme, summary direction, and mappings as evidenced-only steering", () => {
+    const { focus, recommendations } = v2FocusPair({
+      focus: { summaryDirection: "Emphasize Redis caching outcomes." },
+    });
+    const section = buildFocusSection({
+      schemaVersion: "tailoring-input/v2",
+      focus,
+      recommendations,
+    });
+    expect(section).toContain("FOCUS STEERING");
+    expect(section).toContain("Chosen theme: experience");
+    expect(section).toContain("Requested summary direction");
+    expect(section).toContain("Emphasize Redis caching outcomes.");
+    expect(section).toContain("Redis caching → Engineer @ Acme (f_scale)");
+    expect(section).toContain("only when identifying");
+    expect(section).toContain("never invent evidence");
+    expect(
+      buildGuidanceSection({
+        schemaVersion: "tailoring-input/v2",
+        selectedKeywords: ["Redis caching"],
+        focus,
+        recommendations,
+      }),
+    ).toContain("FOCUS STEERING");
   });
 });

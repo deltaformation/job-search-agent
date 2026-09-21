@@ -7,7 +7,8 @@ import { intakeBatches, intakeItems } from "../db/schema/intake";
 import { jobSources } from "../db/schema/jobs";
 import { workItems } from "../db/schema/queue";
 import { withTransaction } from "../db/transactions";
-import { newId } from "../db/utils";
+import { newId, utcNow } from "../db/utils";
+import { captureIntakeBinding } from "./preparation";
 import type { IntakeOutcome, ReasonCode } from "../domain/enums";
 import { MAX_URL_LENGTH, canonicalizeUrl } from "../scraping/urls";
 import { preflightHost, type DnsResolver } from "../scraping/ssrf";
@@ -408,5 +409,10 @@ function enqueueNewUrl(
       payloadJson: JSON.stringify(payload),
     })
     .run();
+  // Step 2 (S2-A §8.1): freeze the globally selected profile
+  // version, evidence, and master in the same transaction that
+  // accepts this line — before asynchronous scraping. Absent
+  // configuration captures nothing and never blocks the scrape.
+  captureIntakeBinding(handle, { intakeItemId, batchId, now: utcNow() });
   return { ...line, intakeItemId, jobId: null, workItemId };
 }

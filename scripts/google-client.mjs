@@ -19,7 +19,8 @@ export const DEFAULT_PRIMARY_MODEL = "gemini-2.5-pro";
 export const DEFAULT_FALLBACK_MODEL = "gemini-2.5-flash";
 
 export function googleUrl(model, apiKey) {
-  return `${GOOGLE_API_BASE}/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const cleanModel = String(model).replace(/^models\//, "");
+  return `${GOOGLE_API_BASE}/models/${cleanModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
 }
 
 export class GoogleError extends Error {
@@ -62,8 +63,20 @@ export function shouldFailOver(error) {
   return error.status !== 401 && error.status !== 402 && error.status !== 403;
 }
 
-function classifyStatus(status) {
-  return new GoogleError("status", status, `Google API error ${status}`);
+function classifyStatus(status, errText) {
+  let message = `Google API error ${status}`;
+  if (typeof errText === "string" && errText.trim() !== "") {
+    try {
+      const parsed = JSON.parse(errText);
+      const apiMsg = parsed?.error?.message;
+      if (typeof apiMsg === "string" && apiMsg.trim() !== "") {
+        message = `Google API error ${status}: ${apiMsg.trim()}`;
+      }
+    } catch {
+      // not JSON
+    }
+  }
+  return new GoogleError("status", status, message);
 }
 
 /**
@@ -134,14 +147,17 @@ export async function chatCompletions({
     try {
       const res = await fetch(googleUrl(model, apiKey), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
         body: JSON.stringify(toGeminiRequest(messages, temperature)),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
-        lastError = classifyStatus(res.status);
+        lastError = classifyStatus(res.status, errText);
         diagnose(`model ${model}: Google API error ${res.status}: ${errText.slice(0, 300)}`);
         if (!shouldFailOver(lastError)) {
           throw lastError;

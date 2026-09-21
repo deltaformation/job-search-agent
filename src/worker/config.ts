@@ -34,6 +34,20 @@ export interface WorkerConfig extends RuntimeConfig {
     model: string | null;
   } | null;
   /**
+   * Step 2 preparation provider command (WO-1.3-S2-B). Null exactly
+   * when the tailor provider is unconfigured (one provider
+   * configuration gates both): PREPARE runs then report
+   * BLOCKED/CONFIGURATION. Otherwise the checked-in prepare
+   * sidecar, with `PREPARE_PROVIDER_ARGV` override and the S2-A
+   * §6.4 bounds (120 s, 64 KiB).
+   */
+  prepareProvider: {
+    argv: string[];
+    timeoutMs: number;
+    maxOutputBytes: number;
+    model: string | null;
+  } | null;
+  /**
    * R4-G salary sidecar command. Defaults to the checked-in script (a
    * no-op without an API key); `SALARY_PROVIDER_ARGV` overrides, and
    * `SALARY_FALLBACK=off` disables the pre-step entirely.
@@ -70,7 +84,7 @@ export function parseDurationMs(
   return parsed;
 }
 
-function parseProviderArgv(value: string | undefined): string[] | null {
+function parseProviderArgv(name: string, value: string | undefined): string[] | null {
   if (value === undefined || value.trim() === "") {
     return null;
   }
@@ -78,14 +92,14 @@ function parseProviderArgv(value: string | undefined): string[] | null {
   try {
     decoded = JSON.parse(value) as unknown;
   } catch {
-    throw new Error("TAILOR_PROVIDER_ARGV must be a JSON array of strings");
+    throw new Error(`${name} must be a JSON array of strings`);
   }
   if (
     !Array.isArray(decoded) ||
     decoded.length === 0 ||
     decoded.some((entry) => typeof entry !== "string" || entry === "")
   ) {
-    throw new Error("TAILOR_PROVIDER_ARGV must be a non-empty JSON array of non-empty strings");
+    throw new Error(`${name} must be a non-empty JSON array of non-empty strings`);
   }
   return [...decoded];
 }
@@ -111,7 +125,8 @@ export function resolveWorkerConfig(
 ): WorkerConfig {
   const runtime = resolveRuntimeConfig(env, cwd);
   const workerId = env.WORKER_ID?.trim() || `worker-${fallbackPid}`;
-  const providerArgv = parseProviderArgv(env.TAILOR_PROVIDER_ARGV);
+  const providerArgv = parseProviderArgv("TAILOR_PROVIDER_ARGV", env.TAILOR_PROVIDER_ARGV);
+  const prepareArgvOverride = parseProviderArgv("PREPARE_PROVIDER_ARGV", env.PREPARE_PROVIDER_ARGV);
   return {
     ...runtime,
     workerId,
@@ -145,6 +160,24 @@ export function resolveWorkerConfig(
               "TAILOR_PROVIDER_MAX_OUTPUT_BYTES",
               env.TAILOR_PROVIDER_MAX_OUTPUT_BYTES,
               262_144,
+            ),
+            model: env.TAILOR_PROVIDER_MODEL?.trim() || null,
+          },
+    prepareProvider:
+      providerArgv === null
+        ? null
+        : {
+            argv: prepareArgvOverride ?? [process.execPath, join(cwd, "scripts", "prepare-provider.mjs")],
+            timeoutMs: parseDurationMs(
+              "PREPARE_PROVIDER_TIMEOUT_MS",
+              env.PREPARE_PROVIDER_TIMEOUT_MS,
+              120_000,
+              600_000,
+            ),
+            maxOutputBytes: parseByteLimit(
+              "PREPARE_PROVIDER_MAX_OUTPUT_BYTES",
+              env.PREPARE_PROVIDER_MAX_OUTPUT_BYTES,
+              65_536,
             ),
             model: env.TAILOR_PROVIDER_MODEL?.trim() || null,
           },

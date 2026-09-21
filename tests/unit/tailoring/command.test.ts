@@ -1,13 +1,19 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { CommandProvider, runCommandJson } from "../../../src/tailoring/commandAdapter";
+import { canonicalJson } from "../../../src/domain/canonical";
 import {
   RESUME_PROPOSAL_SCHEMA_VERSION,
   TAILOR_PROMPT_VERSION,
+  TAILOR_PROMPT_VERSION_V2,
   TAILORING_INPUT_SCHEMA_VERSION,
+  TAILORING_INPUT_SCHEMA_VERSION_V2,
+  TailoringInputV2,
   ProviderError,
   type TailoringInputV1,
 } from "../../../src/tailoring/contract";
+import { sha256HexUtf8 } from "../../../src/tailoring/hash";
+import { v2FocusPair } from "./v2FocusFixtures";
 
 const INPUT: TailoringInputV1 = {
   schemaVersion: TAILORING_INPUT_SCHEMA_VERSION,
@@ -95,7 +101,7 @@ describe("command provider adapter", () => {
     });
     const error = await provider.prepare(INPUT).catch((cause: unknown) => cause);
     expect(error).toBeInstanceOf(ProviderError);
-    expect((error as ProviderError).reason).toBe("PROVIDER_UNAVAILABLE");
+    expect((error as ProviderError).reason).toBe("INVALID_RESPONSE");
     expect((error as ProviderError).detail).toContain("not JSON");
   });
 
@@ -126,10 +132,11 @@ describe("command provider adapter", () => {
   });
 
   it.each([
-    { code: 10, reason: "PROVIDER_UNAVAILABLE", detail: "authentication failed" },
-    { code: 11, reason: "PROVIDER_UNAVAILABLE", detail: "rate limit" },
+    { code: 10, reason: "AUTHENTICATION", detail: "authentication failed" },
+    { code: 11, reason: "RATE_LIMIT", detail: "rate limit" },
     { code: 12, reason: "TIMEOUT", detail: "timed out" },
-    { code: 13, reason: "PROVIDER_UNAVAILABLE", detail: "unusable response" },
+    { code: 13, reason: "INVALID_RESPONSE", detail: "unusable response" },
+    { code: 14, reason: "NETWORK", detail: "network request failed" },
   ])("maps classified exit $code to $reason", async ({ code, reason, detail }) => {
     const provider = new CommandProvider({
       argv: [process.execPath, "-e", `process.exit(${code})`],
@@ -159,7 +166,7 @@ describe("command provider adapter", () => {
     });
     const error = await provider.prepare(INPUT).catch((cause: unknown) => cause);
     expect(error).toBeInstanceOf(ProviderError);
-    expect((error as ProviderError).reason).toBe("PROVIDER_UNAVAILABLE");
+    expect((error as ProviderError).reason).toBe("INVALID_RESPONSE");
     expect((error as ProviderError).detail).toContain("output bytes");
   });
 
@@ -167,8 +174,27 @@ describe("command provider adapter", () => {
     const provider = new CommandProvider({ argv: ["/nonexistent/agent-binary-xyz"] });
     const error = await provider.prepare(INPUT).catch((cause: unknown) => cause);
     expect(error).toBeInstanceOf(ProviderError);
-    expect((error as ProviderError).reason).toBe("PROVIDER_UNAVAILABLE");
+    expect((error as ProviderError).reason).toBe("LOCAL_LAUNCH");
+    expect((error as ProviderError).spawnCode).toBe("ENOENT");
     expect((error as ProviderError).detail).toContain("spawn failed");
+  });
+
+  it("reports a missing PATH executable as an actionable launch fault", async () => {
+    // The reported `provider spawn failed: 'node'`: a local launch fault,
+    // distinct from any provider API outcome the web test could verify.
+    const provider = new CommandProvider({
+      argv: ["node-definitely-missing-xyz", "scripts/tailor-provider.mjs"],
+    });
+    const error = await provider.prepare(INPUT).catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect((error as ProviderError).reason).toBe("LOCAL_LAUNCH");
+    expect((error as ProviderError).spawnCode).toBe("ENOENT");
+    const detail = (error as ProviderError).detail;
+    expect(detail).toContain("spawn failed");
+    expect(detail).toContain("node-definitely-missing-xyz");
+    expect(detail).toContain("ENOENT");
+    expect(detail).toContain("TAILOR_PROVIDER_ARGV");
+    expect(detail).toContain("web connection test");
   });
 
   it("rejects empty stdout", async () => {
@@ -185,6 +211,58 @@ describe("command provider adapter", () => {
     expect(() => new CommandProvider({ argv: ["", "x"] })).toThrow();
     expect(() => new CommandProvider({ argv: ["x"], timeoutMs: 0 })).toThrow();
     expect(() => new CommandProvider({ argv: ["x"], maxOutputBytes: 10 })).toThrow();
+  });
+});
+
+describe("command provider v2 input (E3)", () => {
+  function v2Input() {
+    const { focus, recommendations } = v2FocusPair();
+    return TailoringInputV2.parse({
+      schemaVersion: TAILORING_INPUT_SCHEMA_VERSION_V2,
+      jobId: "job-cmd-v2",
+      jobTitle: "Engineer",
+      company: "Acme",
+      jdSnapshotId: "jd-cmd-1",
+      jdText: "Build TypeScript APIs with Redis caching.",
+      candidateSnapshotId: "cs-cmd-1",
+      profile: INPUT.profile,
+      approvedFactIds: [],
+      promptVersion: TAILOR_PROMPT_VERSION_V2,
+      selectedKeywords: ["Redis caching"],
+      directives: "Emphasize caching.",
+      revisionNote: "n".repeat(4000),
+      focus,
+      recommendations,
+    });
+  }
+
+  it("transports complete v2 canonical bytes and records the v2 prompt", async () => {
+    const input = v2Input();
+    const provider = new CommandProvider({
+      argv: [
+        process.execPath,
+        "-e",
+        `let s="";process.stdin.on("data",c=>{s+=c});process.stdin.on("end",()=>{if(!s.includes("tailoring-input/v2")||!s.includes("tailoring-focus/v1")||!s.includes("tailoring-recommendations/v1")){process.exit(9)}process.stdout.write(${JSON.stringify(
+          JSON.stringify(validProposal()),
+        )})});`,
+      ],
+      timeoutMs: 30_000,
+      maxOutputBytes: 262_144,
+      model: "local-stub",
+    });
+    const { attempt } = await provider.prepare(input);
+    expect(attempt.promptVersion).toBe(TAILOR_PROMPT_VERSION_V2);
+    expect(attempt.inputHash).toBe(sha256HexUtf8(canonicalJson(input)));
+  });
+
+  it("rejects unsupported input versions before spawning", async () => {
+    const provider = new CommandProvider({ argv: ["/nonexistent-v2-sidecar-xyz"] });
+    const error = await provider
+      .prepare({ ...INPUT, schemaVersion: "tailoring-input/v9" } as unknown as TailoringInputV1)
+      .catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect((error as ProviderError).detail).toContain("unsupported tailoring input version");
+    expect((error as ProviderError).detail).not.toContain("spawn failed");
   });
 });
 

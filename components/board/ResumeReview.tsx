@@ -8,6 +8,7 @@ import {
   History,
   RotateCcw,
   Sparkles,
+  XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,10 @@ interface ResumeReviewProps {
   onChanged: () => void;
   onReviewed: () => void;
   onSummary?: (summary: string) => void;
+  /** Lifts the recorded guidance (or its absence) for F5 reuse; keyed by version id. */
+  onGuidance?: (versionId: string, guidance: ResumeReviewView["guidance"]) => void;
+  /** Move focus to the drill-down heading once loaded (driven by explicit version selection). */
+  focusHeadingOnMount?: boolean;
 }
 
 export default function ResumeReview({
@@ -50,16 +55,22 @@ export default function ResumeReview({
   onChanged,
   onReviewed,
   onSummary,
+  onGuidance,
+  focusHeadingOnMount = false,
 }: ResumeReviewProps) {
   const [view, setView] = useState<ResumeReviewView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const reviewNotice = useNotice<string>();
   const [confirming, setConfirming] = useState(false);
+  const [declining, setDeclining] = useState(false);
   const [approveNote, setApproveNote] = useState("");
   const [reviseNote, setReviseNote] = useState("");
+  const [declineNote, setDeclineNote] = useState("");
   const [busy, setBusy] = useState(false);
   const confirmPanelRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const headingFocusedRef = useRef(false);
 
   useEffect(() => {
     // The approve trigger lives in the sticky bar, which is visible
@@ -82,6 +93,7 @@ export default function ResumeReview({
     try {
       const result = await apiGet<ResumeReviewView>(`/api/resumes/${versionId}/review`);
       setView(result);
+      onGuidance?.(versionId, result.guidance ?? null);
       const requirements = result.analysis?.requirements;
       const gapIds = new Set([
         ...(result.analysis?.gaps ?? []).map((r) => r.requirementId),
@@ -92,7 +104,7 @@ export default function ResumeReview({
     } catch (fetchError: unknown) {
       setLoadError(errorMessage(fetchError));
     }
-  }, [versionId, onSummary]);
+  }, [versionId, onSummary, onGuidance]);
 
   useEffect(() => {
     // Fetch-on-mount/refresh only; load sets state after a network
@@ -101,12 +113,28 @@ export default function ResumeReview({
     void load();
   }, [load, refreshToken]);
 
+  const loadedVersionId = view?.version.id ?? null;
+  useEffect(() => {
+    // Master-detail focus (F4): after an explicit version selection
+    // the drawer remounts this view (keyed by version id); once the
+    // new drill-down loads, focus its heading so the change is
+    // announced. Initial mount never steals focus. Ref-only, once.
+    if (focusHeadingOnMount && loadedVersionId !== null && !headingFocusedRef.current) {
+      headingFocusedRef.current = true;
+      if (typeof headingRef.current?.focus === "function") {
+        headingRef.current.focus();
+      }
+    }
+  }, [focusHeadingOnMount, loadedVersionId]);
+
   async function afterMutation(message: string): Promise<void> {
     reviewNotice.show(message);
     setActionError(null);
     setConfirming(false);
+    setDeclining(false);
     setApproveNote("");
     setReviseNote("");
+    setDeclineNote("");
     onChanged();
     onReviewed();
     await load();
@@ -115,14 +143,43 @@ export default function ResumeReview({
   async function onConfirmApprove(current: ResumeReviewView): Promise<void> {
     setBusy(true);
     try {
-      await postJobMutation(`/api/jobs/${current.job.id}/resume/approve`, {
-        resumeVersionId: current.version.id,
-        observedRowVersion: current.job.rowVersion,
-        note: approveNote.trim() === "" ? undefined : approveNote.trim(),
-      });
-      await afterMutation(`Version ${current.version.version} approved — the card moved to Tailored.`);
+      const result = await postJobMutation<{ approvalCase: "move" | "select" }>(
+        `/api/jobs/${current.job.id}/resume/approve`,
+        {
+          resumeVersionId: current.version.id,
+          observedRowVersion: current.job.rowVersion,
+          note: approveNote.trim() === "" ? undefined : approveNote.trim(),
+        },
+      );
+      await afterMutation(
+        result.approvalCase === "move"
+          ? `Version ${current.version.version} approved — the card moved to Tailored.`
+          : `Version ${current.version.version} approved — bound as the selected resume.`,
+      );
     } catch (approveError: unknown) {
       setActionError(errorMessage(approveError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onConfirmDecline(current: ResumeReviewView): Promise<void> {
+    if (declineNote.trim() === "") {
+      setActionError("Declining needs a note describing why this version is unusable.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await postJobMutation(`/api/jobs/${current.job.id}/resume/decline`, {
+        resumeVersionId: current.version.id,
+        observedRowVersion: current.job.rowVersion,
+        note: declineNote.trim(),
+      });
+      await afterMutation(
+        `Version ${current.version.version} declined — it is frozen and no follow-up run was queued.`,
+      );
+    } catch (declineError: unknown) {
+      setActionError(errorMessage(declineError));
     } finally {
       setBusy(false);
     }
@@ -173,6 +230,7 @@ export default function ResumeReview({
   const reviewHeadingId = `review-${view.version.id}-heading`;
   const approveNoteId = `review-${view.version.id}-approve-note`;
   const reviseNoteId = `review-${view.version.id}-revise-note`;
+  const declineNoteId = `review-${view.version.id}-decline-note`;
 
   return (
     <div aria-labelledby={reviewHeadingId} className="resume-review space-y-6 pt-2">
@@ -181,7 +239,12 @@ export default function ResumeReview({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <FileCheck className="size-5 text-primary" aria-hidden="true" />
-            <h3 id={reviewHeadingId} className="text-base font-semibold tracking-tight">
+            <h3
+              id={reviewHeadingId}
+              ref={headingRef}
+              tabIndex={-1}
+              className="text-base font-semibold tracking-tight"
+            >
               Version {view.version.version} · {prettyState(view.version.reviewState)}
             </h3>
             {view.version.parentVersionId !== null ? (
@@ -217,18 +280,77 @@ export default function ResumeReview({
           </Notice>
         )}
 
-        {view.actions.reason !== null && !view.actions.canApprove && !view.actions.canRequestRevision && (
+        {view.actions.reason !== null && (
           <p className="mt-2 text-xs text-muted-foreground">{view.actions.reason}</p>
         )}
 
 
       </div>
 
-      {/* Files & Artifacts */}
+      {/* Recorded Guidance (F) */}
+      <Card className="shadow-sm" role="region" aria-label="Recorded guidance">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <History className="size-4 text-primary" aria-hidden="true" />
+            <span>Recorded guidance</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-xs space-y-2">
+          {view.guidance === null || view.guidance === undefined ? (
+            <p className="text-muted-foreground">
+              This version predates recorded guidance — the inputs that produced it were not
+              stored, so there is nothing to reuse.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm">
+                <span className="font-medium">Profile:</span>{" "}
+                {view.guidance.profileDisplayName ?? "Unknown profile"}
+                {view.guidance.profileVersionNumber !== null &&
+                  ` · master v${view.guidance.profileVersionNumber}`}
+              </p>
+              {view.guidance.selectedKeywords.length === 0 ? (
+                <p className="text-muted-foreground">No keywords were selected for this run.</p>
+              ) : (
+                <ul className="flex flex-wrap gap-1.5" aria-label="Selected keywords">
+                  {view.guidance.selectedKeywords.map((term) => (
+                    <li
+                      key={term}
+                      className="rounded-full border border-border/80 bg-muted/30 px-2.5 py-0.5 text-xs"
+                    >
+                      {term}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {view.guidance.directives !== null ? (
+                <p className="whitespace-pre-wrap text-foreground">
+                  <span className="font-medium">Directives:</span> {view.guidance.directives}
+                </p>
+              ) : (
+                <p className="text-muted-foreground">
+                  No directive notes were recorded for this run.
+                </p>
+              )}
+              {view.guidance.revisionNote !== null && (
+                <p className="whitespace-pre-wrap text-foreground">
+                  <span className="font-medium">Revision note:</span> {view.guidance.revisionNote}
+                </p>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Files & Previews: the single compact preview group (F3/F4).
+          Markdown previews as readable text and PDF previews exactly;
+          DOCX offers a labeled canonical content preview plus the
+          original file. No second download set lives in the history
+          rows above. */}
       <div className="rounded-lg border border-border/80 bg-card p-4 space-y-3">
         <h4 className="text-sm font-semibold flex items-center gap-2">
           <FileText className="size-4 text-primary" aria-hidden="true" />
-          <span>Files ({view.artifacts.length})</span>
+          <span>Files & previews ({view.artifacts.length})</span>
         </h4>
         {view.artifacts.length === 0 && (
           <p className="text-xs text-muted-foreground">No files published yet.</p>
@@ -241,21 +363,43 @@ export default function ResumeReview({
             >
               <span className="font-semibold uppercase text-[11px]">{artifact.kind}</span>
               <span className="text-muted-foreground font-mono tabular-nums">({formatBytes(artifact.byteSize)})</span>
-              <span className="text-border">|</span>
-              <a
-                href={`/api/resumes/artifacts/${artifact.id}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-primary underline font-medium"
-              >
-                Preview
-              </a>
-              <a
-                href={`/api/resumes/artifacts/${artifact.id}?download=1`}
-                className="text-primary underline font-medium"
-              >
-                Download
-              </a>
+              <span className="text-border" aria-hidden="true">|</span>
+              {artifact.kind === "DOCX" ? (
+                <>
+                  <a
+                    href={`/api/resumes/artifacts/${artifact.id}/content`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Canonical text extracted from the stored DOCX — layout may differ from the original."
+                    className="text-primary underline font-medium"
+                  >
+                    Content preview
+                  </a>
+                  <a
+                    href={`/api/resumes/artifacts/${artifact.id}?download=1`}
+                    className="text-primary underline font-medium"
+                  >
+                    Open original DOCX
+                  </a>
+                </>
+              ) : (
+                <>
+                  <a
+                    href={`/api/resumes/artifacts/${artifact.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary underline font-medium"
+                  >
+                    Preview
+                  </a>
+                  <a
+                    href={`/api/resumes/artifacts/${artifact.id}?download=1`}
+                    className="text-primary underline font-medium"
+                  >
+                    Download
+                  </a>
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -469,6 +613,115 @@ export default function ResumeReview({
         </Card>
       )}
 
+      {/* Requested Emphasis & Coaching Outcomes (E) */}
+      <Card className="shadow-sm" role="region" aria-label="Requested emphasis">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <FileCheck className="size-4 text-primary" aria-hidden="true" />
+            <span>Requested emphasis</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-xs space-y-3">
+          {view.coaching === null || view.coaching === undefined ? (
+            <p className="text-muted-foreground">
+              Requested emphasis was not recorded for this version.
+            </p>
+          ) : (
+            <>
+              {!view.coaching.assessed && (
+                <p className="text-muted-foreground">
+                  Run data is incomplete or unreadable — outcomes below claim no verdict.
+                </p>
+              )}
+              {view.coaching.terms.length === 0 ? (
+                <p className="text-muted-foreground">No keywords were selected for this run.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {view.coaching.terms.map((entry) => (
+                    <li
+                      key={entry.term}
+                      className="rounded-md border border-border/60 bg-muted/20 p-2 space-y-1"
+                    >
+                      <p className="font-medium text-foreground text-sm italic">“{entry.term}”</p>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge
+                          variant={
+                            entry.outcome === "used"
+                              ? "success"
+                              : entry.outcome === "unsupported" || entry.outcome === "not-applicable"
+                                ? "destructive"
+                                : "warning"
+                          }
+                          className="text-[11px]"
+                        >
+                          {entry.outcome === "used"
+                            ? "Used"
+                            : entry.outcome === "omitted-by-budget"
+                              ? "Omitted — budget"
+                              : entry.outcome === "unsupported"
+                                ? "Unsupported"
+                                : entry.outcome === "not-applicable"
+                                  ? "Not applicable"
+                                  : "Not assessed"}
+                        </Badge>
+                        {entry.requirementIds.length > 0 && (
+                          <span className="font-mono tabular-nums text-[11px] text-muted-foreground">
+                            {entry.requirementIds.join(", ")}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">{entry.detail}</p>
+                      {entry.evidenceFactIds.length > 0 && (
+                        <p className="font-mono tabular-nums text-[11px] text-muted-foreground">
+                          Evidence: {entry.evidenceFactIds.join(", ")}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {!view.coaching.directivesRecorded ? (
+                <p className="text-muted-foreground">No directive notes were recorded for this run.</p>
+              ) : view.coaching.directives.length === 0 ? (
+                <p className="text-muted-foreground">Directive notes were empty for this run.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {view.coaching.directives.map((entry) => (
+                    <li
+                      key={entry.index}
+                      className="rounded-md border border-border/60 bg-muted/20 p-2 space-y-1"
+                    >
+                      <p className="text-foreground">“{entry.directive}”</p>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge
+                          variant={
+                            entry.outcome === "used"
+                              ? "success"
+                              : entry.outcome === "unsupported"
+                                ? "destructive"
+                                : "warning"
+                          }
+                          className="text-[11px]"
+                        >
+                          {entry.outcome === "used"
+                            ? "Applied"
+                            : entry.outcome === "unsupported"
+                              ? "Unsupported"
+                              : "Not assessed"}
+                        </Badge>
+                      </div>
+                      {entry.explanation !== null && (
+                        <p className="text-[11px] text-muted-foreground">{entry.explanation}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Generation Notes Card */}
       {view.content?.audit !== null && view.content?.audit !== undefined && (
         <Card className="shadow-sm bg-muted/20">
@@ -518,7 +771,11 @@ export default function ResumeReview({
             </div>
 
             <p className="text-xs text-muted-foreground">
-              This approves version {view.version.version} with {view.artifacts.length} stored files, and moves the card to Tailored. The version becomes immutable.
+              This approves version {view.version.version} with {view.artifacts.length} stored files
+              {view.job.status === "NEW"
+                ? ", and moves the card to Tailored."
+                : ", and binds it as the selected resume without moving the card."}{" "}
+              The version becomes immutable.
             </p>
 
             <ul className="rounded-md border border-border/60 bg-background/80 p-2 text-xs divide-y divide-border/40">
@@ -571,6 +828,60 @@ export default function ResumeReview({
           </div>
         )}
 
+        {/* Decline Confirmation */}
+        {view.actions.canDecline && declining && (
+          <div className="workspace-tab mt-4 scroll-mt-24 rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-destructive">
+              <XCircle className="size-5" aria-hidden="true" />
+              <h4 className="font-bold text-sm">
+                Decline version {view.version.version}
+              </h4>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              This freezes version {view.version.version} as declined and queues no follow-up run.
+              Generate a new version afterwards, or revise instead to keep your note on the run.
+            </p>
+
+            <div>
+              <label htmlFor={declineNoteId} className="block text-xs font-semibold text-foreground mb-1">
+                Decline reason (required)
+              </label>
+              <textarea
+                id={declineNoteId}
+                value={declineNote}
+                onChange={(event) => setDeclineNote(event.target.value)}
+                rows={2}
+                maxLength={4000}
+                placeholder="Why is this version unusable?"
+                className="w-full rounded-md border border-input bg-background p-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => void onConfirmDecline(view)}
+                disabled={busy || declineNote.trim() === ""}
+              >
+                Confirm decline
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setDeclining(false);
+                  setDeclineNote("");
+                }}
+                disabled={busy}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Request Revision Form */}
         {view.actions.canRequestRevision && (
           <div className="mt-4 border-t border-border/60 pt-3">
@@ -603,25 +914,42 @@ export default function ResumeReview({
 
       {/* Compact sticky trigger bar: the primary decision stays reachable
           while reading, without covering the audit it governs. */}
-      {view.actions.canApprove && !confirming && (
+      {(view.actions.canApprove || view.actions.canDecline) && !confirming && !declining && (
         <div className="sticky bottom-0 z-10 flex items-center justify-end gap-3 rounded-xl border border-border/80 bg-background p-3 shadow-sm">
           <p className="mr-auto hidden text-xs text-muted-foreground sm:block">
             Version {view.version.version} ·{" "}
             <span className="font-mono tabular-nums">{view.artifacts.length}</span>{" "}
             {view.artifacts.length === 1 ? "file" : "files"}
           </p>
-          <Button
-            type="button"
-            onClick={() => {
-              setActionError(null);
-              setConfirming(true);
-            }}
-            disabled={busy}
-            className="w-full gap-1.5 font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm sm:w-auto"
-          >
-            <CheckCircle2 className="size-4" aria-hidden="true" />
-            Approve version {view.version.version}
-          </Button>
+          {view.actions.canDecline && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setActionError(null);
+                setDeclining(true);
+              }}
+              disabled={busy}
+              className="gap-1.5"
+            >
+              <XCircle className="size-4" aria-hidden="true" />
+              Decline
+            </Button>
+          )}
+          {view.actions.canApprove && (
+            <Button
+              type="button"
+              onClick={() => {
+                setActionError(null);
+                setConfirming(true);
+              }}
+              disabled={busy}
+              className="w-full gap-1.5 font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm sm:w-auto"
+            >
+              <CheckCircle2 className="size-4" aria-hidden="true" />
+              Approve version {view.version.version}
+            </Button>
+          )}
         </div>
       )}
       </div>
